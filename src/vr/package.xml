@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://relaxng.org/ns/structure/1.0"?>
 <package format="3">
   <name>vr</name>
-  <version>0.2.0</version>
+  <version>0.1.0</version>
   <description>
     MuJoCo worlds on a standalone OpenXR headset, and the headset's controller pose and buttons
     back as ROS 2 topics. Composable nodes: vr::SceneNode streams a world out, vr::InputNode
