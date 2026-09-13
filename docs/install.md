@@ -116,10 +116,21 @@ is opened.
 ## Generating the documentation
 
 The guides read as plain markdown, so this is only needed for the HTML site with the C++ API
-reference:
+reference.
+
+**Doxygen 1.16 or newer is required.** Ubuntu 24.04 packages 1.9.8, which generates readable but
+visibly broken pages: 1.9.x ships its own `div.fragment` rule, and that selector is more specific
+than the theme's `.fragment`, so code blocks lose their padding and the navigation tree's icons
+overlap their labels. Take the official binary instead:
 
 ```bash
-sudo apt install doxygen
+curl -fsSL -o /tmp/doxygen.tar.gz \
+  https://github.com/doxygen/doxygen/releases/download/Release_1_16_1/doxygen-1.16.1.linux.bin.tar.gz
+mkdir -p ~/.local/opt && tar -xzf /tmp/doxygen.tar.gz -C ~/.local/opt
+export DOXYGEN=~/.local/opt/doxygen-1.16.1/bin/doxygen
+```
+
+```bash
 colcon build --packages-select vr --cmake-args -DBUILD_DOCS=ON
 cmake --build build/vr --target docs      # -> build/vr/docs/html/index.html
 ```

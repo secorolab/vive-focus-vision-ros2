@@ -19,8 +19,28 @@ package_root="$repo_root/src/vr"
 out_dir="${1:-$repo_root/build/docs}"
 template="$package_root/docs/doxygen/Doxyfile.in"
 
-if ! command -v doxygen >/dev/null; then
-    echo "doxygen is not installed: sudo apt install doxygen" >&2
+# The theme is written against Doxygen 1.16's stylesheet. Older versions ship their own
+# `div.fragment` rule, which is more specific than the theme's `.fragment` and silently wins:
+# code blocks lose their padding and the navigation tree's icons overlap their labels. Ubuntu
+# 24.04 packages 1.9.8, so this is the default situation, not an edge case.
+DOXYGEN_MINIMUM="1.16.0"
+DOXYGEN="${DOXYGEN:-doxygen}"
+
+if ! command -v "$DOXYGEN" >/dev/null; then
+    echo "doxygen not found. This project needs $DOXYGEN_MINIMUM or newer; the distro package" >&2
+    echo "is too old. Download the official binary:" >&2
+    echo "  https://github.com/doxygen/doxygen/releases  (doxygen-<version>.linux.bin.tar.gz)" >&2
+    echo "then re-run with DOXYGEN=/path/to/bin/doxygen" >&2
+    exit 1
+fi
+
+doxygen_version="$("$DOXYGEN" --version | awk '{print $1}')"
+if [ "$(printf '%s\n%s\n' "$DOXYGEN_MINIMUM" "$doxygen_version" | sort -V | head -1)" \
+     != "$DOXYGEN_MINIMUM" ]; then
+    echo "doxygen $doxygen_version is too old; the theme needs $DOXYGEN_MINIMUM or newer." >&2
+    echo "It would still generate, but with unpadded code blocks and a broken navigation tree." >&2
+    echo "Download the official binary from https://github.com/doxygen/doxygen/releases and" >&2
+    echo "re-run with DOXYGEN=/path/to/bin/doxygen" >&2
     exit 1
 fi
 
@@ -42,7 +62,7 @@ warnings="$out_dir/doxygen-warnings.txt"
 sed -i "s|^QUIET .*|QUIET = YES|; s|^WARN_LOGFILE .*||" "$doxyfile"
 echo "WARN_LOGFILE = $warnings" >> "$doxyfile"
 
-doxygen "$doxyfile"
+"$DOXYGEN" "$doxyfile"
 
 if [ -s "$warnings" ]; then
     echo "doxygen reported warnings:" >&2

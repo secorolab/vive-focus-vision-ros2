@@ -108,7 +108,9 @@ set_target_properties(vr_scene vr_components scene_export PROPERTIES
 #   cmake --build build --target docs   ->  build/vr/docs/html/index.html
 option(BUILD_DOCS "Generate HTML documentation with Doxygen" OFF)
 if(BUILD_DOCS)
-  find_package(Doxygen REQUIRED)
+  # 1.16 is not a nicety: older Doxygen ships a div.fragment rule that outranks the theme's
+  # .fragment, so code blocks render without padding and the navigation tree breaks.
+  find_package(Doxygen 1.16 REQUIRED)
 
   # The package lives in src/vr while the guides live at the workspace root, so Doxygen needs
   # both roots rather than assuming one tree.

@@ -25,8 +25,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install doxygen
-        run: sudo apt-get update && sudo apt-get install -y doxygen
+      # Not apt: runners ship Doxygen 1.9.x, whose own stylesheet overrides the theme's code
+      # block padding and navigation tree styling. The theme is written against 1.16.
+      - name: Install doxygen ${{ env.DOXYGEN_VERSION }}
+        env:
+          DOXYGEN_VERSION: 1.16.1
+        run: |
+          url="https://github.com/doxygen/doxygen/releases/download"
+          curl -fsSL -o /tmp/doxygen.tar.gz \
+            "$url/Release_${DOXYGEN_VERSION//./_}/doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz"
+          mkdir -p /tmp/doxygen && tar -xzf /tmp/doxygen.tar.gz -C /tmp/doxygen
+          echo "DOXYGEN=/tmp/doxygen/doxygen-${DOXYGEN_VERSION}/bin/doxygen" >> "$GITHUB_ENV"
 
       # Deliberately not the CMake docs target: that needs ROS 2, MuJoCo and the KDL fork
       # configured first. This runs the same Doxyfile.in and fails on any doxygen warning.
