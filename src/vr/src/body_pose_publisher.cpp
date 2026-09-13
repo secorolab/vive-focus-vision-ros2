@@ -28,8 +28,7 @@ BodyPosePublisher::BodyPosePublisher(rclcpp::Node &node, const mjModel *model, S
     nbody_(static_cast<int>(model->nbody)),
     period_s_(conf_.rate_hz > 0.0 ? 1.0 / conf_.rate_hz : 0.0)
 {
-    /* Best effort: a dropped frame is replaced by the next one a frame-time later, and a queue
-     * would only add latency to a stream the client renders live. */
+    /* Best effort: a queue would only add latency to a stream the client renders live. */
     poses_pub_ = node.create_publisher<geometry_msgs::msg::PoseArray>(
       conf_.topic_ns + "/body_poses", rclcpp::SensorDataQoS());
 
@@ -58,9 +57,7 @@ BodyPosePublisher::BodyPosePublisher(rclcpp::Node &node, const mjModel *model, S
 bool BodyPosePublisher::wants_update(double sim_t) const
 {
     if (period_s_ > 0.0 && sim_t < next_due_s_) {
-        /* A reset rewinds sim time to zero. Without noticing that, the stream stalls until the
-         * simulation has run back up to the time of the last frame sent - which is silent, and
-         * looks exactly like the renderer having died. */
+        /* A reset rewinds sim time; without this the stream silently stalls until it catches up. */
         const bool rewound = sim_t + period_s_ < next_due_s_;
         if (!rewound) return false;
     }

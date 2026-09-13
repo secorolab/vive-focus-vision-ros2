@@ -131,9 +131,12 @@ export DOXYGEN=~/.local/opt/doxygen-1.16.1/bin/doxygen
 ```
 
 ```bash
-colcon build --packages-select vr --cmake-args -DBUILD_DOCS=ON
+colcon build --packages-select vr --cmake-args -DBUILD_DOCS=ON "-DDOXYGEN_EXECUTABLE=$DOXYGEN"
 cmake --build build/vr --target docs      # -> build/vr/docs/html/index.html
 ```
+
+`BUILD_DOCS` stays in the CMake cache, so a later plain `colcon build` will fail the version
+check unless the newer doxygen is still reachable. Turn it back off with `-DBUILD_DOCS=OFF`.
 
 `BUILD_DOCS` is off by default. Doxygen takes `include/` for the API and these guides as pages;
 the relative links between them resolve in both GitHub and the generated site.

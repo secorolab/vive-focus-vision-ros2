@@ -2,19 +2,11 @@
  * Copyright (c) 2026 Vamsi Kalagaturu
  * See LICENSE for details. */
 
-/* Turns what the headset reports into something the rest of the system can use.
+/* Raw in, clean out: /vr/raw/<x> -> /vr/<x>.
  *
- * Everything headset-specific lives here, so swapping the Unity client for another OpenXR client
- * changes this node and nothing downstream:
- *
- *   - calibration: the client publishes in vr_origin, its own play space, whose origin is
- *     wherever the guardian was drawn. This applies the vr_origin -> world transform and
- *     republishes in the world frame.
- *   - staleness: VIVE controllers keep reporting a valid tracked pose while lying on a table.
- *     A controller that has not moved is flagged inactive, so a consumer can refuse to act on a
- *     pose that is merely the last one seen.
- *
- * Raw in, clean out: /vr/raw/<x> -> /vr/<x>. */
+ * Everything headset-specific lives here, so another OpenXR client changes this node and nothing
+ * downstream: the vr_origin -> world calibration, and flagging a controller inactive because
+ * VIVE keeps reporting a tracked pose for one lying on a table. */
 
 #include <cmath>
 #include <memory>

@@ -13,8 +13,7 @@ permissions:
   pages: write
   id-token: write
 
-# A queued deploy should replace an older one rather than race it; an in-flight deploy is left
-# to finish so the site is never served half-written.
+# Never cancel mid-deploy: the site would be served half-written.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -25,9 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Not apt: runners ship Doxygen 1.9.x, whose own stylesheet overrides the theme's code
-      # block padding and navigation tree styling. The theme is written against 1.16.
-      - name: Install doxygen ${{ env.DOXYGEN_VERSION }}
+      # Not apt: runners ship 1.9.x, whose stylesheet outranks the theme's.
+      - name: Install doxygen
         env:
           DOXYGEN_VERSION: 1.16.1
         run: |
@@ -37,8 +35,6 @@ jobs:
           mkdir -p /tmp/doxygen && tar -xzf /tmp/doxygen.tar.gz -C /tmp/doxygen
           echo "DOXYGEN=/tmp/doxygen/doxygen-${DOXYGEN_VERSION}/bin/doxygen" >> "$GITHUB_ENV"
 
-      # Deliberately not the CMake docs target: that needs ROS 2, MuJoCo and the KDL fork
-      # configured first. This runs the same Doxyfile.in and fails on any doxygen warning.
       - name: Build documentation
         run: ./tools/build_docs.sh "${{ github.workspace }}/build/docs"
 

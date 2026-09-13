@@ -2,15 +2,8 @@
 // Copyright (c) 2026 Vamsi Kalagaturu
 // See LICENSE for details.
 //
-// Theme toggle for the generated documentation, matching the mj_kdl_wrapper docs.
-//
-// The stylesheet defines both palettes and switches on html[data-theme]; this only decides which
-// one is active. The choice is applied before DOMContentLoaded so a dark-mode reader does not get
-// a white flash on every page load.
-//
-// The wrapper's version of this file also rewrites KDL and Python API references in code blocks
-// into links. That is specific to a library whose API appears throughout its own examples, and is
-// deliberately not carried over.
+// Theme toggle for the generated docs. The stylesheet owns both palettes and switches on
+// html[data-theme]; this only picks one.
 
 (function () {
   "use strict";
@@ -56,7 +49,7 @@
     }
   }
 
-  // Before the DOM exists there is no button to update, but the attribute must already be set.
+  // Set before DOMContentLoaded, or dark-mode readers get a white flash on every page.
   applyTheme(currentTheme());
 
   if (document.readyState === "loading") {

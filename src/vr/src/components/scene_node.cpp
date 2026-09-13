@@ -2,16 +2,12 @@
  * Copyright (c) 2026 Vamsi Kalagaturu
  * See LICENSE for details. */
 
-/* Runs an MJCF world and streams it to the headset. Nothing about the headset's input reaches
- * here; that is InputNode's job.
+/* Runs an MJCF world and streams it to the headset; input is InputNode's job.
  *
- * The world is built through mj_kdl::Env rather than mj_loadXML, which is what makes the scene
- * composable (robots, attachments, floor, skybox, objects) and gives episode reset a single
- * correct implementation - reset() restores a keyframe and re-synchronises every registered
- * Robot's command ports, which a bare mj_resetData does not.
+ * Built through mj_kdl::Env rather than mj_loadXML for composable scenes and for reset(), which
+ * re-synchronises Robot command ports that a bare mj_resetData leaves stale.
  *
- * For a simulation an application already owns, use vr::BodyPosePublisher directly instead of
- * running this node; it takes only mjModel/mjData and pulls in no KDL. */
+ * A simulation an application already owns should use vr::BodyPosePublisher directly. */
 
 #include <chrono>
 #include <memory>
@@ -55,8 +51,7 @@ class SceneNode : public rclcpp::Node
             throw std::runtime_error("parameter 'model' (path to an MJCF file) is required");
         }
 
-        /* One MJCF is the degenerate scene: a single root with nothing attached. Composing more
-         * is a matter of adding RobotSpec / SceneObject entries here. */
+        /* One MJCF is the degenerate scene; composing more means more RobotSpec entries here. */
         mj_kdl::RobotSpec root;
         root.path = mjcf.c_str();
         spec_.robots.push_back(root);
@@ -109,8 +104,7 @@ class SceneNode : public rclcpp::Node
   private:
     void tick()
     {
-        /* Advance one publish period of simulated time, so the stream stays in step with the
-         * wall clock rather than running as fast as the machine allows. */
+        /* One publish period of sim time, so the stream tracks the wall clock. */
         const mjtNum target = env_.data->time + 1.0 / rate_hz_;
         while (env_.data->time < target) mj_step(env_.model, env_.data);
 
