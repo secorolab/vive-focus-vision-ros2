@@ -1,0 +1,1113 @@
+:root {
+  --vr-bg: #f7f8fb;
+  --vr-panel: #ffffff;
+  --vr-panel-soft: #eef2f6;
+  --vr-panel-hover: #e6edf4;
+  --vr-text: #17202a;
+  --vr-muted: #596779;
+  --vr-border: #d7dee8;
+  --vr-accent: #176b87;
+  --vr-accent-strong: #124d63;
+  --vr-link: #0b6683;
+  --vr-code-bg: #fafafa;
+  --vr-code-text: #383a42;
+  --vr-code-line: #383a42;
+  --vr-code-muted: #9ca3af;
+  --vr-code-keyword: #a626a4;
+  --vr-code-type: #c18401;
+  --vr-code-flow: #a626a4;
+  --vr-code-string: #50a14f;
+  --vr-code-comment: #a0a1a7;
+  --vr-code-preproc: #0184bb;
+  --vr-code-function: #4078f2;
+  --vr-code-class: #c18401;
+  --vr-code-namespace: #0184bb;
+  --vr-code-variable: #986801;
+  --vr-code-link: #4078f2;
+  --vr-code-number-bg: #f0f1f3;
+  --vr-inline-bg: #e4e8f0;
+  --vr-inline-text: #17202a;
+  --vr-selected: rgba(23, 107, 135, 0.12);
+  --vr-shadow: 0 8px 22px rgba(31, 44, 61, 0.08);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --vr-bg: #0d1217;
+  --vr-panel: #151b22;
+  --vr-panel-soft: #1c242d;
+  --vr-panel-hover: #24313b;
+  --vr-text: #edf3f8;
+  --vr-muted: #a9b7c5;
+  --vr-border: #303b46;
+  --vr-accent: #68c3df;
+  --vr-accent-strong: #9bddf0;
+  --vr-link: #78d0ec;
+  --vr-code-bg: #282c34;
+  --vr-code-text: #abb2bf;
+  --vr-code-line: #abb2bf;
+  --vr-code-muted: #4b5363;
+  --vr-code-keyword: #c678dd;
+  --vr-code-type: #e5c07b;
+  --vr-code-flow: #c678dd;
+  --vr-code-string: #98c379;
+  --vr-code-comment: #5c6370;
+  --vr-code-preproc: #e5c07b;
+  --vr-code-function: #61afef;
+  --vr-code-class: #e5c07b;
+  --vr-code-namespace: #56b6c2;
+  --vr-code-variable: #e06c75;
+  --vr-code-link: #61afef;
+  --vr-code-number-bg: #2c313a;
+  --vr-inline-bg: #232c38;
+  --vr-inline-text: #dde4ec;
+  --vr-selected: rgba(104, 195, 223, 0.16);
+  --vr-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+    --vr-bg: #0d1217;
+    --vr-panel: #151b22;
+    --vr-panel-soft: #1c242d;
+    --vr-panel-hover: #24313b;
+    --vr-text: #edf3f8;
+    --vr-muted: #a9b7c5;
+    --vr-border: #303b46;
+    --vr-accent: #68c3df;
+    --vr-accent-strong: #9bddf0;
+    --vr-link: #78d0ec;
+    --vr-code-bg: #282c34;
+    --vr-code-text: #abb2bf;
+    --vr-code-line: #abb2bf;
+    --vr-code-muted: #4b5363;
+    --vr-code-keyword: #c678dd;
+    --vr-code-type: #e5c07b;
+    --vr-code-flow: #c678dd;
+    --vr-code-string: #98c379;
+    --vr-code-comment: #5c6370;
+    --vr-code-preproc: #e5c07b;
+    --vr-code-function: #61afef;
+    --vr-code-class: #e5c07b;
+    --vr-code-namespace: #56b6c2;
+    --vr-code-variable: #e06c75;
+    --vr-code-link: #61afef;
+    --vr-code-number-bg: #2c313a;
+    --vr-inline-bg: #232c38;
+    --vr-inline-text: #dde4ec;
+    --vr-selected: rgba(104, 195, 223, 0.16);
+    --vr-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  }
+}
+
+html {
+  background: var(--vr-bg);
+}
+
+body,
+table,
+div,
+p,
+dl {
+  color: var(--vr-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  background: var(--vr-bg);
+  margin: 0;
+  line-height: 1.55;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body,
+#container,
+#doc-content {
+  background: var(--vr-bg) !important;
+}
+
+a,
+a:visited,
+.contents a:visited,
+.el,
+.elRef {
+  color: var(--vr-link);
+}
+
+a:hover {
+  color: var(--vr-accent-strong);
+  text-decoration: underline;
+}
+
+#top {
+  background: var(--vr-panel);
+  border-bottom: 1px solid var(--vr-border);
+  box-shadow: var(--vr-shadow);
+}
+
+#titlearea {
+  background: linear-gradient(90deg, var(--vr-panel), var(--vr-panel-soft));
+  border-bottom: 1px solid var(--vr-border);
+  padding: 12px 18px;
+}
+
+#projectrow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+#projectalign {
+  flex: 1;
+}
+
+#projectname {
+  color: var(--vr-text);
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+#projectnumber {
+  color: var(--vr-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+#projectbrief {
+  color: var(--vr-muted);
+  margin-top: 3px;
+}
+
+#themecontrols {
+  white-space: nowrap;
+}
+
+#vr-theme-toggle {
+  background: var(--vr-panel);
+  border: 1px solid var(--vr-border);
+  border-radius: 6px;
+  color: var(--vr-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 12px;
+}
+
+#vr-theme-toggle:hover {
+  border-color: var(--vr-accent);
+  color: var(--vr-accent-strong);
+}
+
+#main-nav,
+#main-menu,
+#navrow1,
+#navrow2,
+#navrow3,
+#navrow4,
+#nav-path,
+.sm,
+.sm-dox,
+.sm-dox ul,
+.sm-dox li,
+.tabs,
+.tabs2,
+.tabs3 {
+  background: var(--vr-panel) !important;
+  border-color: var(--vr-border) !important;
+  box-shadow: none !important;
+}
+
+#main-nav {
+  border-bottom: 1px solid var(--vr-border) !important;
+}
+
+.sm-dox a,
+.sm-dox a:focus,
+.sm-dox a:hover,
+.sm-dox a:active,
+.sm-dox a.highlighted {
+  background: var(--vr-panel) !important;
+  color: var(--vr-text) !important;
+  text-shadow: none !important;
+}
+
+.sm-dox a:hover,
+.sm-dox a.highlighted {
+  background: var(--vr-panel-hover) !important;
+  color: var(--vr-accent-strong) !important;
+}
+
+.tablist li,
+.tabs .tablist li,
+.tabs2 .tablist li,
+.tabs3 .tablist li {
+  background: transparent;
+}
+
+.tablist a,
+.tablist a:hover,
+.tablist a:visited {
+  color: var(--vr-text);
+  text-shadow: none;
+}
+
+.tablist a:hover,
+.tablist li.current a {
+  color: var(--vr-accent-strong);
+}
+
+.header {
+  background: var(--vr-bg) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--vr-border) !important;
+  margin: 0 !important;
+  padding: 18px 28px 12px !important;
+}
+
+.headertitle {
+  padding: 0 !important;
+}
+
+.header .title {
+  border: 0;
+  color: var(--vr-text) !important;
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+  padding: 0;
+}
+
+.contents {
+  background: var(--vr-panel);
+  border: 1px solid var(--vr-border);
+  border-radius: 8px;
+  box-shadow: var(--vr-shadow);
+  margin: 20px 28px 40px;
+  max-width: 1380px;
+  padding: 30px 34px;
+  width: calc(100% - 56px);
+}
+
+.contents h1,
+.contents h2,
+.contents h3,
+.contents h4,
+.title {
+  color: var(--vr-text);
+  letter-spacing: 0;
+}
+
+.title {
+  border-bottom: 1px solid var(--vr-border);
+  font-size: 1.9rem;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+}
+
+.memtitle,
+.memproto,
+.memdoc,
+.textblock,
+.memberdecls,
+.directory,
+.dyncontent,
+.fragment,
+div.line,
+div.line a,
+span.lineno {
+  color: var(--vr-text);
+}
+
+.memtitle,
+.memproto {
+  background: var(--vr-panel-soft);
+  border-color: var(--vr-border);
+}
+
+.memdoc,
+.memitem,
+.memberdecls,
+.directory {
+  background: var(--vr-panel);
+  border-color: var(--vr-border);
+}
+
+#container {
+  grid-template-columns: auto !important;
+  min-width: 0;
+  max-width: 100%;
+}
+
+#doc-content,
+.contents,
+.textblock,
+.memdoc,
+.memproto,
+.memitem,
+.memberdecls,
+.directory,
+.dyncontent {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#doc-content {
+  overflow-x: hidden !important;
+}
+
+#page-nav,
+#page-nav-tree,
+#page-nav-contents,
+#page-nav-resize-handle,
+div.toc {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  border: 0 !important;
+}
+
+.fragment,
+pre.fragment {
+  background: var(--vr-code-bg) !important;
+  color: var(--vr-code-text) !important;
+}
+
+code,
+tt,
+span.tt,
+.contents span.tt {
+  background: var(--vr-inline-bg) !important;
+  color: var(--vr-inline-text) !important;
+}
+
+/* Links inside inline code must stay readable — Doxygen's default lets the
+   link colour bleed through the coloured background making it hard to see. */
+code a,
+code a:visited,
+tt a,
+tt a:visited,
+span.tt a,
+span.tt a:visited {
+  color: var(--vr-link) !important;
+  text-decoration: underline !important;
+  text-decoration-color: var(--vr-border) !important;
+}
+
+code a:hover,
+tt a:hover,
+span.tt a:hover {
+  color: var(--vr-accent) !important;
+  text-decoration-color: var(--vr-accent) !important;
+}
+
+.fragment,
+pre.fragment {
+  border: 1px solid var(--vr-border);
+  border-radius: 7px;
+  padding: 12px 14px;
+}
+
+.fragment {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  overflow-x: auto;
+}
+
+pre.fragment,
+.fragment div.line {
+  color: var(--vr-code-line) !important;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace !important;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.fragment div.line a,
+.fragment div.line a:visited,
+.fragment a.code,
+.fragment a.code:visited,
+.fragment a.line,
+.fragment a.line:visited {
+  color: inherit !important;
+  text-decoration: none;
+}
+
+.fragment div.line a:hover,
+.fragment a.code:hover,
+.fragment a.line:hover {
+  color: var(--vr-accent-strong) !important;
+  text-decoration: underline;
+}
+
+span.keyword {
+  color: var(--vr-code-keyword) !important;
+  font-weight: 400;
+}
+
+span.keywordtype {
+  color: var(--vr-code-type) !important;
+  font-weight: 400;
+}
+
+span.keywordflow {
+  color: var(--vr-code-flow) !important;
+  font-weight: 400;
+}
+
+span.comment {
+  color: var(--vr-code-comment) !important;
+  font-style: normal;
+}
+
+span.preprocessor {
+  color: var(--vr-code-preproc) !important;
+}
+
+span.preprocessor a,
+span.preprocessor a:visited {
+  color: var(--vr-code-preproc) !important;
+}
+
+span.stringliteral,
+span.charliteral {
+  color: var(--vr-code-string) !important;
+}
+
+.fragment a.code.hl_function,
+.fragment a.code.hl_function:visited,
+.fragment a.code.hl_functionRef,
+.fragment a.code.hl_functionRef:visited,
+.fragment .ttname a,
+.fragment .ttname a:visited {
+  color: var(--vr-code-function) !important;
+}
+
+.fragment a.code.hl_class,
+.fragment a.code.hl_class:visited,
+.fragment a.code.hl_classRef,
+.fragment a.code.hl_classRef:visited,
+.fragment a.code.hl_struct,
+.fragment a.code.hl_struct:visited,
+.fragment a.code.hl_structRef,
+.fragment a.code.hl_structRef:visited,
+.fragment a.code.hl_typedef,
+.fragment a.code.hl_typedef:visited,
+.fragment a.code.hl_typedefRef,
+.fragment a.code.hl_typedefRef:visited,
+.fragment a.code.hl_enumeration,
+.fragment a.code.hl_enumeration:visited,
+.fragment a.code.hl_enumerationRef,
+.fragment a.code.hl_enumerationRef:visited {
+  color: var(--vr-code-class) !important;
+}
+
+.fragment a.code.hl_namespace,
+.fragment a.code.hl_namespace:visited,
+.fragment a.code.hl_namespaceRef,
+.fragment a.code.hl_namespaceRef:visited {
+  color: var(--vr-code-namespace) !important;
+}
+
+.fragment a.code.hl_variable,
+.fragment a.code.hl_variable:visited,
+.fragment a.code.hl_variableRef,
+.fragment a.code.hl_variableRef:visited {
+  color: var(--vr-code-variable) !important;
+}
+
+.fragment a.code.hl_enumvalue,
+.fragment a.code.hl_enumvalue:visited,
+.fragment a.code.hl_enumvalueRef,
+.fragment a.code.hl_enumvalueRef:visited {
+  color: var(--vr-code-type) !important;
+}
+
+.fragment .vr-hl-type {
+  color: var(--vr-code-class) !important;
+}
+
+.fragment .vr-hl-pyobject {
+  color: var(--vr-code-class) !important;
+}
+
+.fragment .vr-hl-pyfunction {
+  color: var(--vr-code-function) !important;
+}
+
+span.lineno,
+span.lineno a,
+span.lineno a:visited {
+  background: var(--vr-code-number-bg) !important;
+  border-right-color: var(--vr-border) !important;
+  color: var(--vr-code-muted) !important;
+}
+
+span.lineno a:hover {
+  background: var(--vr-panel-hover) !important;
+  color: var(--vr-accent-strong) !important;
+}
+
+span.fold.plus,
+span.fold.minus {
+  background: var(--vr-code-bg) !important;
+  border-color: var(--vr-border) !important;
+}
+
+span.fold.plus::before,
+span.fold.plus::after,
+span.fold.minus::before {
+  background: var(--vr-code-muted) !important;
+}
+
+code,
+tt,
+span.tt,
+.contents span.tt {
+  border: 1px solid var(--vr-border);
+  border-radius: 5px;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace !important;
+  font-size: 0.9em;
+  padding: 2px 6px;
+  white-space: break-spaces;
+}
+
+table.markdownTable,
+table.doxtable,
+table.directory {
+  border-collapse: collapse;
+  border: 1px solid var(--vr-border);
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  width: 100%;
+}
+
+table.markdownTable td,
+table.markdownTable th,
+table.doxtable td,
+table.doxtable th,
+table.directory td,
+table.directory th {
+  border: 1px solid var(--vr-border);
+  padding: 8px 10px;
+}
+
+table.markdownTable th,
+table.doxtable th,
+table.directory th {
+  background: var(--vr-panel-soft);
+  color: var(--vr-text);
+}
+
+table.markdownTable tr,
+table.doxtable tr,
+table.directory tr,
+table.directory tr.even,
+table.directory tr.odd,
+dl.classindex,
+dl.classindex.even,
+dl.classindex.odd {
+  background: var(--vr-panel) !important;
+  color: var(--vr-text) !important;
+}
+
+table.markdownTable tr:nth-child(even),
+table.doxtable tr:nth-child(even),
+table.directory tr.even,
+dl.classindex.even {
+  background: var(--vr-panel-soft) !important;
+}
+
+table.directory td.entry,
+table.directory td.desc,
+table.directory td.desc p,
+table.directory .levels,
+.classindex dd,
+.classindex dd a,
+.classindex dd a:visited {
+  color: var(--vr-text) !important;
+}
+
+table.directory td.desc {
+  color: var(--vr-muted) !important;
+}
+
+.memberdecls,
+.memproto,
+.memdoc,
+.directory {
+  overflow-x: auto;
+}
+
+.memItemLeft,
+.memItemRight,
+.memTemplParams,
+.mdescLeft,
+.mdescRight,
+.paramname,
+.fieldname,
+.fieldtype,
+.fielddoc,
+.mlabel,
+.el,
+.elRef,
+a.el,
+a.elRef {
+  overflow-wrap: anywhere;
+}
+
+table.directory .icona,
+table.directory .icon,
+table.directory .iconfolder,
+table.directory .icondoc {
+  color: var(--vr-text) !important;
+}
+
+#side-nav,
+#nav-tree,
+#nav-tree-contents {
+  background: var(--vr-panel) !important;
+  border-color: var(--vr-border) !important;
+}
+
+/* Nav-sync / tree-sync button: hardcoded light colours look broken on dark;
+   hide it entirely since it adds no value in most browsing flows. */
+#nav-sync,
+div.nav-sync-icon {
+  display: none !important;
+}
+
+#side-nav {
+  border-right: 1px solid var(--vr-border) !important;
+}
+
+#splitbar {
+  background: var(--vr-border) !important;
+}
+
+#nav-tree .selected,
+#nav-tree .selected a {
+  background: var(--vr-selected) !important;
+  color: var(--vr-accent-strong) !important;
+  text-shadow: none !important;
+}
+
+#nav-tree .selected {
+  border-left: 3px solid var(--vr-accent);
+  box-sizing: border-box;
+}
+
+#nav-tree a,
+#nav-tree a:visited {
+  color: var(--vr-text);
+}
+
+#nav-tree a:hover {
+  color: var(--vr-accent-strong);
+}
+
+#MSearchBox,
+#MSearchField,
+#MSearchSelectWindow,
+#MSearchResultsWindow {
+  background: var(--vr-panel) !important;
+  border-color: var(--vr-border) !important;
+  color: var(--vr-text) !important;
+}
+
+#MSearchBox {
+  border-radius: 7px;
+}
+
+#MSearchField {
+  color: var(--vr-text) !important;
+}
+
+.ah,
+.mlabel {
+  background: var(--vr-accent);
+  border-color: var(--vr-accent);
+  color: #ffffff;
+}
+
+#nav-path {
+  background: var(--vr-bg) !important;
+  border-top: 1px solid var(--vr-border) !important;
+  margin: 0 !important;
+}
+
+/* Make the ul a simple flex row. Doxygen's default is overflow:hidden +
+   height:30px + float:left items — all of which must be cleared. */
+#nav-path ul {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  background: var(--vr-bg) !important;
+  border: 0 !important;
+  height: auto !important;
+  min-height: 36px !important;
+  overflow: visible !important;
+  margin: 0 !important;
+  padding: 0 14px !important;
+  line-height: 1 !important;
+  font-size: 0.82rem !important;
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+}
+
+/* Navpath li elements are floated by Doxygen — cancel the float so they
+   become normal flex children. */
+.navpath li,
+.navpath li.footer {
+  float: none !important;
+  background: transparent !important;
+  color: var(--vr-muted) !important;
+  text-shadow: none !important;
+}
+
+/* Each breadcrumb segment: strip the 15px left-padding meant for the
+   parallelogram chevron layout. */
+#nav-path li.navelem {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+#nav-path li.navelem:first-child {
+  margin-left: 0 !important;
+}
+
+/* The link inside each segment: kill the -20px negative right-margin that
+   was used to interlock the chevron shapes. Without this override the items
+   run together. */
+#nav-path li.navelem a {
+  display: inline !important;
+  height: auto !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 10px 5px !important;
+  position: static !important;
+  top: auto !important;
+  color: var(--vr-muted) !important;
+  text-decoration: none !important;
+}
+
+#nav-path li.navelem a:hover {
+  color: var(--vr-text) !important;
+  text-decoration: underline !important;
+}
+
+/* Current page (last segment) gets full text colour. */
+#nav-path li.navelem:last-child a {
+  color: var(--vr-text) !important;
+  font-weight: 500 !important;
+}
+
+/* Separator between segments: a thin slash in muted colour.
+   The last segment gets no trailing separator. */
+#nav-path li.navelem::after {
+  content: '/' !important;
+  display: inline-block !important;
+  position: static !important;
+  width: auto !important;
+  height: auto !important;
+  transform: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: var(--vr-border) !important;
+  font-size: 0.95em !important;
+  padding: 0 2px !important;
+}
+
+#nav-path li.navelem:last-child::after {
+  display: none !important;
+}
+
+/* Doxygen footer (version string + logo) */
+.navpath li.footer {
+  font-size: 0.75rem !important;
+  padding: 0 !important;
+  margin-left: auto !important;
+}
+
+img.footer {
+  filter: grayscale(1);
+  opacity: 0.72;
+  vertical-align: middle;
+}
+
+html[data-theme="dark"] img.footer {
+  filter: grayscale(1) invert(1);
+  opacity: 0.65;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (max-width: 760px) {
+  #side-nav,
+  #splitbar {
+    display: none !important;
+    width: 0 !important;
+  }
+
+  #doc-content {
+    left: 0 !important;
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  #projectrow {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .contents {
+    border-left: 0;
+    border-radius: 0;
+    border-right: 0;
+    margin: 0;
+    padding: 18px;
+    width: 100%;
+  }
+
+  table.memberdecls,
+  table.memberdecls tbody,
+  table.memberdecls tr,
+  table.memberdecls td {
+    display: block;
+    width: 100% !important;
+  }
+
+  .memItemLeft,
+  .memItemRight,
+  .mdescLeft,
+  .mdescRight {
+    text-align: left !important;
+    white-space: normal !important;
+  }
+
+  .memItemLeft {
+    border-right: 1px solid var(--vr-border) !important;
+    border-bottom: 0 !important;
+    padding-right: 10px !important;
+  }
+
+  .memItemRight {
+    border-left: 1px solid var(--vr-border) !important;
+    padding-left: 10px !important;
+  }
+}
+
+/* --- Doxygen hardcoded-color overrides --- */
+
+/* Section headings (h2.groupheader) use white in box-shadow to cut the divider line
+   around text -- replace with panel color so it reads correctly on dark backgrounds. */
+h2.groupheader,
+td h2.groupheader {
+  box-shadow:
+    12px 0 var(--vr-panel),
+    -12px 0 var(--vr-panel),
+    12px 1px var(--vr-border),
+    -12px 1px var(--vr-border) !important;
+  color: var(--vr-text) !important;
+}
+
+div.groupHeader {
+  box-shadow:
+    13px 0 var(--vr-panel),
+    -13px 0 var(--vr-panel),
+    13px 1px var(--vr-border),
+    -13px 1px var(--vr-border) !important;
+  color: var(--vr-text) !important;
+}
+
+hr {
+  box-shadow:
+    13px 0 var(--vr-panel),
+    -13px 0 var(--vr-panel),
+    13px 1px var(--vr-border),
+    -13px 1px var(--vr-border) !important;
+}
+
+/* Member declaration table cells — border colours from Doxygen's default
+   (#D5DDEC) are near-white and invisible on dark; override all four sides. */
+.memItemLeft,
+.memItemRight,
+.memTemplParams {
+  background-color: var(--vr-panel-hover) !important;
+  color: var(--vr-text) !important;
+  border-color: var(--vr-border) !important;
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
+
+.mdescLeft,
+.mdescRight {
+  background-color: var(--vr-panel) !important;
+  color: var(--vr-muted) !important;
+  border-color: var(--vr-border) !important;
+}
+
+/* a.el / a.code / a.line are the cross-reference links Doxygen injects into
+   member tables and inline text. The default colour (#3D578C) is a mid-blue
+   that is near-invisible on dark panel-hover backgrounds. */
+a.el,
+a.el:visited,
+a.code,
+a.code:visited,
+a.line,
+a.line:visited {
+  color: var(--vr-link) !important;
+}
+
+a.el:hover,
+a.code:hover,
+a.line:hover {
+  color: var(--vr-accent) !important;
+}
+
+tr[class^='memdesc'] {
+  box-shadow: none !important;
+}
+
+/* memtitle connector tab */
+.memtitle::after {
+  background: var(--vr-panel-soft) !important;
+}
+
+/* Tree-view arrowheads */
+span.arrowhead {
+  border-right-color: var(--vr-border) !important;
+  border-bottom-color: var(--vr-border) !important;
+}
+
+.selected span.arrowhead {
+  border-right-color: var(--vr-accent) !important;
+  border-bottom-color: var(--vr-accent) !important;
+}
+
+.arrow {
+  color: var(--vr-muted) !important;
+}
+
+/* Permalink diamond (U+25C6) in memtitle */
+.permalink a,
+.permalink a:visited {
+  color: var(--vr-border) !important;
+}
+
+.permalink a:hover {
+  color: var(--vr-accent) !important;
+}
+
+/* Note/remark blocks: Doxygen defaults to amber (#faf3d8 / #f3a600) which
+   reads as a warning. Replace with a calm informational blue. */
+dl.note,
+dl.remark {
+  background: #e8f4fd !important;
+  border-left-color: #2a7fba !important;
+  color: #1a3a5c !important;
+}
+
+dl.note dt,
+dl.remark dt {
+  color: #2a7fba !important;
+}
+
+html[data-theme="dark"] dl.note,
+html[data-theme="dark"] dl.remark {
+  background: #0d1e2e !important;
+  border-left-color: var(--vr-accent) !important;
+  color: #c0d8ec !important;
+}
+
+html[data-theme="dark"] dl.note dt,
+html[data-theme="dark"] dl.remark dt {
+  color: var(--vr-accent) !important;
+}
+
+/* Nav dropdown sub-arrow: replace CSS diamond with FontAwesome chevrons.
+   Use inline-flex on the container so the icon is always perfectly centred. */
+@media (min-width: 768px) {
+  .sm-dox a span.sub-arrow {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 14px !important;
+    height: 14px !important;
+    background: transparent !important;
+    border: none !important;
+    transform: none !important;
+    overflow: visible !important;
+    top: 50% !important;
+    margin-top: -7px !important;
+    right: 6px !important;
+    border-radius: 0 !important;
+  }
+
+  .sm-dox a span.sub-arrow::before {
+    content: '\f078' !important;
+    font-family: 'Font Awesome 6 Free' !important;
+    font-weight: 900 !important;
+    font-size: 9px !important;
+    line-height: 1 !important;
+    color: var(--vr-muted) !important;
+  }
+
+  .sm-dox a.highlighted span.sub-arrow::before {
+    content: '\f077' !important;
+    color: var(--vr-accent) !important;
+  }
+
+  /* Nested side-submenu arrows */
+  .sm-dox ul a span.sub-arrow {
+    transform: none !important;
+  }
+
+  .sm-dox ul a span.sub-arrow::before {
+    content: '\f054' !important;
+    color: var(--vr-muted) !important;
+  }
+
+  .sm-dox ul a:hover span.sub-arrow::before {
+    color: var(--vr-accent) !important;
+  }
+
+  /* Dropdown caret pointer above submenu panel */
+  .sm-dox > li > ul::before {
+    border-color: transparent transparent var(--vr-border) transparent !important;
+  }
+
+  .sm-dox > li > ul::after {
+    border-color: transparent transparent var(--vr-panel) transparent !important;
+  }
+
+  .sm-dox ul {
+    background: var(--vr-panel) !important;
+    border-color: var(--vr-border) !important;
+  }
+
+  .sm-dox ul a,
+  .sm-dox ul a:hover,
+  .sm-dox ul a:focus,
+  .sm-dox ul a:active {
+    background-color: transparent !important;
+    color: var(--vr-text) !important;
+  }
+
+  .sm-dox ul a:hover {
+    background-color: var(--vr-panel-hover) !important;
+  }
+}

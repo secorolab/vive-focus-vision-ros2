@@ -49,6 +49,13 @@ WARN_NO_PARAMDOC       = NO
 
 GENERATE_HTML          = YES
 HTML_OUTPUT            = html
+
+# Same theme as the mj_kdl_wrapper docs: light/dark palettes in the stylesheet, switched by a
+# toggle in the header. HTML_COLORSTYLE stays LIGHT because the stylesheet owns dark mode.
+HTML_HEADER            = @VR_DOXYGEN_SOURCE_ROOT@/docs/doxygen/custom/header.html
+HTML_EXTRA_STYLESHEET  = @VR_DOXYGEN_SOURCE_ROOT@/docs/doxygen/custom/vr-doxygen.css
+HTML_EXTRA_FILES       = @VR_DOXYGEN_SOURCE_ROOT@/docs/doxygen/custom/vr-doxygen.js
+
 GENERATE_TREEVIEW      = YES
 DISABLE_INDEX          = NO
 FULL_SIDEBAR           = NO
