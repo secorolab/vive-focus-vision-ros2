@@ -1,0 +1,22 @@
+# ROS 2 / colcon
+build/
+install/
+log/
+compile_commands.json
+
+# Unity: generated, machine-specific, or huge
+unity/VrRos/Library/
+unity/VrRos/Temp/
+unity/VrRos/Logs/
+unity/VrRos/UserSettings/
+unity/VrRos/Build/
+unity/VrRos/.utmp/
+unity/VrRos/*_BurstDebugInformation_DoNotShip/
+
+# VIVE OpenXR UPM tarball, 361 MB: fetch from
+# https://github.com/ViveSoftware/VIVE-OpenXR-Unity/releases instead of committing it
+unity/VrRos/vendor/
+
+# exported scenes are build artefacts of scene_export
+/tmp/vr_scene/
+/tmp/vr_robot/
