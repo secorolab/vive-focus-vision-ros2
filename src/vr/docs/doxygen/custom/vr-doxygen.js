@@ -26,7 +26,7 @@
     document.documentElement.setAttribute("data-theme", theme);
     var button = document.getElementById("vr-theme-toggle");
     if (button) {
-      button.textContent = theme === "dark" ? "Light" : "Dark";
+      button.textContent = theme === "dark" ? "☀" : "☾";
       button.setAttribute(
         "aria-label",
         "Switch to " + (theme === "dark" ? "light" : "dark") + " mode"

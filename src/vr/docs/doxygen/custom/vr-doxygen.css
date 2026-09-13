@@ -185,19 +185,32 @@ a:hover {
   margin-top: 3px;
 }
 
+/* The title cell absorbs the slack so the toggle is pushed to the right edge. */
+#titlearea table {
+  width: 100%;
+}
+
+#projectalign {
+  width: 100%;
+}
+
 #themecontrols {
   white-space: nowrap;
+  text-align: right;
+  padding-right: 16px;
 }
 
 #vr-theme-toggle {
-  background: var(--vr-panel);
+  background: transparent;
   border: 1px solid var(--vr-border);
-  border-radius: 6px;
-  color: var(--vr-text);
+  border-radius: 4px;
+  color: var(--vr-muted);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.9rem;
-  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  padding: 0;
 }
 
 #vr-theme-toggle:hover {
@@ -690,9 +703,18 @@ div.nav-sync-icon {
   background: var(--vr-border) !important;
 }
 
+#nav-tree .selected {
+  background: var(--vr-selected) !important;
+}
+
+/* The row already carries the highlight; tinting the anchor too stacks a second, denser box
+   around the text. */
+#nav-tree .selected a {
+  background: transparent !important;
+}
+
 #nav-tree .selected,
 #nav-tree .selected a {
-  background: var(--vr-selected) !important;
   color: var(--vr-accent-strong) !important;
   text-shadow: none !important;
 }
@@ -702,16 +724,13 @@ div.nav-sync-icon {
   box-sizing: border-box;
 }
 
-/* Leaf entries get an inline width from navtree.js, parents only a padding, and at the top
-   level that leaves the arrowhead sitting on the label. */
+/* navtree indents parents with padding-left on top of a 16px width, which the global
+   border-box collapses to a zero-width content area and drops the arrowhead on the label. */
 #nav-tree .arrow {
-  display: inline-block;
-  min-width: 16px;
+  box-sizing: content-box;
+  display: inline-flex;
+  align-items: center;
   margin-right: 4px;
-  vertical-align: middle;
-}
-
-#nav-tree .arrowhead {
   vertical-align: middle;
 }
 
@@ -722,6 +741,35 @@ div.nav-sync-icon {
 
 #nav-tree a:hover {
   color: var(--vr-accent-strong);
+}
+
+/* search.css hardcodes black for the dropdown items and blue for result symbols. */
+a.SelectItem,
+a.SelectItem:focus,
+a.SelectItem:active {
+  color: var(--vr-text) !important;
+}
+
+a.SelectItem:hover {
+  color: var(--vr-panel) !important;
+  background-color: var(--vr-accent) !important;
+}
+
+span.SelectionMark {
+  color: var(--vr-accent) !important;
+}
+
+.SRSymbol,
+a.SRScope,
+a.SRScope:visited,
+.SRPage .SRStatus {
+  color: var(--vr-link) !important;
+}
+
+.SRResult .SRPage,
+#MSearchResults,
+#MSearchResults .SRResult {
+  color: var(--vr-text) !important;
 }
 
 #MSearchBox,

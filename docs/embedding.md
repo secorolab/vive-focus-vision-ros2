@@ -4,7 +4,7 @@
 add VR output to an application that already owns a simulation — for that, use the class it is
 built on.
 
-## `vr::BodyPosePublisher`
+## The publisher class
 
 A state sink, not a simulator. It creates no node, no executor and no thread, owns no `mjData`,
 and never steps anything. It links **MuJoCo only, not KDL**, so it costs an application nothing
@@ -52,7 +52,7 @@ target_link_libraries(my_app PRIVATE vr::vr_scene)
   `vr::InputNode`, which runs independently and knows nothing about MuJoCo.
 - It does not export geometry. Run `scene_export` once for the model; see [Running](run.md).
 
-## When to use `SceneNode` instead
+## When to use the scene component instead
 
 When there is no application yet — inspecting a model, checking an export, or bringing the
 headset up. It adds a simulation loop, `mj_kdl::Env` scene building and the `/vr_scene/reset`

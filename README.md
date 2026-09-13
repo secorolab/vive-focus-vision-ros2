@@ -52,21 +52,4 @@ The PC side works and is verified by running it. **Nothing has run on the headse
 [Testing](docs/testing.md) for which claims rest on evidence, and
 [First run](docs/bringup.md) for the on-device checklist.
 
-## Layout
-
-```
-src/vr/                        one package, composable nodes
-  msg/EyeGaze.msg              the only custom type, because ROS 2 has no gaze message
-  config/vr.yaml               every topic, frame, rate and the calibration
-  include/vr/, src/            BodyPosePublisher, glTF writer, geom tessellation, scene_export
-  src/components/              vr::SceneNode, vr::InputNode
-  launch/vr.launch.py
-unity/VrRos/Assets/            the headset client; see docs/unity.md
-tools/
-  fetch_vive_plugin.sh         downloads the untracked VIVE OpenXR tarball
-  fake_headset.py              stands in for the client; exercises every topic both ways
-  check_glb.py                 structural validation of an exported .glb
-docs/
-```
-
 MIT licensed.
