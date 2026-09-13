@@ -702,6 +702,19 @@ div.nav-sync-icon {
   box-sizing: border-box;
 }
 
+/* Leaf entries get an inline width from navtree.js, parents only a padding, and at the top
+   level that leaves the arrowhead sitting on the label. */
+#nav-tree .arrow {
+  display: inline-block;
+  min-width: 16px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+#nav-tree .arrowhead {
+  vertical-align: middle;
+}
+
 #nav-tree a,
 #nav-tree a:visited {
   color: var(--vr-text);

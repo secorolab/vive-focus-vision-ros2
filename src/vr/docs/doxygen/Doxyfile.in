@@ -14,9 +14,10 @@ CREATE_SUBDIRS         = NO
 ALLOW_UNICODE_NAMES    = YES
 OUTPUT_LANGUAGE        = English
 
+# docs/index.md is the entry point when reading the guides on GitHub; here README.md is already
+# the main page and the two would appear as duplicate "vr" nodes in the tree.
 INPUT                  = @VR_DOXYGEN_SOURCE_ROOT@/include \
                          @VR_DOXYGEN_DOCS_ROOT@/README.md \
-                         @VR_DOXYGEN_DOCS_ROOT@/docs/index.md \
                          @VR_DOXYGEN_DOCS_ROOT@/docs/install.md \
                          @VR_DOXYGEN_DOCS_ROOT@/docs/run.md \
                          @VR_DOXYGEN_DOCS_ROOT@/docs/interfaces.md \

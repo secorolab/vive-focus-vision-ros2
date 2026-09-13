@@ -35,8 +35,6 @@ ros2 launch vr vr.launch.py \
 
 ## Documentation
 
-Start at [docs/index.md](docs/index.md).
-
 - [Installation](docs/install.md) — workspace dependencies, ROS build, Unity editor and licence
 - [Running](docs/run.md) — export a world, launch the stack, what should appear
 - [Interfaces](docs/interfaces.md) — topics, TF frames, `Joy` layout, `vr/EyeGaze`, frame conventions
