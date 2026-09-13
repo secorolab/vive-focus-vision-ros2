@@ -127,4 +127,18 @@ cmake --build build/vr --target docs      # -> build/vr/docs/html/index.html
 `BUILD_DOCS` is off by default. Doxygen takes `include/` for the API and these guides as pages;
 the relative links between them resolve in both GitHub and the generated site.
 
+Without configuring the ROS package at all — what CI uses, and faster locally:
+
+```bash
+./tools/build_docs.sh            # -> build/docs/docs/html/index.html
+```
+
+It substitutes the same `Doxyfile.in`, so the two paths cannot drift, and **fails on any doxygen
+warning** — a broken reference or a page missing from `INPUT` is otherwise a silent hole in the
+published site.
+
+`.github/workflows/docs.yml` publishes to GitHub Pages on every push to `main` and `dev`, and
+builds (without publishing) on pull requests. Both branches publish to the same site, so
+whichever runs last wins.
+
 Next: [Running](run.md), or [The Unity client](unity.md) to build the APK.

@@ -1,0 +1,50 @@
+name: docs
+
+# Deploys from dev as well as main for now, so the published site tracks work in progress.
+# Both branches publish to the same Pages site: whichever runs last wins.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A queued deploy should replace an older one rather than race it; an in-flight deploy is left
+# to finish so the site is never served half-written.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doxygen
+        run: sudo apt-get update && sudo apt-get install -y doxygen
+
+      # Deliberately not the CMake docs target: that needs ROS 2, MuJoCo and the KDL fork
+      # configured first. This runs the same Doxyfile.in and fails on any doxygen warning.
+      - name: Build documentation
+        run: ./tools/build_docs.sh "${{ github.workspace }}/build/docs"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/docs/docs/html
+
+  deploy:
+    # Pull requests build the docs as a check but must not publish them.
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
