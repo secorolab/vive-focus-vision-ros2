@@ -108,8 +108,49 @@ transparent geoms are skipped, matching what MuJoCo's own renderer shows.
 
 ## Unity side
 
+### Setup from a fresh clone
+
+The VIVE OpenXR plugin is a 361 MB tarball and is deliberately **not** in git. `manifest.json`
+references it by relative path, so Unity cannot open the project until it is fetched:
+
+```bash
+./tools/fetch_vive_plugin.sh          # -> unity/VrRos/vendor/com.htc.upm.vive.openxr-2.5.1.tgz
+```
+
+Idempotent and checksum-pinned; re-running it on a good file does nothing. Set
+`VIVE_OPENXR_VERSION` to fetch a different release, then point `manifest.json` at the new
+filename. Everything else — packages, scene, Android settings — is in the repo and resolves on
+first open.
+
+The other prerequisites are Unity Hub, a Unity 6 editor with Android Build Support, and a Unity
+licence; see *Editor and licence* below.
+
 **The project is already created and configured.** It lives in `unity/VrRos/` and was set up
 headlessly; the sections below record how, so it can be rebuilt or changed without guesswork.
+
+### Editor and licence
+
+Unity Hub comes from Unity's own apt repo:
+
+```bash
+sudo install -d /etc/apt/keyrings
+curl -fsSL https://hub.unity3d.com/linux/keys/public \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/unityhub.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/unityhub.gpg] \
+https://hub.unity3d.com/linux/repos/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/unityhub.list
+sudo apt update && sudo apt install unityhub
+```
+
+The editor and its Android modules install from the CLI:
+
+```bash
+unityhub --headless install --version 6000.0.83f1 \
+  --module android android-sdk-ndk-tools android-open-jdk --childModules
+```
+
+The licence cannot be done headlessly: open Unity Hub, sign in, take a **Personal** licence. Until
+that is done the editor refuses to open a project.
 
 Installed on this machine:
 
@@ -175,15 +216,13 @@ that `m_Enabled` (capital E) is MonoBehaviour's own field and means something el
 
 ### VIVE plugin
 
-Vendored as a UPM tarball in `unity/VrRos/vendor/` and referenced from `manifest.json` by
-relative path, so opening the project resolves it with no installer step. To move to a newer
-version, drop the new `.tgz` from
-[the releases](https://github.com/ViveSoftware/VIVE-OpenXR-Unity/releases) beside it and update
-the path. The `.unitypackage` on that page is *not* the plugin — it is a 2 KB bootstrap script
-that downloads it, and is unnecessary here.
+Fetched by `tools/fetch_vive_plugin.sh` into `unity/VrRos/vendor/` and referenced from
+`manifest.json` by relative path, so opening the project resolves it with no installer step. The
+tarball is untracked (361 MB) — it is a redistributable release artefact, so it belongs in a
+setup step, not in history.
 
-`vendor/` is 361 MB — exclude it if this workspace ever becomes a git repo, along with
-`unity/VrRos/{Library,Temp,Logs,Build,UserSettings}`.
+The `.unitypackage` on [the releases page](https://github.com/ViveSoftware/VIVE-OpenXR-Unity/releases)
+is *not* the plugin — it is a 2 KB bootstrap script that downloads it, and is unnecessary here.
 
 ## Next: first run on the headset
 
@@ -253,6 +292,7 @@ unity/VrRos/
   vendor/                  VIVE OpenXR 2.5.1 UPM tarball (361 MB)
   Build/VrRos.apk          38 MB, ARM64
 tools/
+  fetch_vive_plugin.sh     downloads the untracked VIVE OpenXR tarball
   fake_headset.py          stands in for the client; exercises every topic both ways
   check_glb.py             structural validation of an exported .glb
 ```

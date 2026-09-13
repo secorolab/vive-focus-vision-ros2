@@ -13,8 +13,8 @@ unity/VrRos/Build/
 unity/VrRos/.utmp/
 unity/VrRos/*_BurstDebugInformation_DoNotShip/
 
-# VIVE OpenXR UPM tarball, 361 MB: fetch from
-# https://github.com/ViveSoftware/VIVE-OpenXR-Unity/releases instead of committing it
+# VIVE OpenXR UPM tarball, 361 MB: a redistributable release artefact, so it is a setup step.
+# Run tools/fetch_vive_plugin.sh to get it.
 unity/VrRos/vendor/
 
 # exported scenes are build artefacts of scene_export
