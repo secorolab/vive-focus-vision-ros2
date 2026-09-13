@@ -45,8 +45,23 @@ VrRos                   VrConfig, RosBridge, ClockSync, VrInputPublisher,
 | `VrInputPublisher` | head and controller grip poses, buttons and axes |
 | `HandPublisher` | 26 joints per hand via `XRHandSubsystem` |
 | `GazePublisher` | per-eye gaze and pupil via `ViveEyeTracker` |
-| `SceneLoader` | `<out>/scene` → HTTP fetch → glTFast → one holder per body |
+| `SceneLoader` | `<out>/scene` → HTTP fetch → glTFast → one holder per body, plus the ground |
 | `BodyPoseApplier` | `<out>/body_poses` → transforms |
+| `VrLocomotion` | stick locomotion and the spawn point |
+
+### Moving around
+
+The left stick glides along the direction the user is looking, flattened so pitching the head
+does not fly the rig into the floor; the right stick turns in 45° steps; the face buttons raise
+and lower. Turning is snapped rather than smooth because continuous yaw is the main cause of
+motion sickness.
+
+This is read through `UnityEngine.XR.InputDevices` like the rest of the client rather than the XR
+Interaction Toolkit's locomotion providers, so there is one input path and no action assets to
+keep in sync.
+
+Because the rig moves, every published pose is transformed by it before being sent — a device
+pose alone is in tracking space and would ignore where the user walked to.
 
 ### Vendor-neutral input
 
@@ -70,6 +85,33 @@ separator would otherwise emit JSON that is not JSON.
 
 The WebSocket receive loop runs on a background task and pushes raw frames into a
 `ConcurrentQueue`. Handlers run in `Update`, on the main thread, because they touch `Transform`s.
+
+## Checking a world without a headset
+
+`VrScenePreview` imports an exported `.glb` and either renders it to a PNG or saves it as a scene
+to open:
+
+```bash
+DISPLAY=:0 VR_GLB=/tmp/vr_robot/scene.glb VR_PNG=~/out.png \
+  $UNITY -batchmode -quit -projectPath unity/VrRos -executeMethod VrScenePreview.Render
+```
+
+`-nographics` cannot be used: it disables the graphics device, so the camera renders nothing and
+the PNG comes out blank.
+
+With an Editor open, the Unity CLI drives it directly, which is faster and shows the real thing:
+
+```bash
+unity status                                     # look for state "ready"
+unity command open_scene --path Assets/Scenes/Preview.unity
+unity command capture_game_view --width 1280 --height 800 --save_path Temp/shot.png
+```
+
+This needs `com.unity.pipeline` in the project (`unity pipeline install`, already done) and an
+Editor that has focused at least once since. Capture paths must be inside the project.
+
+Bear in mind the Editor scene is not the headset: it has its own lighting environment, so
+brightness there says little about what VR will look like.
 
 ## Deploying
 

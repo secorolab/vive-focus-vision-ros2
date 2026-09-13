@@ -36,7 +36,10 @@ namespace VrRos
         public float rateHz = 60f;
 
         public string rawNs = "/vr/raw";
-        public string frameId = "vr_origin";
+        public string frameId = "world";
+
+        [Tooltip("The XR rig, which maps tracking space into the world the scene is drawn in")]
+        public Transform rig;
 
         private readonly StringBuilder _sb = new StringBuilder(4096);
         private readonly List<XRHandSubsystem> _subsystems = new List<XRHandSubsystem>();
@@ -49,7 +52,7 @@ namespace VrRos
             if (config != null && config.Active != null)
             {
                 rawNs = config.Active.rawNs;
-                frameId = config.Active.originFrame;
+                frameId = config.Active.frameId;
                 rateHz = config.Active.handRateHz;
             }
         }
@@ -107,6 +110,11 @@ namespace VrRos
                 {
                     p = pose.position;
                     q = pose.rotation;
+                    if (rig != null)
+                    {
+                        p = rig.TransformPoint(p);
+                        q = rig.rotation * q;
+                    }
                 }
 
                 Vector3 rp = FrameConv.UnityToRos(p);

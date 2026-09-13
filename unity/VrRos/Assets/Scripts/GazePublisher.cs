@@ -33,7 +33,10 @@ namespace VrRos
         public float rateHz = 60f;
 
         public string rawNs = "/vr/raw";
-        public string frameId = "vr_origin";
+        public string frameId = "world";
+
+        [Tooltip("The XR rig, which maps tracking space into the world the scene is drawn in")]
+        public Transform rig;
 
         private readonly StringBuilder _sb = new StringBuilder(1024);
         private ViveEyeTracker _feature;
@@ -45,7 +48,7 @@ namespace VrRos
             if (config != null && config.Active != null)
             {
                 rawNs = config.Active.rawNs;
-                frameId = config.Active.originFrame;
+                frameId = config.Active.frameId;
                 rateHz = config.Active.gazeRateHz;
             }
 
@@ -112,13 +115,18 @@ namespace VrRos
         {
             // XrPosef is already right-handed Y-up like Unity's XR space, so the same conversion
             // used for controller poses applies.
-            Vector3 p = FrameConv.UnityToRos(new Vector3(gaze.gazePose.position.x,
-                                                         gaze.gazePose.position.y,
-                                                         gaze.gazePose.position.z));
-            Quaternion q = FrameConv.UnityToRos(new Quaternion(gaze.gazePose.orientation.x,
-                                                               gaze.gazePose.orientation.y,
-                                                               gaze.gazePose.orientation.z,
-                                                               gaze.gazePose.orientation.w));
+            Vector3 up = new Vector3(gaze.gazePose.position.x, gaze.gazePose.position.y,
+                                     gaze.gazePose.position.z);
+            Quaternion uq = new Quaternion(gaze.gazePose.orientation.x, gaze.gazePose.orientation.y,
+                                           gaze.gazePose.orientation.z, gaze.gazePose.orientation.w);
+            if (rig != null)
+            {
+                up = rig.TransformPoint(up);
+                uq = rig.rotation * uq;
+            }
+
+            Vector3 p = FrameConv.UnityToRos(up);
+            Quaternion q = FrameConv.UnityToRos(uq);
             _sb.Append('"').Append(field).Append("\":{\"position\":{\"x\":").Append(F(p.x))
                .Append(",\"y\":").Append(F(p.y)).Append(",\"z\":").Append(F(p.z))
                .Append("},\"orientation\":{\"x\":").Append(F(q.x)).Append(",\"y\":").Append(F(q.y))

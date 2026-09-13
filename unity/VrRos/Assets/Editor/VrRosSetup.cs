@@ -62,6 +62,7 @@ public static class VrRosSetup
             Debug.LogError("VrRosSetup: could not create an XR Origin (VR) — is XR Interaction "
                            + "Toolkit installed?");
         }
+        GameObject xrOrigin = GameObject.Find("XR Origin (VR)");
 
         var root = new GameObject("VrRos");
         var cfg = root.AddComponent<VrConfig>();
@@ -94,6 +95,25 @@ public static class VrRosSetup
         poses.config = cfg;
         loader.bridge = bridge;
         loader.config = cfg;
+        if (xrOrigin != null)
+        {
+            var locomotion = xrOrigin.AddComponent<VrLocomotion>();
+            locomotion.rig = xrOrigin.transform;
+            locomotion.head = xrOrigin.GetComponentInChildren<Camera>();
+            locomotion.config = cfg;
+
+            /* Every publisher needs the rig: tracking-space poses alone would not say where the
+             * user has walked to. */
+            input.rig = xrOrigin.transform;
+            hands.rig = xrOrigin.transform;
+            gaze.rig = xrOrigin.transform;
+        }
+        else
+        {
+            Debug.LogWarning("VrRosSetup: no XR Origin found, so locomotion was not added and "
+                             + "published poses will ignore where the user walked");
+        }
+
         hands.bridge = bridge;
         hands.clock = clock;
         hands.config = cfg;

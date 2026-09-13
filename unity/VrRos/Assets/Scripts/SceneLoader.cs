@@ -36,6 +36,12 @@ namespace VrRos
         [Tooltip("Rotation reconciling glTFast's import flip with the live pose convention")]
         public Vector3 gltfCorrectionEuler = new Vector3(0f, 90f, 0f);
 
+        [Tooltip("Draw a ground plane; scene_export leaves MuJoCo's unbounded floor out")]
+        public bool drawGround = true;
+
+        public float groundSize = 40f;
+        public Material groundMaterial;
+
         /// <summary>Body holders, indexed to match /vr/body_poses. Null where a body has no geometry.</summary>
         public Transform[] Bodies { get; private set; } = new Transform[0];
 
@@ -47,6 +53,23 @@ namespace VrRos
         {
             if (config != null && config.Active != null) outNs = config.Active.outNs;
             bridge.Subscribe($"{outNs}/scene", "std_msgs/msg/String", OnScene);
+            if (drawGround) CreateGround();
+        }
+
+        /// <summary>
+        /// A floor the renderer draws properly, instead of the tens of thousands of baked quads
+        /// an unbounded MuJoCo ground plane would become. It is scene dressing, not simulated
+        /// geometry: contact still happens in MuJoCo against the real plane.
+        /// </summary>
+        private void CreateGround()
+        {
+            var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            ground.name = "Ground";
+            ground.transform.SetParent(transform, false);
+            ground.transform.localScale = Vector3.one * (groundSize / 10f); // Unity's plane is 10 m
+            Destroy(ground.GetComponent<Collider>()); // nothing here is physically simulated
+
+            if (groundMaterial != null) ground.GetComponent<Renderer>().material = groundMaterial;
         }
 
         private void OnScene(JObject msg)
@@ -138,10 +161,21 @@ namespace VrRos
                 }
             }
 
+            /* Whatever is left is scene dressing the manifest does not list - the sky dome and
+             * the exported lights. It stays, parented to this object, instead of being destroyed
+             * along with the import root. */
+            int kept = 0;
+            while (importRoot.childCount > 0)
+            {
+                Transform extra = importRoot.GetChild(0);
+                extra.SetParent(transform, true);
+                kept++;
+            }
+
             Destroy(importRoot.gameObject);
             Bodies = holders;
             Loaded = true;
-            Debug.Log($"scene: loaded {url} with {holders.Length} bodies");
+            Debug.Log($"scene: loaded {url} with {holders.Length} bodies and {kept} other nodes");
         }
     }
 }

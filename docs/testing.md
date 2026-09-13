@@ -5,6 +5,7 @@
 ```bash
 python3 tools/fake_headset.py --seconds 10     # with the stack running
 python3 tools/fake_headset.py --still          # exercises the inactive branch
+python3 tools/fake_grab.py --body 2            # pinches an object and checks it rises
 python3 tools/check_glb.py /tmp/vr_robot/scene.glb
 ```
 
@@ -34,6 +35,8 @@ Measured by running the system, not inferred from a successful build:
 | Hand joints become a correct skeleton | 26 frames per hand at 57 Hz, every parent link verified with `view_frames` |
 | Gaze survives calibration | `frame_id: world`, both eyes, pupil data intact |
 | Stream survives a reset | 58.8 Hz before, 60.0 Hz after `/vr_scene/reset` |
+| Grabbing lifts an object | scripted pinch caught `cube`, which rose from z=0.030 to z=0.375 and stayed |
+| An exported world renders assembled | the Kinova arm, imported into Unity from the `.glb` alone |
 
 The pose test uses three distinct translation components and a non-identity rotation
 specifically so that a transposed axis or a dropped sign cannot pass unnoticed.
@@ -51,6 +54,22 @@ Be precise about this, because a green build is misleading here.
   not the same as knowing none is needed.
 - **Anything about how it feels.** Latency, jitter, comfort, whether 60 Hz body poses look smooth
   in a headset — all unmeasured.
+
+## Bugs these tests caught
+
+Each of these was silent — the system kept running and looked plausible.
+
+- **The scene component truncated worlds.** Building through `mj_kdl::init_env` attaches only the
+  *first root body* of each `RobotSpec`, which is right for a robot and wrong for a world file: a
+  3-body test scene loaded as 2, the floor vanished and the object fell forever. It also broke the
+  contract that `/vr/body_poses` index *i* is manifest body *i*, so the client would have rendered
+  the wrong geometry. Now loaded with `mj_loadXML` into the `Env`, which keeps `reset()` working.
+- **The client deleted the sky and the lights.** `SceneLoader` reparented the nodes named in the
+  manifest and destroyed the import root — taking with it everything the manifest does not list,
+  which is exactly the scene dressing and the exported lights.
+- **Exported worlds were a heap of parts.** Geometry is body-local with node transforms at
+  identity, so until the first pose message arrived nothing was in its right place — in the
+  headset as much as in a viewer. Body poses now go into the glTF nodes.
 
 ## A regression worth remembering
 

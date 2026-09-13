@@ -128,14 +128,12 @@ class InputNode : public rclcpp::Node
         /* Hands and gaze are optional: the client only publishes them when the corresponding
          * OpenXR features are enabled, and a headset without them is still fully usable. */
         publish_hand_tf_ = declare_parameter<bool>("publish_hand_tf", true);
-        if (publish_hand_tf_) {
-            for (const std::string &hand : hands) {
-                hand_subs_.push_back(create_subscription<geometry_msgs::msg::PoseArray>(
-                  raw_ns_ + "/" + hand + "/joints", rclcpp::SensorDataQoS(),
-                  [this, hand](geometry_msgs::msg::PoseArray::SharedPtr msg) {
-                      on_hand(hand, *msg);
-                  }));
-            }
+        for (const std::string &hand : hands) {
+            joints_pubs_[hand] = create_publisher<geometry_msgs::msg::PoseArray>(
+              out_ns_ + "/" + hand + "/joints", rclcpp::SensorDataQoS());
+            hand_subs_.push_back(create_subscription<geometry_msgs::msg::PoseArray>(
+              raw_ns_ + "/" + hand + "/joints", rclcpp::SensorDataQoS(),
+              [this, hand](geometry_msgs::msg::PoseArray::SharedPtr msg) { on_hand(hand, *msg); }));
         }
 
         gaze_pub_ = create_publisher<vr::msg::EyeGaze>(out_ns_ + "/gaze",
@@ -228,11 +226,27 @@ class InputNode : public rclcpp::Node
         const bool         client_stamped = msg.header.stamp.sec || msg.header.stamp.nanosec;
         const rclcpp::Time stamp = client_stamped ? rclcpp::Time(msg.header.stamp) : now();
 
+        /* Republished as an array as well as TF: a consumer that acts on a whole hand at once,
+         * like grabbing, wants one timestamped snapshot rather than 26 lookups. */
+        geometry_msgs::msg::PoseArray calibrated;
+        calibrated.header.stamp    = stamp;
+        calibrated.header.frame_id = world_frame_;
+        calibrated.poses.resize(kHandJointCount);
+
         std::vector<geometry_msgs::msg::TransformStamped> transforms;
         transforms.reserve(kHandJointCount);
         for (size_t j = 0; j < kHandJointCount; ++j) {
             const tf2::Transform world_T_joint = origin_T_ * to_tf(msg.poses[j]);
             const int            parent        = kHandJoints[j].parent;
+
+            auto &out             = calibrated.poses[j];
+            out.position.x        = world_T_joint.getOrigin().x();
+            out.position.y        = world_T_joint.getOrigin().y();
+            out.position.z        = world_T_joint.getOrigin().z();
+            out.orientation.x     = world_T_joint.getRotation().x();
+            out.orientation.y     = world_T_joint.getRotation().y();
+            out.orientation.z     = world_T_joint.getRotation().z();
+            out.orientation.w     = world_T_joint.getRotation().w();
 
             /* TF stores each frame relative to its parent, so a child joint is expressed in its
              * parent's frame; only the wrist is placed in the world. */
@@ -254,7 +268,8 @@ class InputNode : public rclcpp::Node
             tf.transform.rotation.w    = local.getRotation().w();
             transforms.push_back(tf);
         }
-        tf_->sendTransform(transforms);
+        joints_pubs_[hand]->publish(calibrated);
+        if (publish_hand_tf_) tf_->sendTransform(transforms);
     }
 
     /** Gaze is a ray per eye; calibration moves it from the play space into the world. */
@@ -321,6 +336,8 @@ class InputNode : public rclcpp::Node
     std::vector<rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr>       pose_subs_;
     std::vector<rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr>                 joy_subs_;
     std::vector<rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr>         hand_subs_;
+    std::unordered_map<std::string, rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr>
+                                                                                     joints_pubs_;
     rclcpp::Publisher<vr::msg::EyeGaze>::SharedPtr                                      gaze_pub_;
     rclcpp::Subscription<vr::msg::EyeGaze>::SharedPtr                                   gaze_sub_;
     bool                                                                       publish_hand_tf_ = true;

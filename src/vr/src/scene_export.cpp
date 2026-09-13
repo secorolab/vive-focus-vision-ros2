@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -35,6 +36,9 @@ struct Options
     std::string              mjcf;
     std::string              out_dir = ".";
     std::vector<int>         groups  = { 0, 1, 2 };
+    float                    sky_radius = 30.0f;
+    bool                     export_ground = false;
+    bool                     export_sky    = false;
     vr::TessOptions   tess;
 };
 
@@ -42,7 +46,8 @@ void usage(const char *argv0)
 {
     std::fprintf(stderr,
                  "usage: %s <model.xml> [-o OUT_DIR] [--groups 0,1,2] [--segments N]\n"
-                 "          [--rings N] [--plane-extent M]\n\n"
+                 "          [--rings N] [--plane-extent M] [--sky-radius M]\n"
+                 "          [--export-ground] [--export-sky]\n\n"
                  "Writes OUT_DIR/scene.glb and OUT_DIR/manifest.json.\n",
                  argv0);
 }
@@ -70,6 +75,12 @@ bool parse_args(int argc, char **argv, Options *opt)
             opt->tess.segments = std::stoi(argv[++i]);
         } else if (a == "--rings" && has_next) {
             opt->tess.rings = std::stoi(argv[++i]);
+        } else if (a == "--export-sky") {
+            opt->export_sky = true;
+        } else if (a == "--export-ground") {
+            opt->export_ground = true;
+        } else if (a == "--sky-radius" && has_next) {
+            opt->sky_radius = std::stof(argv[++i]);
         } else if (a == "--plane-extent" && has_next) {
             opt->tess.plane_extent = std::stof(argv[++i]);
         } else if (!a.empty() && a[0] != '-' && opt->mjcf.empty()) {
@@ -95,6 +106,149 @@ std::array<float, 4> geom_colour(const mjModel *m, int geom_id)
     return { src[0], src[1], src[2], src[3] };
 }
 
+std::array<float, 3> texel(const mjModel *m, int tex, int row, int col)
+{
+    const int  w  = m->tex_width[tex];
+    const int  nc = m->tex_nchannel[tex];
+    const auto a  = m->tex_adr[tex] + static_cast<mjtSize>(row) * w * nc + col * nc;
+    return { m->tex_data[a] / 255.0f, m->tex_data[a + 1] / 255.0f, m->tex_data[a + 2] / 255.0f };
+}
+
+/**
+ * The two colours of a checker texture, sampled at the centres of adjacent squares.
+ *
+ * Not the darkest and lightest pixels: MuJoCo's builtin checker draws a light `mark` along the
+ * square edges, and picking extremes returns that border instead of either square.
+ */
+void checker_colours(const mjModel *m, int tex, std::array<float, 3> *a, std::array<float, 3> *b)
+{
+    const int h = m->tex_height[tex], w = m->tex_width[tex];
+    *a = texel(m, tex, h / 4, w / 4);
+    *b = texel(m, tex, h / 4, (3 * w) / 4);
+
+    // Adjacent squares should differ; if they do not, the sample landed inside one square.
+    const float diff = std::fabs((*a)[0] - (*b)[0]) + std::fabs((*a)[1] - (*b)[1]) +
+                       std::fabs((*a)[2] - (*b)[2]);
+    if (diff < 0.02f) *b = texel(m, tex, (3 * h) / 4, w / 4);
+}
+
+/** Texture id in the base-colour role, or -1. */
+int base_texture(const mjModel *m, int matid)
+{
+    if (matid < 0) return -1;
+    const int rgb  = m->mat_texid[matid * mjNTEXROLE + mjTEXROLE_RGB];
+    const int rgba = m->mat_texid[matid * mjNTEXROLE + mjTEXROLE_RGBA];
+    return rgb >= 0 ? rgb : rgba;
+}
+
+void push_quad(vr::Primitive *prim, const float corners[4][3])
+{
+    const auto base = static_cast<uint32_t>(prim->positions.size() / 3);
+    for (int i = 0; i < 4; ++i) {
+        prim->positions.insert(prim->positions.end(),
+                               { corners[i][0], corners[i][1], corners[i][2] });
+        prim->normals.insert(prim->normals.end(), { 0.0f, 1.0f, 0.0f }); // glTF Y is up
+    }
+    prim->indices.insert(prim->indices.end(),
+                         { base, base + 1, base + 2, base, base + 2, base + 3 });
+}
+
+/** Tiles a plane geom into alternating squares, in glTF axes, body-local. */
+void add_checker_plane(const mjModel *m, int geom_id, const Options &opt, vr::GlbBuilder *builder,
+                       std::map<int, vr::Primitive> *by_material,
+                       const std::array<float, 4> &dark, const std::array<float, 4> &light)
+{
+    const mjtNum *s  = m->geom_size + 3 * geom_id;
+    const float   hx = s[0] > 0 ? static_cast<float>(s[0]) : opt.tess.plane_extent;
+    const float   hy = s[1] > 0 ? static_cast<float>(s[1]) : opt.tess.plane_extent;
+    /* Square size. MuJoCo renders the checker from a mipmapped texture, so it can afford tiny
+     * squares; flat quads cannot, and at a grazing angle a fine grid turns into moire stripes.
+     * Keep the count low enough that the floor still reads as a checkerboard from across the
+     * scene. */
+    const int   max_cells = 48;
+    const float step      = std::max({ s[2] > 0 ? static_cast<float>(s[2]) : 0.5f,
+                                       2.0f * hx / max_cells, 2.0f * hy / max_cells });
+
+    const int nx = std::max(2, static_cast<int>(std::round(2.0f * hx / step)));
+    const int ny = std::max(2, static_cast<int>(std::round(2.0f * hy / step)));
+    const float dx = 2.0f * hx / nx, dy = 2.0f * hy / ny;
+
+    const int dark_mat  = builder->add_material(dark);
+    const int light_mat = builder->add_material(light);
+    (*by_material)[dark_mat].material  = dark_mat;
+    (*by_material)[light_mat].material = light_mat;
+
+    const mjtNum *gp = m->geom_pos + 3 * geom_id;
+    for (int i = 0; i < nx; ++i) {
+        for (int j = 0; j < ny; ++j) {
+            const float x0 = -hx + i * dx, x1 = x0 + dx;
+            const float y0 = -hy + j * dy, y1 = y0 + dy;
+            /* MuJoCo plane lies in local xy with +z up; in glTF axes that is xz with +y up. */
+            const float z  = static_cast<float>(gp[2]);
+            const float corners[4][3] = { { x0 + (float)gp[0], z, -(y0 + (float)gp[1]) },
+                                          { x1 + (float)gp[0], z, -(y0 + (float)gp[1]) },
+                                          { x1 + (float)gp[0], z, -(y1 + (float)gp[1]) },
+                                          { x0 + (float)gp[0], z, -(y1 + (float)gp[1]) } };
+            push_quad(&(*by_material)[((i + j) % 2) ? light_mat : dark_mat], corners);
+        }
+    }
+}
+
+/** A banded dome carrying the skybox's vertical gradient, so the world is not floating in void. */
+void add_sky_dome(const mjModel *m, int tex, vr::GlbBuilder *builder, float radius)
+{
+    /* A full sphere, not a hemisphere: stopping at the horizon leaves a hard seam wherever the
+     * ground plane ends. More bands than the eye can pick out as steps. */
+    const int   bands = 32, segments = 32;
+    const int   rows  = m->tex_height[tex];
+    vr::MeshGroup sky;
+    sky.name = "sky";
+
+    for (int b = 0; b < bands; ++b) {
+        /* Sample the skybox top-to-bottom and give each band a flat colour: a stepped gradient
+         * rather than a texture, which needs no sampler or UVs. */
+        const int   row = std::min(rows - 1, b * rows / bands);
+        const auto  c   = texel(m, tex, row, m->tex_width[tex] / 2);
+        const int   mat = builder->add_material({ c[0], c[1], c[2], 1.0f });
+
+        vr::Primitive prim;
+        prim.material = mat;
+
+        /* Sweep the full pole-to-pole range so the dome closes underneath the ground. */
+        const float t0 = static_cast<float>(b) / bands, t1 = static_cast<float>(b + 1) / bands;
+        const float phi0 = (0.5f - t0) * static_cast<float>(mjPI);
+        const float phi1 = (0.5f - t1) * static_cast<float>(mjPI);
+        for (int s = 0; s < segments; ++s) {
+            const float a0 = 2.0f * static_cast<float>(mjPI) * s / segments;
+            const float a1 = 2.0f * static_cast<float>(mjPI) * (s + 1) / segments;
+            const float ring[4][3] = {
+                { radius * std::cos(phi0) * std::cos(a0), radius * std::sin(phi0),
+                  radius * std::cos(phi0) * std::sin(a0) },
+                { radius * std::cos(phi0) * std::cos(a1), radius * std::sin(phi0),
+                  radius * std::cos(phi0) * std::sin(a1) },
+                { radius * std::cos(phi1) * std::cos(a1), radius * std::sin(phi1),
+                  radius * std::cos(phi1) * std::sin(a1) },
+                { radius * std::cos(phi1) * std::cos(a0), radius * std::sin(phi1),
+                  radius * std::cos(phi1) * std::sin(a0) }
+            };
+            const auto base = static_cast<uint32_t>(prim.positions.size() / 3);
+            for (int i = 0; i < 4; ++i) {
+                prim.positions.insert(prim.positions.end(),
+                                      { ring[i][0], ring[i][1], ring[i][2] });
+                // Normals point inward: the viewer is inside the dome.
+                const float n = std::sqrt(ring[i][0] * ring[i][0] + ring[i][1] * ring[i][1] +
+                                          ring[i][2] * ring[i][2]);
+                prim.normals.insert(prim.normals.end(),
+                                    { -ring[i][0] / n, -ring[i][1] / n, -ring[i][2] / n });
+            }
+            prim.indices.insert(prim.indices.end(),
+                                { base, base + 2, base + 1, base, base + 3, base + 2 });
+        }
+        sky.primitives.push_back(std::move(prim));
+    }
+    builder->add_mesh_node(std::move(sky));
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -112,10 +266,15 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Poses at the loaded state: written into both the glb nodes and the manifest. */
+    mjData *pose_data = mj_makeData(model);
+    mj_forward(model, pose_data);
+
     vr::GlbBuilder builder;
     std::vector<int>      body_node(model->nbody, -1);
     int                   exported_geoms  = 0;
     int                   invisible_geoms = 0;
+    int                   ground_planes   = 0;
     std::map<int, int>    skipped_types; // geom type -> count
 
     for (int b = 0; b < model->nbody; ++b) {
@@ -135,6 +294,30 @@ int main(int argc, char **argv)
                 /* MuJoCo hides fully transparent geoms; they are collision shapes that would
                  * otherwise cost triangles and alpha-blending work on the headset GPU. */
                 ++invisible_geoms;
+                continue;
+            }
+
+            /* An unbounded plane is MuJoCo's ground, which the client draws better than a baked
+             * mesh can: a real material with mipmaps, no moire at grazing angles, and it can
+             * receive shadows. Finite planes are geometry someone modelled, so they stay. */
+            const mjtNum *psz = model->geom_size + 3 * g;
+            if (!opt.export_ground && model->geom_type[g] == mjGEOM_PLANE &&
+                (psz[0] <= 0 || psz[1] <= 0)) {
+                ++ground_planes;
+                continue;
+            }
+
+            /* A textured finite plane is still a checkerboard; tile it into squares of its two
+             * colours rather than exporting the texture and the UVs it would need. */
+            const int tex = base_texture(model, model->geom_matid[g]);
+            if (model->geom_type[g] == mjGEOM_PLANE && tex >= 0 &&
+                model->tex_type[tex] == mjTEXTURE_2D) {
+                std::array<float, 3> dark{ 0.2f, 0.2f, 0.2f }, light{ 0.8f, 0.8f, 0.8f };
+                checker_colours(model, tex, &dark, &light);
+                add_checker_plane(model, g, opt, &builder, &by_material,
+                                  { dark[0], dark[1], dark[2], 1.0f },
+                                  { light[0], light[1], light[2], 1.0f });
+                ++exported_geoms;
                 continue;
             }
 
@@ -179,6 +362,23 @@ int main(int argc, char **argv)
 
         vr::MeshGroup mesh;
         mesh.name = body_name(model, b);
+
+        /* The body's loaded pose, rotated into glTF axes the same way its vertices were, so the
+         * file renders assembled without needing the manifest or a pose stream. */
+        const mjtNum *bp = pose_data->xpos + 3 * b;
+        const mjtNum *bq = pose_data->xquat + 4 * b; // (w, x, y, z)
+        mesh.translation  = { static_cast<float>(bp[0]), static_cast<float>(bp[2]),
+                              static_cast<float>(-bp[1]) };
+        /* Rotating the pose by the same -90 degrees about X: for a quaternion that is
+         * q_gltf = r * q * r^-1 with r the half-turn's quaternion, which for this axis reduces
+         * to the same component shuffle used for the vertices. */
+        mjtNum rq[4] = { std::cos(-mjPI / 4), std::sin(-mjPI / 4), 0, 0 };
+        mjtNum rq_inv[4], tmp[4], out[4];
+        mju_negQuat(rq_inv, rq);
+        mju_mulQuat(tmp, rq, bq);
+        mju_mulQuat(out, tmp, rq_inv);
+        mesh.rotation = { static_cast<float>(out[1]), static_cast<float>(out[2]),
+                          static_cast<float>(out[3]), static_cast<float>(out[0]) };
         for (auto &[material, prim] : by_material) {
             (void)material;
             mesh.primitives.push_back(std::move(prim));
@@ -193,6 +393,39 @@ int main(int argc, char **argv)
                      ec.message().c_str());
         mj_deleteModel(model);
         return 1;
+    }
+
+    /* MuJoCo's skybox is a texture on the renderer, not geometry, so nothing of it survives into
+     * glTF on its own; a dome carrying its gradient is the equivalent a viewer can show. */
+    int sky_tex = -1;
+    for (int t = 0; opt.export_sky && t < model->ntex; ++t) {
+        if (model->tex_type[t] == mjTEXTURE_SKYBOX) { sky_tex = t; break; }
+    }
+    if (sky_tex >= 0) add_sky_dome(model, sky_tex, &builder, opt.sky_radius);
+
+    /* MuJoCo lights, so a viewer lights the scene the way the simulator does rather than
+     * inventing its own. Positions and directions go through the same Z-up to Y-up rotation as
+     * the geometry. */
+    int exported_lights = 0;
+    for (int l = 0; l < model->nlight; ++l) {
+        if (!model->light_active[l]) continue;
+        vr::Light light;
+        light.type = model->light_type[l] == mjLIGHT_DIRECTIONAL  ? "directional"
+                     : model->light_type[l] == mjLIGHT_SPOT       ? "spot"
+                                                                  : "point";
+        const mjtNum *p = pose_data->light_xpos + 3 * l;
+        const mjtNum *d = pose_data->light_xdir + 3 * l;
+        light.position  = { static_cast<float>(p[0]), static_cast<float>(p[2]),
+                            static_cast<float>(-p[1]) };
+        light.direction = { static_cast<float>(d[0]), static_cast<float>(d[2]),
+                            static_cast<float>(-d[1]) };
+        const float *diff = model->light_diffuse + 3 * l;
+        light.colour      = { diff[0], diff[1], diff[2] };
+        /* glTF measures directional lights in lux and the others in candela, while MuJoCo's
+         * diffuse is a plain 0..1 weight; these are the values that look like the simulator. */
+        light.intensity = light.type == "directional" ? 3.0f : 20.0f;
+        builder.add_light(light);
+        ++exported_lights;
     }
 
     const std::string glb_path      = opt.out_dir + "/scene.glb";
@@ -220,11 +453,29 @@ int main(int argc, char **argv)
         manifest << "    {\"name\": \"" << body_name(model, b) << "\", \"node\": " << body_node[b]
                  << "}" << (b + 1 < model->nbody ? "," : "") << "\n";
     }
+    manifest << "  ],\n";
+
+    /* The pose each body sits at before anything streams. Without it a client shows every body
+     * stacked at the origin until the first update, which for a robot looks like a pile of
+     * disconnected parts rather than an arm. */
+    manifest << "  \"initial_poses\": [\n";
+    for (int b = 0; b < model->nbody; ++b) {
+        const mjtNum *p = pose_data->xpos + 3 * b;
+        const mjtNum *q = pose_data->xquat + 4 * b; // MuJoCo order is (w, x, y, z)
+        manifest << "    {\"p\": [" << p[0] << ", " << p[1] << ", " << p[2] << "], \"q\": ["
+                 << q[1] << ", " << q[2] << ", " << q[3] << ", " << q[0] << "]}"
+                 << (b + 1 < model->nbody ? "," : "") << "\n";
+    }
     manifest << "  ]\n}\n";
     manifest.close();
+    mj_deleteData(pose_data);
 
     std::printf("%s: %d bodies, %d geoms exported\n", opt.mjcf.c_str(), model->nbody,
                 exported_geoms);
+    if (ground_planes) {
+        std::printf("  skipped %d unbounded ground plane(s); the client draws the floor\n",
+                    ground_planes);
+    }
     if (invisible_geoms) {
         std::printf("  skipped %d fully transparent geom(s)\n", invisible_geoms);
     }

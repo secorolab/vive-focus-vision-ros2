@@ -11,7 +11,7 @@ ros2 run vr scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 
 ```
 scene_export <model.xml> [-o OUT_DIR] [--groups 0,1,2] [--segments N] [--rings N]
-             [--plane-extent M]
+             [--plane-extent M] [--sky-radius M] [--export-ground] [--export-sky]
 ```
 
 | Option | Meaning |
@@ -20,6 +20,29 @@ scene_export <model.xml> [-o OUT_DIR] [--groups 0,1,2] [--segments N] [--rings N
 | `--groups` | MuJoCo geom groups to export (default `0,1,2`) |
 | `--segments`, `--rings` | tessellation density for round primitives |
 | `--plane-extent` | half-size substituted for an infinite plane, since MuJoCo size 0 means unbounded |
+| `--export-ground` | bake MuJoCo's unbounded ground plane into the file |
+| `--export-sky` | bake a dome carrying the skybox gradient |
+| `--sky-radius` | that dome's radius |
+
+**The ground and the sky are left out by default.** An unbounded plane has no honest mesh, and a
+baked patch of it aliases into moiré at a grazing angle, costs thousands of triangles and still
+stops at its own edge. The client draws both with a real material and Unity's skybox — mipmapped,
+shadow-receiving, one quad. The two flags put them back for a viewer that has to show the file
+standing alone.
+
+Finite planes are kept: those are geometry someone modelled. A textured one is tiled into
+alternating squares of the texture's two colours, which is MuJoCo's checkerboard without needing
+a sampler or UVs.
+
+## What the file contains
+
+Per body: its geometry in body-local coordinates, and its pose at the loaded state written into
+the glTF node. The poses mean the file renders as an assembled scene in any glTF viewer, and the
+client shows the world correctly the instant it loads rather than as a heap of parts waiting for
+the first pose message.
+
+MuJoCo's lights are exported as `KHR_lights_punctual` — type, position, direction and colour — so
+a viewer lights the scene the way the simulator does.
 
 Menagerie models put visual meshes in group 2 and collision shapes in group 3, so the default
 gives the visual model. Fully transparent geoms (`rgba` alpha 0) are skipped, matching what

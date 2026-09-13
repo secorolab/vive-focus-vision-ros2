@@ -35,7 +35,16 @@ namespace VrRos
             // Hands are the heaviest stream: 26 joints x 2 hands. Gaze is small but constant.
             public float handRateHz = 60f;
             public float gazeRateHz = 60f;
-            public string originFrame = "vr_origin";
+
+            public float moveSpeed = 1.5f;
+            public float snapDegrees = 45f;
+
+            // Where the user starts in the world, in ROS coordinates. Everything is simulated,
+            // so this is a free choice: put it clear of the scene rather than inside a table.
+            public Vector3 spawnPosition = new Vector3(-1.5f, 0f, 0f);
+            public float spawnYawDegrees = 0f;
+
+            public string frameId = "world";
         }
 
         [Tooltip("Used when no config file exists on the device yet")]

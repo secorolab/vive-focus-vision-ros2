@@ -33,8 +33,11 @@ namespace VrRos
         [Tooltip("Publish rate cap; 0 publishes every frame at the display rate")]
         public float maxRateHz = 90f;
 
-        [Tooltip("Frame the poses are expressed in: the headset's play-space origin")]
-        public string frameId = "vr_origin";
+        [Tooltip("The XR rig, which maps tracking space into the world the scene is drawn in")]
+        public Transform rig;
+
+        [Tooltip("Frame the poses are expressed in")]
+        public string frameId = "world";
 
         [Tooltip("Namespace the raw poses are published into; InputNode reads from here")]
         public string rawNs = "/vr/raw";
@@ -48,7 +51,7 @@ namespace VrRos
             {
                 rawNs = config.Active.rawNs;
                 maxRateHz = config.Active.maxRateHz;
-                frameId = config.Active.originFrame;
+                frameId = config.Active.frameId;
             }
 
             bridge.Advertise($"{rawNs}/head/pose", "geometry_msgs/msg/PoseStamped");
@@ -83,6 +86,14 @@ namespace VrRos
             if (!device.isValid) return;
             if (!device.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 p)) return;
             if (!device.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion q)) return;
+
+            /* Devices report in tracking space, which ignores where the rig has walked to. The
+             * rig transform is what puts the hand where the user sees it in the scene. */
+            if (rig != null)
+            {
+                p = rig.TransformPoint(p);
+                q = rig.rotation * q;
+            }
 
             Vector3 rp = FrameConv.UnityToRos(p);
             Quaternion rq = FrameConv.UnityToRos(q);

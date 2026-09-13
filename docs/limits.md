@@ -17,9 +17,9 @@ the result into `vr.yaml`. Not built.
 
 ## No teleop
 
-`InputNode` publishes calibrated poses, TF and activity. Nothing consumes them to drive a robot.
-That component is deliberately last, because it is the one that needs the calibration above to
-mean anything.
+`InputNode` publishes calibrated poses, TF and activity, and the grabber uses them to move
+simulated bodies directly — but nothing drives a *robot*. That component is deliberately last,
+because retargeting a hand onto an arm is where the clutch and the solvers come in.
 
 ## Clock offset is one-way
 
@@ -34,8 +34,13 @@ both stamps, about thirty lines, documented in `ClockSync.cs`.
 
 ## Rendering fidelity
 
-- **Materials are flat colours.** Textures in the MJCF are not exported; the exporter reports how
-  many it skipped.
+- **Materials are flat colours.** Mesh textures in the MJCF are not exported; the exporter reports
+  how many it skipped. A textured finite plane is the exception, tiled as a checkerboard.
+- **No shadows.** The lights are exported, but whether anything casts a shadow is a client render
+  setting.
+- **Light intensity is a guess.** glTF measures directional lights in lux and the others in
+  candela, while MuJoCo's `light_diffuse` is a 0–1 weight; there is no principled conversion, so
+  the exporter uses values that look right.
 - **Normals are flat-shaded**, which triples the vertex count — the Kinova scene is 87k triangles
   in a 7.3 MB file. Smooth normals with indexed deduplication would shrink it substantially.
 - **No lighting model** beyond whatever the glTF material and the Unity scene provide.

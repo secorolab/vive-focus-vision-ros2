@@ -57,7 +57,20 @@ to its own output.
 | `stale_after_s` | `1.0` | no movement for this long, and the controller is reported inactive |
 | `hands` | `[left, right]` | |
 | `head_name` | `head` | tracked and published, but has no buttons |
-| `publish_hand_tf` | `true` | 26 TF frames per hand |
+| `publish_hand_tf` | `true` | 26 TF frames per hand; the `PoseArray` is published either way |
+
+### Grabbing
+
+Read by the scene component, which owns the grabber.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `enable_grab` | `true` | |
+| `grab_button` | `1` | index into `Joy` buttons; 1 is squeeze |
+| `grab_reach_m` | `0.15` | a body further than this from the hand is not caught |
+| `grab_kp`, `grab_kd` | `400`, `40` | translation spring and damping [N/m, Ns/m] |
+| `grab_kp_rot`, `grab_kd_rot` | `15`, `2` | rotation spring and damping [Nm/rad, Nms/rad] |
+| `grab_max_force`, `grab_max_torque` | `200`, `20` | clamps, or a long reach launches the object |
 
 The calibration parameters are identity until something measures the offset between the
 headset's play space and the robot's world frame; see [Known
@@ -83,9 +96,17 @@ adb push vr_config.json /sdcard/Android/data/sh.vamsi.vrros/files/vr_config.json
   "maxRateHz": 90.0,
   "handRateHz": 60.0,
   "gazeRateHz": 60.0,
-  "originFrame": "vr_origin"
+  "moveSpeed": 1.5,
+  "snapDegrees": 45.0,
+  "spawnPosition": { "x": -1.5, "y": 0.0, "z": 0.0 },
+  "spawnYawDegrees": 0.0,
+  "frameId": "world"
 }
 ```
+
+`spawnPosition` is in ROS coordinates and decides where the user stands when the app starts.
+Everything is simulated, so this is a free choice — put it clear of the scene rather than inside
+a table. `moveSpeed` and `snapDegrees` tune the stick locomotion.
 
 When the file is missing the inspector defaults are used and written out, so after the first run
 there is always a file to edit rather than a format to guess. Its path is logged at startup and

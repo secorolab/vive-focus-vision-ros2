@@ -13,7 +13,7 @@ to start if they match.
 |---|---|---|---|
 | `<raw>/{head,left,right}/pose` → `<out>/…` | `geometry_msgs/PoseStamped` | headset → PC | 90 Hz |
 | `<raw>/{left,right}/joy` → `<out>/…` | `sensor_msgs/Joy` | headset → PC | 90 Hz |
-| `<raw>/{left,right}/joints` → TF | `geometry_msgs/PoseArray` (26) | headset → PC | 60 Hz |
+| `<raw>/{left,right}/joints` → `<out>/…` and TF | `geometry_msgs/PoseArray` (26) | headset → PC | 60 Hz |
 | `<raw>/gaze` → `<out>/gaze` | `vr/EyeGaze` | headset → PC | 60 Hz |
 | `<out>/{left,right}/active` | `std_msgs/Bool`, latched | PC | on change |
 | `<out>/scene` | `std_msgs/String`, transient local | PC → headset | once |
@@ -73,6 +73,24 @@ the system pays for. `publish_hand_tf: false` turns it off.
 The joint order is a contract shared between `HandPublisher.cs` and the `kHandJoints` table in
 `input_node.cpp`. Neither may be reordered independently.
 
+The calibrated joints are also republished as a `PoseArray` on `<out>/<hand>/joints`, because a
+consumer acting on a whole hand at once — grabbing, for one — wants a single timestamped snapshot
+rather than 26 TF lookups.
+
+## Grabbing
+
+`vr::Grabber`, owned by the scene component, lets the user pick up and push simulated bodies. It
+consumes topics that already exist rather than adding any: the grip pose, the `Joy` buttons and
+the hand joints.
+
+A grab starts on either **a pinch** (thumb tip to index tip closer than `pinch_close_m`, released
+past `pinch_open_m` so it cannot chatter) or **the squeeze button**. The nearest body within
+`reach_m` is caught, keeping the offset it had when caught rather than snapping to the palm.
+
+Held bodies are pulled by a clamped spring-damper written into `xfrc_applied` — not teleported.
+Mass, contact and actuators still decide what happens, so a heavy object resists and pushing a
+robot link fights its actuators. That is also what makes the resulting motion worth recording.
+
 ## Eye gaze
 
 `vr/EyeGaze` is the only custom message in the project. Nothing gaze-, eye-, hand- or
@@ -125,9 +143,11 @@ This is where most of the subtle bugs in a system like this live, so all of it i
   rotated 180°, negate it. The derivation: with `U` the ROS→Unity map, `R` the export rotation and
   `G` glTFast's flip, the correction is `C = U·R⁻¹·G⁻¹`, whose determinant is +1 — a pure
   rotation — regardless of which axis glTFast chooses to negate.
-- **Frames.** The headset publishes in `vr_origin`, its own play space, whose origin is wherever
-  the guardian was drawn. `InputNode` applies the `vr_origin → world` calibration and republishes
-  in `world`. That calibration is identity until something measures it — see
+- **Frames.** Everything is simulated, so the client is told where it stands: `spawnPosition` in
+  the device config places the rig in the world, and every published pose is transformed by the
+  rig before it is sent. Walk five metres and the published hand moves five metres, which is what
+  makes reaching for an object work at all. `InputNode`'s `vr_origin → world` calibration is
+  therefore identity, and only becomes meaningful if a real robot has to share the frame — see
   [Known limits](limits.md).
 
 ## Timestamps

@@ -23,6 +23,7 @@
 #include <std_srvs/srv/trigger.hpp>
 
 #include "vr/body_pose_publisher.hpp"
+#include "vr/grabber.hpp"
 
 namespace vr {
 
@@ -43,28 +44,42 @@ class SceneNode : public rclcpp::Node
         const auto pc_time_topic = declare_parameter<std::string>("pc_time_topic", "/vr/pc_time");
         const auto pc_time_rate  = declare_parameter<double>("pc_time_rate_hz", 10.0);
         const auto timestep      = declare_parameter<double>("timestep", 0.002);
-        const auto add_floor     = declare_parameter<bool>("add_floor", false);
-        const auto add_skybox    = declare_parameter<bool>("add_skybox", false);
         const auto gravity_z     = declare_parameter<double>("gravity_z", -9.81);
 
         if (mjcf.empty()) {
             throw std::runtime_error("parameter 'model' (path to an MJCF file) is required");
         }
 
-        /* One MJCF is the degenerate scene; composing more means more RobotSpec entries here. */
-        mj_kdl::RobotSpec root;
-        root.path = mjcf.c_str();
-        spec_.robots.push_back(root);
-        spec_.timestep   = timestep;
-        spec_.gravity_z  = gravity_z;
-        spec_.add_floor  = add_floor;
-        spec_.add_skybox = add_skybox;
-
-        if (!mj_kdl::init_env(&env_, &spec_)) {
-            throw std::runtime_error("failed to build a scene from " + mjcf);
-        }
+        /* Loaded directly, not through build_scene: that attaches only the first root body of
+         * each RobotSpec, which is right for a robot and silently truncates a world file with
+         * several top-level bodies. The model here has to match what scene_export read, or the
+         * client indexes body poses into the wrong geometry.
+         *
+         * Env still owns the result, so reset() keeps working. */
+        mj_kdl::ensure_plugins_loaded();
+        char error[1024] = "";
+        env_.model       = mj_loadXML(mjcf.c_str(), nullptr, error, sizeof(error));
+        if (!env_.model) throw std::runtime_error("failed to load " + mjcf + ": " + error);
+        env_.model->opt.timestep  = timestep;
+        env_.model->opt.gravity[2] = gravity_z;
+        env_.data                 = mj_makeData(env_.model);
+        mj_forward(env_.model, env_.data);
 
         scene_out_ = std::make_unique<BodyPosePublisher>(*this, env_.model, conf);
+
+        if (declare_parameter<bool>("enable_grab", true)) {
+            GrabConf grab;
+            grab.topic_ns   = declare_parameter<std::string>("out_ns_grab", conf.topic_ns);
+            grab.grab_button = declare_parameter<int>("grab_button", 1);
+            grab.reach_m    = declare_parameter<double>("grab_reach_m", 0.15);
+            grab.kp         = declare_parameter<double>("grab_kp", 400.0);
+            grab.kd         = declare_parameter<double>("grab_kd", 40.0);
+            grab.kp_rot     = declare_parameter<double>("grab_kp_rot", 15.0);
+            grab.kd_rot     = declare_parameter<double>("grab_kd_rot", 2.0);
+            grab.max_force  = declare_parameter<double>("grab_max_force", 200.0);
+            grab.max_torque = declare_parameter<double>("grab_max_torque", 20.0);
+            grabber_ = std::make_unique<Grabber>(*this, env_.model, grab);
+        }
 
         /* The client estimates its clock offset against this; see ClockSync on the Unity side. */
         pc_time_ = create_publisher<builtin_interfaces::msg::Time>(pc_time_topic,
@@ -106,16 +121,19 @@ class SceneNode : public rclcpp::Node
     {
         /* One publish period of sim time, so the stream tracks the wall clock. */
         const mjtNum target = env_.data->time + 1.0 / rate_hz_;
-        while (env_.data->time < target) mj_step(env_.model, env_.data);
+        while (env_.data->time < target) {
+            if (grabber_) grabber_->apply(env_.data);
+            mj_step(env_.model, env_.data);
+        }
 
         if (scene_out_->wants_update(env_.data->time)) scene_out_->publish(env_.data);
     }
 
-    mj_kdl::SceneSpec spec_;
     mj_kdl::Env       env_;
     double            rate_hz_ = 60.0;
 
     std::unique_ptr<BodyPosePublisher>                          scene_out_;
+    std::unique_ptr<Grabber>                                    grabber_;
     rclcpp::Publisher<builtin_interfaces::msg::Time>::SharedPtr pc_time_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr          reset_srv_;
     rclcpp::TimerBase::SharedPtr                                sim_timer_, time_timer_;

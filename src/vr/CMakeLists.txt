@@ -45,6 +45,7 @@ message(STATUS "MuJoCo: ${MUJOCO_LIBRARY}")
 # to the headset without running vr::SceneNode at all.
 add_library(vr_scene SHARED
   src/body_pose_publisher.cpp
+  src/grabber.cpp
   src/gltf_writer.cpp
   src/geom_mesh.cpp
 )
@@ -57,6 +58,7 @@ target_link_libraries(vr_scene PUBLIC
   "${MUJOCO_LIBRARY}"
   rclcpp::rclcpp
   ${geometry_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
   ${std_msgs_TARGETS}
 )
 

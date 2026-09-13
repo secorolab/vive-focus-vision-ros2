@@ -25,6 +25,11 @@ struct MeshGroup
 {
     std::string            name;
     std::vector<Primitive> primitives;
+
+    /* The body's pose when the model is loaded, in glTF axes. Written into the node so the file
+     * shows an assembled scene on its own; the client overwrites it from the pose stream. */
+    std::array<float, 3> translation = { 0, 0, 0 };
+    std::array<float, 4> rotation    = { 0, 0, 0, 1 }; // xyzw
 };
 
 /**
@@ -32,6 +37,16 @@ struct MeshGroup
  * scene root with an identity transform. Node transforms stay identity because the viewer sets
  * each body's pose from the live pose stream; only body-local geometry is baked in here.
  */
+/** A KHR_lights_punctual light, so a viewer lights the scene the way MuJoCo does. */
+struct Light
+{
+    std::string          type = "directional"; // directional | point | spot
+    std::array<float, 3> colour    = { 1, 1, 1 };
+    float                intensity = 1.0f;
+    std::array<float, 3> position  = { 0, 0, 0 }; // glTF axes
+    std::array<float, 3> direction = { 0, -1, 0 };
+};
+
 class GlbBuilder
 {
   public:
@@ -41,11 +56,14 @@ class GlbBuilder
     /** Adds a mesh plus the root node that references it; returns the node index. */
     int add_mesh_node(MeshGroup mesh);
 
+    void add_light(Light light);
+
     bool write(const std::string &path) const;
 
   private:
     std::vector<std::array<float, 4>> materials_;
     std::vector<MeshGroup>            meshes_;
+    std::vector<Light>                lights_;
 };
 
 } // namespace vr

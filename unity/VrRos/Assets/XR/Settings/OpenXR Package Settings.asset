@@ -149,6 +149,28 @@ MonoBehaviour:
   targetOpenXRApiVersion: 
   required: 0
   customRuntimeLoaderName: 
+--- !u!114 &-7200204834499300989
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b3aced3429e5911458f4da2dac9d0f29, type: 3}
+  m_Name: MetaHandTrackingAim Standalone
+  m_EditorClassIdentifier: 
+  m_enabled: 0
+  nameUi: Meta Hand Tracking Aim
+  version: 0.0.1
+  featureIdInternal: com.unity.openxr.feature.input.metahandtrackingaim
+  openxrExtensionStrings: XR_FB_hand_tracking_aim
+  company: Unity
+  priority: 0
+  targetOpenXRApiVersion: 
+  required: 0
+  customRuntimeLoaderName: 
 --- !u!114 &-7196676051086297057
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1115,6 +1137,28 @@ MonoBehaviour:
   targetOpenXRApiVersion: 
   required: 0
   customRuntimeLoaderName: 
+--- !u!114 &1912127211061170951
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e314dfef9af0904e80129bcc0a79361, type: 3}
+  m_Name: HandTracking Standalone
+  m_EditorClassIdentifier: 
+  m_enabled: 0
+  nameUi: Hand Tracking Subsystem
+  version: 0.0.1
+  featureIdInternal: com.unity.openxr.feature.input.handtracking
+  openxrExtensionStrings: XR_EXT_hand_tracking
+  company: Unity
+  priority: -100
+  targetOpenXRApiVersion: 
+  required: 0
+  customRuntimeLoaderName: 
 --- !u!114 &1918482171714994008
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1319,6 +1363,7 @@ MonoBehaviour:
   - {fileID: -5861927398586385280}
   - {fileID: 1918482171714994008}
   - {fileID: 4990573886511121589}
+  - {fileID: -7200204834499300989}
   - {fileID: 6765689425137250997}
   - {fileID: 6991833523861624461}
   - {fileID: -2892038682308882695}
@@ -1344,6 +1389,7 @@ MonoBehaviour:
   - {fileID: -3097172590310816410}
   - {fileID: -713214942464292104}
   - {fileID: -9086466549957990955}
+  - {fileID: 1912127211061170951}
   customLoaderName: 
   m_renderMode: 1
   m_latencyOptimization: 0
@@ -1914,8 +1960,6 @@ MonoBehaviour:
   m_Name: Android
   m_EditorClassIdentifier: 
   features:
-  - {fileID: 5199703446487850302}
-  - {fileID: 6558075463615197787}
   - {fileID: 9064525326813758327}
   - {fileID: -8859117550833105691}
   - {fileID: -1153059614187599476}
@@ -1923,6 +1967,7 @@ MonoBehaviour:
   - {fileID: -8519548285375082910}
   - {fileID: 2778470571217664482}
   - {fileID: -8105395195437976578}
+  - {fileID: 5199703446487850302}
   - {fileID: 7091538238033828859}
   - {fileID: 4825357185204686220}
   - {fileID: -6773961964534567313}
@@ -1960,6 +2005,7 @@ MonoBehaviour:
   - {fileID: -5401262723090645632}
   - {fileID: 6439555523361016153}
   - {fileID: 3099636828654979343}
+  - {fileID: 6558075463615197787}
   customLoaderName: 
   m_renderMode: 1
   m_latencyOptimization: 0

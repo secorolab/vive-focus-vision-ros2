@@ -93,6 +93,31 @@ demonstration recording, a `reset()` that restores a keyframe **and** re-synchro
 command ports — which `mj_resetData` alone does not do. Teleop will need the same library's IK
 and ACHD solvers.
 
+## The exporter carries simulation, not scenery
+
+The `.glb` holds bodies, their geometry, their loaded poses and MuJoCo's lights. It does not hold
+the ground or the sky, which the client draws.
+
+That split came from trying the other way. An unbounded ground plane has no honest mesh, so the
+exporter baked a 20 m patch of it and tiled it into checker squares; at a grazing angle those
+squares aliased into moiré stripes, because MuJoCo can afford a fine checker only by rendering it
+from a mipmapped texture. The sky had the same shape of problem: a skybox is a renderer texture,
+and the dome standing in for it was visibly banded and left a seam at the horizon. Both are one
+textured quad and a skybox on the client, drawn better and for nothing.
+
+What stays in the file is what a viewer cannot invent: which bodies exist, what they look like,
+where they start, and how the scene is lit.
+
+## Grabbing through MuJoCo's own forces
+
+A held body is pulled by a spring-damper written into `xfrc_applied`, never teleported. Contact,
+mass and actuators still decide the outcome, so an object too heavy to lift stays put and pushing
+a robot link fights its actuators. Teleporting would be easier and would produce demonstration
+data that no policy should learn from.
+
+The same mechanism covers both things asked of it: a free body is picked up, and a body in an
+articulated chain is pushed.
+
 ## Hands as TF, gaze as a custom message
 
 `sensor_msgs/JointState` carries scalar joint positions; XR Hands reports 6-DoF poses per joint.

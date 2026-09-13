@@ -4,6 +4,7 @@
 
 #include "vr/gltf_writer.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -41,6 +42,24 @@ std::string fmt_float(float v)
     return b;
 }
 
+/** Quaternion (xyzw) rotating -Z, which is where a glTF light points, onto `dir`. */
+std::array<float, 4> rotation_from_minus_z(const std::array<float, 3> &dir)
+{
+    const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+    if (len <= 0.0f) return { 0, 0, 0, 1 };
+    const float d[3] = { dir[0] / len, dir[1] / len, dir[2] / len };
+    const float from[3] = { 0, 0, -1 };
+
+    const float dot = from[0] * d[0] + from[1] * d[1] + from[2] * d[2];
+    if (dot > 0.999999f) return { 0, 0, 0, 1 };
+    if (dot < -0.999999f) return { 0, 1, 0, 0 }; // half turn about any perpendicular axis
+
+    const float axis[3] = { from[1] * d[2] - from[2] * d[1], from[2] * d[0] - from[0] * d[2],
+                            from[0] * d[1] - from[1] * d[0] };
+    const float s       = std::sqrt((1.0f + dot) * 2.0f);
+    return { axis[0] / s, axis[1] / s, axis[2] / s, s * 0.5f };
+}
+
 } // namespace
 
 int GlbBuilder::add_material(const std::array<float, 4> &rgba)
@@ -57,6 +76,8 @@ int GlbBuilder::add_mesh_node(MeshGroup mesh)
     meshes_.push_back(std::move(mesh));
     return static_cast<int>(meshes_.size()) - 1;
 }
+
+void GlbBuilder::add_light(Light light) { lights_.push_back(std::move(light)); }
 
 bool GlbBuilder::write(const std::string &path) const
 {
@@ -140,16 +161,47 @@ bool GlbBuilder::write(const std::string &path) const
     meshes_json << "]";
 
     std::ostringstream json;
-    json << "{\"asset\":{\"version\":\"2.0\",\"generator\":\"vr scene_export\"},"
-         << "\"scene\":0,\"scenes\":[{\"nodes\":[";
-    for (size_t m = 0; m < meshes_.size(); ++m) {
+    json << "{\"asset\":{\"version\":\"2.0\",\"generator\":\"vr scene_export\"},";
+    if (!lights_.empty()) {
+        json << "\"extensionsUsed\":[\"KHR_lights_punctual\"],"
+             << "\"extensions\":{\"KHR_lights_punctual\":{\"lights\":[";
+        for (size_t l = 0; l < lights_.size(); ++l) {
+            const Light &li = lights_[l];
+            if (l) json << ",";
+            json << "{\"type\":\"" << li.type << "\",\"color\":[" << fmt_float(li.colour[0]) << ","
+                 << fmt_float(li.colour[1]) << "," << fmt_float(li.colour[2])
+                 << "],\"intensity\":" << fmt_float(li.intensity) << "}";
+        }
+        json << "]}},";
+    }
+
+    json << "\"scene\":0,\"scenes\":[{\"nodes\":[";
+    for (size_t m = 0; m < meshes_.size() + lights_.size(); ++m) {
         if (m) json << ",";
         json << m;
     }
     json << "]}],\"nodes\":[";
     for (size_t m = 0; m < meshes_.size(); ++m) {
+        const MeshGroup &mesh = meshes_[m];
         if (m) json << ",";
-        json << "{\"name\":\"" << meshes_[m].name << "\",\"mesh\":" << m << "}";
+        json << "{\"name\":\"" << mesh.name << "\",\"mesh\":" << m << ",\"translation\":["
+             << fmt_float(mesh.translation[0]) << "," << fmt_float(mesh.translation[1]) << ","
+             << fmt_float(mesh.translation[2]) << "],\"rotation\":["
+             << fmt_float(mesh.rotation[0]) << "," << fmt_float(mesh.rotation[1]) << ","
+             << fmt_float(mesh.rotation[2]) << "," << fmt_float(mesh.rotation[3]) << "]}";
+    }
+
+    /* A punctual light points down its node's -Z, so the node carries a rotation taking -Z onto
+     * the light's direction. */
+    for (size_t l = 0; l < lights_.size(); ++l) {
+        const Light &li = lights_[l];
+        json << ",{\"name\":\"light_" << l << "\",\"translation\":["
+             << fmt_float(li.position[0]) << "," << fmt_float(li.position[1]) << ","
+             << fmt_float(li.position[2]) << "],\"rotation\":[";
+        const auto q = rotation_from_minus_z(li.direction);
+        json << fmt_float(q[0]) << "," << fmt_float(q[1]) << "," << fmt_float(q[2]) << ","
+             << fmt_float(q[3]) << "],\"extensions\":{\"KHR_lights_punctual\":{\"light\":" << l
+             << "}}}";
     }
     json << "],";
 
