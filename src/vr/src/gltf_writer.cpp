@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Vamsi Kalagaturu
  * See LICENSE for details. */
 
-#include "vr_mujoco/gltf_writer.hpp"
+#include "vr/gltf_writer.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -10,7 +10,7 @@
 #include <limits>
 #include <sstream>
 
-namespace vr_mujoco {
+namespace vr {
 namespace {
 
 constexpr uint32_t kGlbMagic    = 0x46546C67; // "glTF"
@@ -140,7 +140,7 @@ bool GlbBuilder::write(const std::string &path) const
     meshes_json << "]";
 
     std::ostringstream json;
-    json << "{\"asset\":{\"version\":\"2.0\",\"generator\":\"vr_mujoco scene_export\"},"
+    json << "{\"asset\":{\"version\":\"2.0\",\"generator\":\"vr scene_export\"},"
          << "\"scene\":0,\"scenes\":[{\"nodes\":[";
     for (size_t m = 0; m < meshes_.size(); ++m) {
         if (m) json << ",";
@@ -192,4 +192,4 @@ bool GlbBuilder::write(const std::string &path) const
     return out.good();
 }
 
-} // namespace vr_mujoco
+} // namespace vr

@@ -27,6 +27,12 @@ namespace VrRos
     {
         public RosBridge bridge;
 
+        [Tooltip("Optional: when set, the topic namespace comes from its config file")]
+        public VrConfig config;
+
+        [Tooltip("Namespace the PC publishes the world into")]
+        public string outNs = "/vr";
+
         [Tooltip("Rotation reconciling glTFast's import flip with the live pose convention")]
         public Vector3 gltfCorrectionEuler = new Vector3(0f, 90f, 0f);
 
@@ -39,7 +45,8 @@ namespace VrRos
 
         private void Start()
         {
-            bridge.Subscribe("/vr/scene", "std_msgs/msg/String", OnScene);
+            if (config != null && config.Active != null) outNs = config.Active.outNs;
+            bridge.Subscribe($"{outNs}/scene", "std_msgs/msg/String", OnScene);
         }
 
         private void OnScene(JObject msg)

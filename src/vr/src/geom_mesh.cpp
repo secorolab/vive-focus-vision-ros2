@@ -2,11 +2,11 @@
  * Copyright (c) 2026 Vamsi Kalagaturu
  * See LICENSE for details. */
 
-#include "vr_mujoco/geom_mesh.hpp"
+#include "vr/geom_mesh.hpp"
 
 #include <cmath>
 
-namespace vr_mujoco {
+namespace vr {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
@@ -233,4 +233,4 @@ bool build_geom_mesh(const mjModel *model, int geom_id, const TessOptions &opts,
     }
 }
 
-} // namespace vr_mujoco
+} // namespace vr

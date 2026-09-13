@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace vr_mujoco {
+namespace vr {
 
 /** One draw call: a triangle list with a single material. */
 struct Primitive
@@ -48,4 +48,4 @@ class GlbBuilder
     std::vector<MeshGroup>            meshes_;
 };
 
-} // namespace vr_mujoco
+} // namespace vr

@@ -1,0 +1,10 @@
+{
+    "names": {
+        "mj_kdl_wrapper": {
+            "cmake-args": [
+                "-DBUILD_EXAMPLES=OFF",
+                "-DBUILD_TESTS=OFF"
+            ]
+        }
+    }
+}

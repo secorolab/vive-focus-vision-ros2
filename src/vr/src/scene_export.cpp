@@ -25,8 +25,8 @@
 
 #include <mujoco/mujoco.h>
 
-#include "vr_mujoco/geom_mesh.hpp"
-#include "vr_mujoco/gltf_writer.hpp"
+#include "vr/geom_mesh.hpp"
+#include "vr/gltf_writer.hpp"
 
 namespace {
 
@@ -35,7 +35,7 @@ struct Options
     std::string              mjcf;
     std::string              out_dir = ".";
     std::vector<int>         groups  = { 0, 1, 2 };
-    vr_mujoco::TessOptions   tess;
+    vr::TessOptions   tess;
 };
 
 void usage(const char *argv0)
@@ -112,7 +112,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    vr_mujoco::GlbBuilder builder;
+    vr::GlbBuilder builder;
     std::vector<int>      body_node(model->nbody, -1);
     int                   exported_geoms  = 0;
     int                   invisible_geoms = 0;
@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 
     for (int b = 0; b < model->nbody; ++b) {
         /* One primitive per distinct colour so a body is a single mesh with few draw calls. */
-        std::map<int, vr_mujoco::Primitive> by_material;
+        std::map<int, vr::Primitive> by_material;
 
         const int geom_begin = model->body_geomadr[b];
         const int geom_end   = geom_begin + model->body_geomnum[b];
@@ -138,8 +138,8 @@ int main(int argc, char **argv)
                 continue;
             }
 
-            vr_mujoco::TriMesh tri;
-            if (!vr_mujoco::build_geom_mesh(model, g, opt.tess, &tri)) {
+            vr::TriMesh tri;
+            if (!vr::build_geom_mesh(model, g, opt.tess, &tri)) {
                 ++skipped_types[model->geom_type[g]];
                 continue;
             }
@@ -177,7 +177,7 @@ int main(int argc, char **argv)
 
         if (by_material.empty()) continue;
 
-        vr_mujoco::MeshGroup mesh;
+        vr::MeshGroup mesh;
         mesh.name = body_name(model, b);
         for (auto &[material, prim] : by_material) {
             (void)material;
@@ -210,7 +210,7 @@ int main(int argc, char **argv)
         mj_deleteModel(model);
         return 1;
     }
-    manifest << "{\n  \"generator\": \"vr_mujoco scene_export\",\n"
+    manifest << "{\n  \"generator\": \"vr scene_export\",\n"
              << "  \"model\": \"" << opt.mjcf << "\",\n"
              << "  \"mesh\": \"scene.glb\",\n"
              << "  \"axis_convention\": \"gltf_y_up_from_mujoco_z_up\",\n"

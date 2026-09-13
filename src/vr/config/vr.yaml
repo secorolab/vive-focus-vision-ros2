@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Vamsi Kalagaturu
+# See LICENSE for details.
+#
+# Every topic name, frame, rate and address the VR components use. Nothing here is baked into
+# the binaries; the launch file passes this file through, and any value can be overridden on the
+# command line with -p, or by pointing the launch at a different config with params_file:=.
+
+/**:
+  ros__parameters:
+    # Namespaces both components agree on. The headset publishes into raw_ns; InputNode consumes
+    # that and republishes calibrated poses into out_ns. They must differ, or InputNode would
+    # subscribe to its own output.
+    raw_ns: /vr/raw
+    out_ns: /vr
+
+vr_scene:
+  ros__parameters:
+    # model and scene_url have no sensible default: the launch file supplies them.
+    manifest: ""
+    frame_id: world
+    rate_hz: 60.0
+    pc_time_topic: /vr/pc_time
+    pc_time_rate_hz: 10.0
+
+vr_input:
+  ros__parameters:
+    world_frame: world
+    origin_frame: vr_origin
+
+    # Play-space calibration: where the headset's guardian origin sits in the world frame.
+    # Identity until something measures it; until then the headset and the robot are only
+    # coincidentally in the same place.
+    origin_xyz: [0.0, 0.0, 0.0]
+    origin_rpy: [0.0, 0.0, 0.0]
+
+    # VIVE controllers keep reporting a tracked pose while lying on a table. A controller that
+    # has not moved this far within this long is reported inactive on <out_ns>/<hand>/active.
+    motion_eps_m: 0.003
+    stale_after_s: 1.0
+
+    hands: [left, right]
+    # Published in the world frame but carrying no button state, so it is not in `hands`.
+    head_name: head
+
+    # 26 joints per hand become 26 TF frames per hand, parented as a real hand skeleton. Turn
+    # this off if the TF tree matters more than the hands do: at 60 Hz it is 3120 transforms a
+    # second, which every tf2 listener in the system pays for.
+    publish_hand_tf: true

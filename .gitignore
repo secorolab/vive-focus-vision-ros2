@@ -4,6 +4,9 @@ install/
 log/
 compile_commands.json
 
+# editor/tooling caches
+.cache/
+
 # Unity: generated, machine-specific, or huge
 unity/VrRos/Library/
 unity/VrRos/Temp/
@@ -20,3 +23,8 @@ unity/VrRos/vendor/
 # exported scenes are build artefacts of scene_export
 /tmp/vr_scene/
 /tmp/vr_robot/
+
+# Workspace dependencies, each its own git repo: copied in or cloned, never committed here.
+# See README for where they come from.
+src/mj_kdl_wrapper/
+src/orocos_kinematics_dynamics/

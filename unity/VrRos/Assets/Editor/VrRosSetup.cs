@@ -64,25 +64,42 @@ public static class VrRosSetup
         }
 
         var root = new GameObject("VrRos");
+        var cfg = root.AddComponent<VrConfig>();
         var bridge = root.AddComponent<RosBridge>();
         var clock = root.AddComponent<ClockSync>();
         var input = root.AddComponent<VrInputPublisher>();
         var poses = root.AddComponent<BodyPoseApplier>();
+        var hands = root.AddComponent<HandPublisher>();
+        var gaze = root.AddComponent<GazePublisher>();
 
         // SceneLoader parents the downloaded world under its own transform, so it gets its own.
         var sceneRoot = new GameObject("VrScene");
         sceneRoot.transform.SetParent(root.transform, false);
         var loader = sceneRoot.AddComponent<SceneLoader>();
 
+        /* Only the fallback: at runtime VrConfig reads vr_config.json from the device, so the
+         * address can change without rebuilding. VR_HOST just seeds what ships in the APK. */
         string host = Environment.GetEnvironmentVariable("VR_HOST");
-        if (!string.IsNullOrEmpty(host)) bridge.host = host;
+        if (!string.IsNullOrEmpty(host)) cfg.defaults.host = host;
+        bridge.host = cfg.defaults.host;
 
+        bridge.config = cfg;
         clock.bridge = bridge;
+        clock.config = cfg;
         input.bridge = bridge;
         input.clock = clock;
+        input.config = cfg;
         poses.bridge = bridge;
         poses.scene = loader;
+        poses.config = cfg;
         loader.bridge = bridge;
+        loader.config = cfg;
+        hands.bridge = bridge;
+        hands.clock = clock;
+        hands.config = cfg;
+        gaze.bridge = bridge;
+        gaze.clock = clock;
+        gaze.config = cfg;
 
         Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
         EditorSceneManager.MarkSceneDirty(scene);

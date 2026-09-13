@@ -20,11 +20,18 @@ namespace VrRos
         public RosBridge bridge;
         public SceneLoader scene;
 
+        [Tooltip("Optional: when set, the topic namespace comes from its config file")]
+        public VrConfig config;
+
+        [Tooltip("Namespace the PC publishes the world into")]
+        public string outNs = "/vr";
+
         public int Received { get; private set; }
 
         private void Start()
         {
-            bridge.Subscribe("/vr/body_poses", "geometry_msgs/msg/PoseArray", OnPoses);
+            if (config != null && config.Active != null) outNs = config.Active.outNs;
+            bridge.Subscribe($"{outNs}/body_poses", "geometry_msgs/msg/PoseArray", OnPoses);
         }
 
         private void OnPoses(JObject msg)

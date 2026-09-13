@@ -9,7 +9,7 @@
 
 #include <mujoco/mujoco.h>
 
-namespace vr_mujoco {
+namespace vr {
 
 /** Triangle list in the geom's own frame, MuJoCo axes (Z up, right-handed). */
 struct TriMesh
@@ -34,4 +34,4 @@ struct TessOptions
  */
 bool build_geom_mesh(const mjModel *model, int geom_id, const TessOptions &opts, TriMesh *out);
 
-} // namespace vr_mujoco
+} // namespace vr

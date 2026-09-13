@@ -27,22 +27,35 @@ namespace VrRos
         public RosBridge bridge;
         public ClockSync clock;
 
+        [Tooltip("Optional: when set, namespace, rate and frame come from its config file")]
+        public VrConfig config;
+
         [Tooltip("Publish rate cap; 0 publishes every frame at the display rate")]
         public float maxRateHz = 90f;
 
         [Tooltip("Frame the poses are expressed in: the headset's play-space origin")]
         public string frameId = "vr_origin";
 
+        [Tooltip("Namespace the raw poses are published into; InputNode reads from here")]
+        public string rawNs = "/vr/raw";
+
         private readonly StringBuilder _sb = new StringBuilder(512);
         private float _nextPublish;
 
         private void Start()
         {
-            bridge.Advertise("/vr/head/pose", "geometry_msgs/msg/PoseStamped");
+            if (config != null && config.Active != null)
+            {
+                rawNs = config.Active.rawNs;
+                maxRateHz = config.Active.maxRateHz;
+                frameId = config.Active.originFrame;
+            }
+
+            bridge.Advertise($"{rawNs}/head/pose", "geometry_msgs/msg/PoseStamped");
             foreach (string hand in new[] { "left", "right" })
             {
-                bridge.Advertise($"/vr/{hand}/pose", "geometry_msgs/msg/PoseStamped");
-                bridge.Advertise($"/vr/{hand}/joy", "sensor_msgs/msg/Joy");
+                bridge.Advertise($"{rawNs}/{hand}/pose", "geometry_msgs/msg/PoseStamped");
+                bridge.Advertise($"{rawNs}/{hand}/joy", "sensor_msgs/msg/Joy");
             }
         }
 
@@ -52,7 +65,7 @@ namespace VrRos
             if (maxRateHz > 0f && Time.unscaledTime < _nextPublish) return;
             _nextPublish = Time.unscaledTime + (maxRateHz > 0f ? 1f / maxRateHz : 0f);
 
-            PublishPose("/vr/head/pose", InputDevices.GetDeviceAtXRNode(XRNode.CenterEye));
+            PublishPose($"{rawNs}/head/pose", InputDevices.GetDeviceAtXRNode(XRNode.CenterEye));
             PublishHand("left", XRNode.LeftHand);
             PublishHand("right", XRNode.RightHand);
         }
@@ -61,8 +74,8 @@ namespace VrRos
         {
             InputDevice device = InputDevices.GetDeviceAtXRNode(node);
             if (!device.isValid) return;
-            PublishPose($"/vr/{hand}/pose", device);
-            PublishJoy($"/vr/{hand}/joy", device);
+            PublishPose($"{rawNs}/{hand}/pose", device);
+            PublishJoy($"{rawNs}/{hand}/joy", device);
         }
 
         private void PublishPose(string topic, InputDevice device)

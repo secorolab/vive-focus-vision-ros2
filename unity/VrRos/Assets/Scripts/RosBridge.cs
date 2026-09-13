@@ -21,7 +21,10 @@ namespace VrRos
     /// </summary>
     public class RosBridge : MonoBehaviour
     {
-        [Tooltip("IP of the machine running rosbridge_websocket")]
+        [Tooltip("Optional: when set, host and port come from its config file instead")]
+        public VrConfig config;
+
+        [Tooltip("IP of the machine running rosbridge_websocket; overridden by config")]
         public string host = "192.168.1.10";
 
         public int port = 9090;
@@ -41,6 +44,15 @@ namespace VrRos
         private readonly List<(string topic, string type)> _subscribed =
             new List<(string, string)>();
         private float _nextConnectAttempt;
+
+        private void Start()
+        {
+            if (config != null && config.Active != null)
+            {
+                host = config.Active.host;
+                port = config.Active.port;
+            }
+        }
 
         private void Update()
         {

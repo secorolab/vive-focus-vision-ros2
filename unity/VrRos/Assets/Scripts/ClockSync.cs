@@ -22,6 +22,12 @@ namespace VrRos
     {
         public RosBridge bridge;
 
+        [Tooltip("Optional: when set, the topic namespace comes from its config file")]
+        public VrConfig config;
+
+        [Tooltip("Namespace the PC publishes its clock into")]
+        public string outNs = "/vr";
+
         [Tooltip("Seconds after which the best sample is discarded and re-estimated")]
         public float windowSeconds = 30f;
 
@@ -35,7 +41,8 @@ namespace VrRos
 
         private void Start()
         {
-            bridge.Subscribe("/vr/pc_time", "builtin_interfaces/msg/Time", OnPcTime);
+            if (config != null && config.Active != null) outNs = config.Active.outNs;
+            bridge.Subscribe($"{outNs}/pc_time", "builtin_interfaces/msg/Time", OnPcTime);
         }
 
         private void OnPcTime(JObject msg)
