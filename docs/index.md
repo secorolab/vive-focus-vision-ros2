@@ -1,4 +1,4 @@
-# vr
+# vr {#page_vr}
 
 MuJoCo worlds on a standalone VIVE Focus Vision, and what the headset sees of the user back as
 ROS 2 topics.
@@ -19,6 +19,33 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 └──────────────────────────────┘                   └──────────────────────────┘
 ```
 
+## Documentation
+
+- [Installation](install.md) — workspace dependencies, ROS build, Unity editor and licence
+- [Running](run.md) — export a world, launch the stack, what should appear
+- [Interfaces](interfaces.md) — topics, TF frames, the `Joy` layout, `vr/EyeGaze`, frame conventions
+- [Configuration](configuration.md) — `vr.yaml`, the device config file, OpenXR features
+- [The Unity client](unity.md) — project layout, scripts, scripted setup and APK build
+- [Embedding in a simulation](embedding.md) — `BodyPosePublisher` in an existing application
+- [First run on the headset](bringup.md) — the on-device checklist
+- [Testing](testing.md) — what is verified, how, and what is not
+- [Design notes](design.md) — why the system is shaped this way, and what was rejected
+- [Known limits](limits.md) — what is missing or approximate, and what it costs
+
+## Status
+
+| Part | State |
+|---|---|
+| `scene_export` MJCF → glTF | works; validated on primitives and mesh assets |
+| `vr::SceneNode` sim, world stream, reset | works; 60 Hz measured |
+| `vr::InputNode` calibration, TF, hands, gaze | works; verified through rosbridge |
+| Unity project and APK | builds, 39 MB, zero errors |
+| **On-device run** | **not done — nothing has run on the headset yet** |
+
+Everything on the PC side is verified by running it, against a stand-in client that speaks the
+same rosbridge contract the Unity app does. That validates the transport, not the headset: see
+[Testing](testing.md) for exactly which claims rest on evidence and which do not.
+
 ## Quick start
 
 ```bash
@@ -33,42 +60,4 @@ ros2 launch vr vr.launch.py \
     scene_dir:=/tmp/vr_robot host_ip:=<this machine's LAN IP>
 ```
 
-## Documentation
-
-Start at [docs/index.md](docs/index.md).
-
-- [Installation](docs/install.md) — workspace dependencies, ROS build, Unity editor and licence
-- [Running](docs/run.md) — export a world, launch the stack, what should appear
-- [Interfaces](docs/interfaces.md) — topics, TF frames, `Joy` layout, `vr/EyeGaze`, frame conventions
-- [Configuration](docs/configuration.md) — `vr.yaml`, the device config file, OpenXR features
-- [The Unity client](docs/unity.md) — project layout, scripts, scripted setup and APK build
-- [Embedding in a simulation](docs/embedding.md) — `BodyPosePublisher` in an existing application
-- [First run on the headset](docs/bringup.md) — the on-device checklist
-- [Testing](docs/testing.md) — what is verified, how, and what is not
-- [Design notes](docs/design.md) — why the system is shaped this way, and what was rejected
-- [Known limits](docs/limits.md) — what is missing or approximate
-
-## Status
-
-The PC side works and is verified by running it. **Nothing has run on the headset yet** — see
-[Testing](docs/testing.md) for which claims rest on evidence, and
-[First run](docs/bringup.md) for the on-device checklist.
-
-## Layout
-
-```
-src/vr/                        one package, composable nodes
-  msg/EyeGaze.msg              the only custom type, because ROS 2 has no gaze message
-  config/vr.yaml               every topic, frame, rate and the calibration
-  include/vr/, src/            BodyPosePublisher, glTF writer, geom tessellation, scene_export
-  src/components/              vr::SceneNode, vr::InputNode
-  launch/vr.launch.py
-unity/VrRos/Assets/            the headset client; see docs/unity.md
-tools/
-  fetch_vive_plugin.sh         downloads the untracked VIVE OpenXR tarball
-  fake_headset.py              stands in for the client; exercises every topic both ways
-  check_glb.py                 structural validation of an exported .glb
-docs/
-```
-
-MIT licensed.
+Full detail in [Installation](install.md) and [Running](run.md).

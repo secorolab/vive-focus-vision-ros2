@@ -103,6 +103,29 @@ set_target_properties(vr_scene vr_components scene_export PROPERTIES
   INSTALL_RPATH "${VR_MUJOCO_DIR}/lib"
 )
 
+# --- documentation -------------------------------------------------------------------------
+# Off by default; the guides are readable as markdown without it. Requires: apt install doxygen
+#   cmake --build build --target docs   ->  build/vr/docs/html/index.html
+option(BUILD_DOCS "Generate HTML documentation with Doxygen" OFF)
+if(BUILD_DOCS)
+  find_package(Doxygen REQUIRED)
+
+  # The package lives in src/vr while the guides live at the workspace root, so Doxygen needs
+  # both roots rather than assuming one tree.
+  set(VR_DOXYGEN_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+  get_filename_component(VR_DOXYGEN_DOCS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+
+  set(VR_DOXYFILE "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile")
+  configure_file(docs/doxygen/Doxyfile.in "${VR_DOXYFILE}" @ONLY)
+
+  add_custom_target(docs
+    COMMAND ${DOXYGEN_EXECUTABLE} "${VR_DOXYFILE}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    COMMENT "Generating documentation with Doxygen"
+    VERBATIM
+  )
+endif()
+
 install(DIRECTORY include/ DESTINATION include)
 install(TARGETS vr_scene vr_components
   EXPORT export_vr
