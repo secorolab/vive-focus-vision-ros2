@@ -20,6 +20,7 @@
 #include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/int32.hpp>
 #include <vr/msg/eye_gaze.hpp>
 #include <tf2/LinearMath/Quaternion.hpp>
 #include <tf2/LinearMath/Transform.hpp>
@@ -122,6 +123,16 @@ class InputNode : public rclcpp::Node
               raw_ns_ + "/" + hand + "/joy", rclcpp::SensorDataQoS(),
               [this, hand](sensor_msgs::msg::Joy::SharedPtr msg) {
                   joy_pubs_[hand]->publish(*msg);
+              }));
+
+            /* The body the client's pointer is on. Passed through untouched: it is an index into
+             * the manifest, not a pose, so calibration does not apply to it. */
+            target_pubs_[hand] = create_publisher<std_msgs::msg::Int32>(
+              out_ns_ + "/" + hand + "/target", rclcpp::SensorDataQoS());
+            target_subs_.push_back(create_subscription<std_msgs::msg::Int32>(
+              raw_ns_ + "/" + hand + "/target", rclcpp::SensorDataQoS(),
+              [this, hand](std_msgs::msg::Int32::SharedPtr msg) {
+                  target_pubs_[hand]->publish(*msg);
               }));
         }
 
@@ -335,6 +346,9 @@ class InputNode : public rclcpp::Node
     std::unordered_map<std::string, Tracked>                                           tracked_;
     std::vector<rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr>       pose_subs_;
     std::vector<rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr>                 joy_subs_;
+    std::unordered_map<std::string, rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr>
+                                                                                     target_pubs_;
+    std::vector<rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr>               target_subs_;
     std::vector<rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr>         hand_subs_;
     std::unordered_map<std::string, rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr>
                                                                                      joints_pubs_;

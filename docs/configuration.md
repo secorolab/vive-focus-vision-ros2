@@ -67,10 +67,19 @@ Read by the scene component, which owns the grabber.
 |---|---|---|
 | `enable_grab` | `true` | |
 | `grab_button` | `1` | index into `Joy` buttons; 1 is squeeze |
-| `grab_reach_m` | `0.15` | a body further than this from the hand is not caught |
-| `grab_kp`, `grab_kd` | `400`, `40` | translation spring and damping [N/m, Ns/m] |
-| `grab_kp_rot`, `grab_kd_rot` | `15`, `2` | rotation spring and damping [Nm/rad, Nms/rad] |
-| `grab_max_force`, `grab_max_torque` | `200`, `20` | clamps, or a long reach launches the object |
+| `grab_reach_m` | `0.15` | fallback only: how close a hand must be when no pointer target exists |
+| `grab_kp`, `grab_kd` | `400`, `40` | translation response [1/s², 1/s] |
+| `grab_kp_rot`, `grab_kd_rot` | `100`, `20` | rotation response [1/s², 1/s] |
+| `grab_max_accel`, `grab_max_ang_accel` | `50`, `100` | clamps [m/s², rad/s²] |
+| `grab_vel_filter` | `0.3` | low-pass weight on the hand velocity the damper is fed |
+| `grab_max_hand_speed` | `4.0` | [m/s] above this a sample is jitter, not motion |
+| `grab_max_hand_turn_rate` | `15.0` | [rad/s] |
+
+The gains are **accelerations, not forces**, and are scaled by each body's own mass and inertia.
+A force-limited spring behaves completely differently on a 150 g ball and a 2 kg robot link — the
+same 200 N clamp is 1300 m/s² for one and 100 m/s² for the other — so a reach that merely nudged
+an arm would fling a loose object across the world. `kp` and `kd` describe a critically damped
+second-order response: ω = √`kp`, and `kd` = 2ω.
 
 The calibration parameters are identity until something measures the offset between the
 headset's play space and the robot's world frame; see [Known
@@ -97,20 +106,33 @@ adb push vr_config.json /sdcard/Android/data/sh.vamsi.vrros/files/vr_config.json
   "handRateHz": 60.0,
   "gazeRateHz": 60.0,
   "moveSpeed": 1.5,
-  "snapDegrees": 45.0,
+  "turnSpeedDegPerSec": 90.0,
+  "pointerRange": 8.0,
+  "eyeHeight": 1.6,
   "spawnPosition": { "x": -1.5, "y": 0.0, "z": 0.0 },
   "spawnYawDegrees": 0.0,
-  "frameId": "world"
+  "frameId": "world",
+  "resetService": "/vr_scene/reset",
+  "inputMode": "controllers"
 }
 ```
 
 `spawnPosition` is in ROS coordinates and decides where the user stands when the app starts.
 Everything is simulated, so this is a free choice — put it clear of the scene rather than inside
-a table. `moveSpeed` and `snapDegrees` tune the stick locomotion.
+a table.
+
+`inputMode` is `controllers` or `hands`, and is either/or rather than a preference: the runtime
+stops reporting tracked hands while a controller is awake, so running both would leave one set
+frozen wherever it was last seen. The menu button switches at runtime.
+
+`eyeHeight` is where the floor goes. The client tracks in device space so that it needs no play
+area, and the cost of that is that nothing measures the floor — see [Known
+limits](limits.md#the-floor-is-assumed-not-measured).
 
 When the file is missing the inspector defaults are used and written out, so after the first run
 there is always a file to edit rather than a format to guess. Its path is logged at startup and
-can be read with `adb logcat -s Unity`.
+can be read with `adb logcat -s Unity`. Note that a file written by an older build keeps its old
+fields: anything added since is filled from the defaults, not from the file.
 
 `VR_HOST` at build time only seeds the default that ships inside the APK. The file wins at
 runtime.

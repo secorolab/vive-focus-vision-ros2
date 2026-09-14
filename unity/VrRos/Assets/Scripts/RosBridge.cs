@@ -101,6 +101,13 @@ namespace VrRos
         /// <summary>Publishes a pre-built rosbridge envelope.</summary>
         public void Publish(string envelopeJson) => SendRaw(envelopeJson);
 
+        /// <summary>
+        /// Calls a service with an empty request, and ignores the response. Enough for a Trigger;
+        /// anything that needs the reply would have to match up the optional call id.
+        /// </summary>
+        public void CallService(string service) =>
+            SendRaw($"{{\"op\":\"call_service\",\"service\":\"{service}\",\"args\":{{}}}}");
+
         private async Task ConnectAsync()
         {
             try

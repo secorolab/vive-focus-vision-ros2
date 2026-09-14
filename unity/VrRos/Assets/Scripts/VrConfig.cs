@@ -37,7 +37,16 @@ namespace VrRos
             public float gazeRateHz = 60f;
 
             public float moveSpeed = 1.5f;
-            public float snapDegrees = 45f;
+
+            // One stick does both: push to walk, tilt to turn.
+            public float turnSpeedDegPerSec = 90f;
+
+            // How far the selection ray reaches, in metres.
+            public float pointerRange = 8f;
+
+            /* Standing eye height. The app tracks in device space so it needs no play area, and
+             * the cost of that is that nothing measures the floor: this is where it is assumed. */
+            public float eyeHeight = 1.6f;
 
             // Where the user starts in the world, in ROS coordinates. Everything is simulated,
             // so this is a free choice: put it clear of the scene rather than inside a table.
@@ -45,6 +54,24 @@ namespace VrRos
             public float spawnYawDegrees = 0f;
 
             public string frameId = "world";
+
+            // Restores the scene; matches the SceneNode's service in config/vr.yaml.
+            public string resetService = "/vr_scene/reset";
+
+            /* "controllers" or "hands". The runtime will not report hands while a controller is
+             * awake, and publishing both would put two competing grab sources on one topic set. */
+            public string inputMode = "controllers";
+        }
+
+        /* Live, not just what the file said: the menu button switches between controllers and
+         * hands during a session, and the publishers read this every frame. */
+        public bool HandMode { get; private set; }
+
+        public void SetHandMode(bool on)
+        {
+            if (HandMode == on) return;
+            HandMode = on;
+            Debug.Log($"mode: {(on ? "hands" : "controllers")}");
         }
 
         [Tooltip("Used when no config file exists on the device yet")]
@@ -58,8 +85,9 @@ namespace VrRos
         private void Awake()
         {
             Active = Load();
+            HandMode = Active.inputMode.Equals("hands", StringComparison.OrdinalIgnoreCase);
             Debug.Log($"config: {Active.host}:{Active.port} raw={Active.rawNs} out={Active.outNs}"
-                      + $" ({Path})");
+                      + $" mode={Active.inputMode} ({Path})");
         }
 
         private Settings Load()

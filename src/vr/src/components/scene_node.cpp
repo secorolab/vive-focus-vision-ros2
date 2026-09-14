@@ -12,6 +12,7 @@
 #include <chrono>
 #include <memory>
 #include <stdexcept>
+#include <map>
 #include <string>
 
 #include <mj_kdl_wrapper/mj_kdl_wrapper.hpp>
@@ -72,13 +73,23 @@ class SceneNode : public rclcpp::Node
             grab.topic_ns   = declare_parameter<std::string>("out_ns_grab", conf.topic_ns);
             grab.grab_button = declare_parameter<int>("grab_button", 1);
             grab.reach_m    = declare_parameter<double>("grab_reach_m", 0.15);
-            grab.kp         = declare_parameter<double>("grab_kp", 400.0);
-            grab.kd         = declare_parameter<double>("grab_kd", 40.0);
-            grab.kp_rot     = declare_parameter<double>("grab_kp_rot", 15.0);
-            grab.kd_rot     = declare_parameter<double>("grab_kd_rot", 2.0);
-            grab.max_force  = declare_parameter<double>("grab_max_force", 200.0);
-            grab.max_torque = declare_parameter<double>("grab_max_torque", 20.0);
+            grab.kp            = declare_parameter<double>("grab_kp", 400.0);
+            grab.kd            = declare_parameter<double>("grab_kd", 40.0);
+            grab.kp_rot        = declare_parameter<double>("grab_kp_rot", 100.0);
+            grab.kd_rot        = declare_parameter<double>("grab_kd_rot", 20.0);
+            grab.max_accel     = declare_parameter<double>("grab_max_accel", 50.0);
+            grab.max_ang_accel = declare_parameter<double>("grab_max_ang_accel", 100.0);
+            grab.vel_filter    = declare_parameter<double>("grab_vel_filter", 0.3);
+            grab.max_hand_speed = declare_parameter<double>("grab_max_hand_speed", 4.0);
+            grab.max_hand_turn_rate =
+              declare_parameter<double>("grab_max_hand_turn_rate", 15.0);
             grabber_ = std::make_unique<Grabber>(*this, env_.model, grab);
+
+            for (const std::string &hand : grab.hands) {
+                held_pubs_[hand] = create_publisher<std_msgs::msg::Int32>(
+                  grab.topic_ns + "/" + hand + "/held", rclcpp::QoS(1).transient_local());
+                last_held_[hand] = -2; // not -1, so the first "holding nothing" is still published
+            }
         }
 
         /* The client estimates its clock offset against this; see ClockSync on the Unity side. */
@@ -91,11 +102,19 @@ class SceneNode : public rclcpp::Node
               pc_time_->publish(msg);
           });
 
+        /* -1 restores the model's own initial pose. A robot's keyframe only covers that robot's
+         * joints, so in a world with free bodies it resets them to zero - dropping every loose
+         * object at the origin - rather than to where the MJCF put them. */
+        reset_keyframe_ = declare_parameter<int>("reset_keyframe", -1);
+
         reset_srv_ = create_service<std_srvs::srv::Trigger>(
           "~/reset",
           [this](const std_srvs::srv::Trigger::Request::SharedPtr,
                  std_srvs::srv::Trigger::Response::SharedPtr response) {
-              const mj_kdl::ResetInfo info = mj_kdl::reset(&env_);
+              mj_kdl::ResetOptions options;
+              options.use_keyframe         = reset_keyframe_ >= 0;
+              options.keyframe             = reset_keyframe_;
+              const mj_kdl::ResetInfo info = mj_kdl::reset(&env_, &options);
               response->success            = true;
               response->message = info.used_keyframe
                                     ? "reset to keyframe " + std::to_string(info.keyframe)
@@ -127,14 +146,34 @@ class SceneNode : public rclcpp::Node
         }
 
         if (scene_out_->wants_update(env_.data->time)) scene_out_->publish(env_.data);
+        publish_held();
+    }
+
+    /* What each hand actually holds, so the client can show it. Only the grabber knows: it
+     * refuses a massless body, and a tracked hand pinches without the client selecting anything.
+     * Published on change - it is a latched fact, not a stream. */
+    void publish_held()
+    {
+        if (!grabber_) return;
+        for (auto &[hand, pub] : held_pubs_) {
+            const int body = grabber_->held_body(hand);
+            if (body == last_held_[hand]) continue;
+            last_held_[hand] = body;
+            std_msgs::msg::Int32 msg;
+            msg.data = body;
+            pub->publish(msg);
+        }
     }
 
     mj_kdl::Env       env_;
     double            rate_hz_ = 60.0;
+    int               reset_keyframe_ = -1;
 
     std::unique_ptr<BodyPosePublisher>                          scene_out_;
     std::unique_ptr<Grabber>                                    grabber_;
     rclcpp::Publisher<builtin_interfaces::msg::Time>::SharedPtr pc_time_;
+    std::map<std::string, rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr> held_pubs_;
+    std::map<std::string, int>                                               last_held_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr          reset_srv_;
     rclcpp::TimerBase::SharedPtr                                sim_timer_, time_timer_;
 };

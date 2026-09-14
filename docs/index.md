@@ -39,12 +39,16 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 | `scene_export` MJCF → glTF | works; validated on primitives and mesh assets |
 | `vr::SceneNode` sim, world stream, reset | works; 60 Hz measured |
 | `vr::InputNode` calibration, TF, hands, gaze | works; verified through rosbridge |
-| Unity project and APK | builds, 39 MB, zero errors |
-| **On-device run** | **not done — nothing has run on the headset yet** |
+| Unity project and APK | builds, 82 MB, zero errors |
+| On-device run | works; scene loads, poses stream, pointing and grabbing verified |
+| Hand tracking | untested end to end — the runtime only reports hands once the controllers idle |
+| Eye tracking | untested on the device |
 
-Everything on the PC side is verified by running it, against a stand-in client that speaks the
-same rosbridge contract the Unity app does. That validates the transport, not the headset: see
-[Testing](testing.md) for exactly which claims rest on evidence and which do not.
+The PC side is verified by running it, against a stand-in client that speaks the same rosbridge
+contract the Unity app does. The headset side is verified by running it on the headset. See
+[Testing](testing.md) for exactly which claims rest on evidence and which do not, and [Known
+limits](limits.md) for the two that bite in practice: the clock offset after the app is
+suspended, and losing the boundary, which silently stops all input.
 
 ## Quick start
 

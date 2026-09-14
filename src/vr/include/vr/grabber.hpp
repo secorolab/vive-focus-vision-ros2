@@ -14,6 +14,7 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
+#include <std_msgs/msg/int32.hpp>
 
 namespace vr {
 
@@ -32,13 +33,25 @@ struct GrabConf
     double pinch_close_m    = 0.025; // thumb-to-index distance that starts a pinch
     double pinch_open_m     = 0.040; // and the wider distance that ends it, so it cannot chatter
 
+    /* The client points a ray and publishes what it hit on <topic_ns>/<hand>/target; reach_m is
+     * only the fallback for a hand that has no pointer, which is the tracked-hand case. */
     double reach_m          = 0.15;  // a body further than this from the hand is not grabbed
-    double kp               = 400.0; // [N/m]
-    double kd               = 40.0;  // [Ns/m]
-    double kp_rot           = 15.0;  // [Nm/rad]
-    double kd_rot           = 2.0;   // [Nms/rad]
-    double max_force        = 200.0; // [N]  clamped, or a far reach launches the object
-    double max_torque       = 20.0;  // [Nm]
+
+    /* Accelerations, not forces: scaled by each body's mass and inertia so the same numbers
+     * behave the same on a loose ball and on a robot link. kp/kd are a critically damped
+     * second-order response, omega = sqrt(kp) and kd = 2*omega. */
+    double kp               = 400.0; // [1/s^2]
+    double kd               = 40.0;  // [1/s]
+    double kp_rot           = 100.0; // [1/s^2]
+    double kd_rot           = 20.0;  // [1/s]
+    double max_accel        = 50.0;  // [m/s^2]    clamped, or a far reach launches the object
+    double max_ang_accel    = 100.0; // [rad/s^2]
+
+    /* The hand velocity the damper is given is differenced from poses that arrive over Wi-Fi in
+     * bursts, so it needs bounding and smoothing or the grab turns jittery. */
+    double vel_filter        = 0.3;  // low-pass weight on each new sample, 1 disables it
+    double max_hand_speed    = 4.0;  // [m/s]
+    double max_hand_turn_rate = 15.0; // [rad/s]
 };
 
 /**
@@ -79,17 +92,29 @@ class Grabber
         bool   pinching  = false; // tracked hand, with hysteresis
         bool   have_pose = false;
         int    body      = -1;
+        int    target    = -1;    // what the client's ray is on, or -1 for nothing
         mjtNum pos[3]  = { 0, 0, 0 }; // latest controller position, world frame
         mjtNum quat[4] = { 1, 0, 0, 0 };
         /* Pose of the body in the controller's frame at the moment it was grabbed, so it keeps
          * its offset instead of snapping into the hand. */
         mjtNum grab_pos[3]  = { 0, 0, 0 };
         mjtNum grab_quat[4] = { 1, 0, 0, 0 };
+        /* Hand velocity, differenced between pose messages rather than between simulation steps:
+         * apply() runs at the timestep (500 Hz) while poses arrive at about 50 Hz, so a per-step
+         * difference is zero on most steps and a large spike on the rest. The damper needs a
+         * usable value on every step or following a moving hand leaves a standing error. */
+        bool   have_vel      = false;
+        double last_stamp_s  = 0.0;
+        mjtNum last_pos[3]   = { 0, 0, 0 };
+        mjtNum last_quat[4]  = { 1, 0, 0, 0 };
+        mjtNum lin_vel[3]    = { 0, 0, 0 };
+        mjtNum ang_vel[3]    = { 0, 0, 0 };
     };
 
     void on_pose(const std::string &hand, const geometry_msgs::msg::PoseStamped &msg);
     void on_joy(const std::string &hand, const sensor_msgs::msg::Joy &msg);
     void on_joints(const std::string &hand, const geometry_msgs::msg::PoseArray &msg);
+    void on_target(const std::string &hand, const std_msgs::msg::Int32 &msg);
     int  nearest_body(const mjData *data, const mjtNum point[3]) const;
 
     GrabConf                                   conf_;

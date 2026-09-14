@@ -21,16 +21,44 @@ the result into `vr.yaml`. Not built.
 simulated bodies directly — but nothing drives a *robot*. That component is deliberately last,
 because retargeting a hand onto an arm is where the clutch and the solvers come in.
 
-## Clock offset is one-way
+## Clock offset is one-way, and a suspend poisons it
 
 The client estimates its offset from `/vr/pc_time` and keeps the sample with the smallest
 observed difference, which removes queueing jitter but not the constant one-way transit time.
-Stamps are therefore biased late by roughly half the round trip — single-digit milliseconds on
-5/6 GHz Wi-Fi.
+From a cold start this works: measured stamp lag is **20–30 ms, stable over 70 s**.
 
-For rendering this is irrelevant. For a demonstration dataset it is a small systematic error in
-every recorded controller pose. The upgrade is a round trip: publish a ping the PC echoes with
-both stamps, about thirty lines, documented in `ClockSync.cs`.
+Suspending the app breaks it. Take the headset off and the client stops running while its socket
+keeps receiving, so every `/vr/pc_time` sample it then processes is stale by the depth of the
+backlog, and that staleness is baked into the offset. Measured after a few minutes off the head:
+stamps **158 s in the past**, recovering only as fast as the backlog drains — about 0.7 s per
+second. `tf2` rejects everything in the meantime with `TF_OLD_DATA`.
+
+The 30 s re-estimate does not save it, because it re-samples the same backlogged stream. The fix
+is to drop stale frames rather than process them — the newest message on `/vr/pc_time` and
+`/vr/body_poses` is the only one that matters. Not built.
+
+## The floor is assumed, not measured
+
+The client asks for device-space tracking so that it runs anywhere without a play area being
+drawn. Nothing then measures the floor: the ground sits `eyeHeight` below wherever the headset
+was when the app started, and X recentres it.
+
+This is not a choice between good options. The runtime offers only `VIEW`, `LOCAL` and `STAGE` —
+it does not implement `XR_EXT_local_floor`, which is the one that would give a real floor without
+a stage. And its `STAGE` is not a fallback: with no boundary configured it reports `floor bound
+enable false` and puts the stage origin at the headset, which was measured putting the user's
+head at **z = 0.039 m**. So floor space costs a play area and still does not measure a floor.
+
+## Losing the boundary stops input entirely
+
+If the headset decides it is outside its boundary — moving to a new room does it — the runtime
+hands input focus to its own system overlay. OpenXR only delivers action and tracking data to a
+focused session, so the app then receives no buttons, no hand joints, and about 5 fps.
+
+Nothing in this project can prevent or detect that beyond observing the silence. It presents as
+intermittent grabbing rather than an outright failure, because focus bounces back and forth, and
+a grab held across one of those windows dies mid-lift. The symptom to recognise is
+`notifyOutOfBoundary() out = true` and `focusCapturedBySystem = true` in `adb logcat`.
 
 ## Rendering fidelity
 
@@ -64,6 +92,7 @@ second, and every `tf2` listener in the graph pays for it. `publish_hand_tf: fal
 
 ## Verification gaps
 
-Listed in full in [Testing](testing.md#what-is-not-established). The short version: the
-handedness conversion, `ClientWebSocket` under IL2CPP, the glTF correction sign and eye tracking
-permissions are all unexercised, because nothing has run on the device yet.
+Listed in full in [Testing](testing.md#what-is-not-established). The client now runs on the
+headset, which settled the handedness conversion, `ClientWebSocket` under IL2CPP and the glTF
+correction sign. Eye tracking permissions and anything quantitative about latency and comfort
+remain unexercised.

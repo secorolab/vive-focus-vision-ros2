@@ -15,6 +15,8 @@ to start if they match.
 | `<raw>/{left,right}/joy` → `<out>/…` | `sensor_msgs/Joy` | headset → PC | 90 Hz |
 | `<raw>/{left,right}/joints` → `<out>/…` and TF | `geometry_msgs/PoseArray` (26) | headset → PC | 60 Hz |
 | `<raw>/gaze` → `<out>/gaze` | `vr/EyeGaze` | headset → PC | 60 Hz |
+| `<raw>/{left,right}/target` → `<out>/…` | `std_msgs/Int32` | headset → PC | on change |
+| `<out>/{left,right}/held` | `std_msgs/Int32`, transient local | PC → headset | on change |
 | `<out>/{left,right}/active` | `std_msgs/Bool`, latched | PC | on change |
 | `<out>/scene` | `std_msgs/String`, transient local | PC → headset | once |
 | `<out>/body_poses` | `geometry_msgs/PoseArray` | PC → headset | 60 Hz |
@@ -84,12 +86,27 @@ consumes topics that already exist rather than adding any: the grip pose, the `J
 the hand joints.
 
 A grab starts on either **a pinch** (thumb tip to index tip closer than `pinch_close_m`, released
-past `pinch_open_m` so it cannot chatter) or **the squeeze button**. The nearest body within
-`reach_m` is caught, keeping the offset it had when caught rather than snapping to the palm.
+past `pinch_open_m` so it cannot chatter) or **the squeeze button**.
+
+**What is caught is what the client's ray is on**, published as a manifest index on
+`<out>/<hand>/target`. `reach_m` is only the fallback for a hand with no pointer. The body keeps
+the offset it had when caught rather than snapping to the palm, so it is dragged from where it
+sat and moving the hand up moves it up. The grabber answers on `<out>/<hand>/held` with what it
+is actually holding, which is not always what was pointed at: a body with no mass is refused.
 
 Held bodies are pulled by a clamped spring-damper written into `xfrc_applied` — not teleported.
 Mass, contact and actuators still decide what happens, so a heavy object resists and pushing a
 robot link fights its actuators. That is also what makes the resulting motion worth recording.
+
+Two details that are not obvious and were both found by getting them wrong:
+
+- The gains are **accelerations scaled by each body's mass and inertia**, not forces. A fixed
+  force clamp means wildly different accelerations across a scene, and a reach that merely nudges
+  a robot arm will fling a loose object out of the world.
+- The damper works on the body's velocity **relative to the target**, and that target velocity is
+  differenced between incoming pose messages rather than between simulation steps. Damping
+  absolute velocity leaves a standing error of `kd·v/kp` while the hand moves; differencing per
+  step reads zero on most steps, because `apply()` runs at 500 Hz against a 50 Hz stream.
 
 ## Eye gaze
 

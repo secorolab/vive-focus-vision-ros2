@@ -47,21 +47,56 @@ VrRos                   VrConfig, RosBridge, ClockSync, VrInputPublisher,
 | `GazePublisher` | per-eye gaze and pupil via `ViveEyeTracker` |
 | `SceneLoader` | `<out>/scene` → HTTP fetch → glTFast → one holder per body, plus the ground |
 | `BodyPoseApplier` | `<out>/body_poses` → transforms |
-| `VrLocomotion` | stick locomotion and the spawn point |
+| `VrLocomotion` | stick locomotion, the spawn point and recentring |
+| `VrPointer` | the selection ray, the highlight, and `<raw>/<hand>/target` |
+| `VrBodyTag` | a body's manifest index, so a raycast hit can be named |
+| `VrDeviceVisuals` | VIVE's own controller and hand models, one set or the other |
+| `VrSimControls` | buttons that act on the simulation rather than the rig |
 
-### Moving around
+### Controls
 
-The left stick glides along the direction the user is looking, flattened so pitching the head
-does not fly the rig into the floor; the right stick turns in 45° steps; the face buttons raise
-and lower. Turning is snapped rather than smooth because continuous yaw is the main cause of
-motion sickness.
+| Input | Action |
+|---|---|
+| Left stick | walk (push) and turn (tilt) |
+| Left X | recentre: back to spawn, eyes at `eyeHeight` |
+| Left Y | reset the simulation |
+| Left menu | switch controllers ↔ hands |
+| Right A / B | up / down |
+| Grip, or a pinch in hand mode | grab whatever the ray is on |
 
-This is read through `UnityEngine.XR.InputDevices` like the rest of the client rather than the XR
-Interaction Toolkit's locomotion providers, so there is one input path and no action assets to
-keep in sync.
+One stick does both walking and turning. Turning is continuous rather than snapped; snap turn is
+gentler on motion sickness, but it was not what this reads well as in practice.
+
+All of it is read through `UnityEngine.XR.InputDevices` rather than the XR Interaction Toolkit's
+locomotion providers, so there is one input path and no action assets to keep in sync.
 
 Because the rig moves, every published pose is transformed by it before being sent — a device
-pose alone is in tracking space and would ignore where the user walked to.
+pose alone is in tracking space and would ignore where the user walked to. That transform is the
+**camera offset**, not the XR Origin root: `XROrigin` puts the eye height on the offset object in
+device space, so converting through the root leaves every pose a metre and a half out.
+
+### Pointing at things
+
+A ray leaves each hand, whatever it lands on is tinted, and that body's manifest index goes to
+the PC on `<raw>/<hand>/target`. Grabbing by proximity alone was unusable in a headset: it wanted
+the controller inside a 15 cm bubble around a 6 cm cube, with nothing on screen saying whether
+you were close enough.
+
+The ray is deliberately forgiving, because hand tracking is not precise enough for a bare ray at
+arm's length: it is a 3 cm sphere cast, the aim is low-pass filtered, a new body has to hold the
+ray for four frames before the selection moves to it, and a tracking dropout keeps the last aim
+for a quarter of a second.
+
+In hand mode the ray is aimed **from the eye through the pinch point**, not along the hand. The
+hand's own axes run along the back of the hand and sit well above where the user believes they
+are pointing; sighting through the fingers is what makes it land where it looks like it should.
+The origin is still the pinch point, so the ray appears to leave the fingers.
+
+Two colours, and the difference matters: **yellow** is what the ray is on, **green** is what the
+PC reports actually holding on `<out>/<hand>/held`. They disagree whenever the grabber refuses a
+body — a static one such as a table has no mass — so you can see the refusal rather than wonder
+why nothing moved. Green is applied optimistically the moment the button goes down and corrected
+by the next `/held`, because waiting for the round trip on this link was visible.
 
 ### Vendor-neutral input
 

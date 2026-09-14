@@ -37,6 +37,12 @@ Measured by running the system, not inferred from a successful build:
 | Stream survives a reset | 58.8 Hz before, 60.0 Hz after `/vr_scene/reset` |
 | Grabbing lifts an object | scripted pinch caught `cube`, which rose from z=0.030 to z=0.375 and stayed |
 | An exported world renders assembled | the Kinova arm, imported into Unity from the `.glb` alone |
+| The client runs on the headset | `rosbridge: connected`, `scene: loaded … 12 bodies`, all `/vr/raw/*` advertised |
+| `ClientWebSocket` works under IL2CPP/ARM64 | it connected and carried the whole session |
+| The glTF correction sign is right | the Kinova arm stands upright in the headset |
+| Poses agree with what is rendered | head at `(-1.23, -0.32, 1.13)`, pitch +32°, yaw −43° — matching a capture showing the arm 57° to the left and the horizon high |
+| Pointing selects, and grabbing lifts | `target → 10`, `grip → 1`, `HELD → 10`, cube from z=0.730 to 0.984 |
+| Reset restores loose bodies | cube and ball back at their MJCF poses on the table |
 
 The pose test uses three distinct translation components and a non-identity rotation
 specifically so that a transposed axis or a dropped sign cannot pass unnoticed.
@@ -45,15 +51,17 @@ specifically so that a transposed axis or a dropped sign cannot pass unnoticed.
 
 Be precise about this, because a green build is misleading here.
 
-- **The handedness conversion.** `fake_headset.py` sends ROS-convention poses directly, so it
-  validates the *transport*, not `FrameConv`. The Unity client runs poses through that conversion
-  first, and nothing has exercised it.
-- **`ClientWebSocket` under IL2CPP on ARM64.** It compiles; that is all that is known.
-- **The glTF correction rotation.** Derived to be ±90° about Y, defaulted to +90°, never observed.
-- **Eye tracking permissions.** No permission string exists anywhere in the VIVE plugin, which is
-  not the same as knowing none is needed.
-- **Anything about how it feels.** Latency, jitter, comfort, whether 60 Hz body poses look smooth
-  in a headset — all unmeasured.
+- **Eye tracking.** No permission string exists anywhere in the VIVE plugin, which is not the
+  same as knowing none is needed, and no gaze data has been seen from the device.
+- **Hand tracking end to end.** The subsystem runs and the topics are advertised, but no joint
+  message has ever been published: `XRHand.isTracked` stays false until the runtime switches its
+  interaction profile to `ext/hand_interaction_ext`, which it does only once the controllers go
+  idle. That switch has been observed; a published joint has not.
+- **Anything quantitative about how it feels.** Latency, jitter and comfort are unmeasured. What
+  is known is that the Wi-Fi link swings between 6 ms and 183 ms round trip, which is large
+  enough to matter and is not currently compensated.
+- **Any recorded dataset.** Nothing has been rosbagged, and two known problems would corrupt one:
+  the clock offset after a suspend, and rig height adjustments landing in published world poses.
 
 ## Bugs these tests caught
 
@@ -70,6 +78,36 @@ Each of these was silent — the system kept running and looked plausible.
 - **Exported worlds were a heap of parts.** Geometry is body-local with node transforms at
   identity, so until the first pose message arrived nothing was in its right place — in the
   headset as much as in a viewer. Body poses now go into the glTF nodes.
+
+## Bugs the first on-device run caught
+
+None of these could have been found on the PC.
+
+- **Every material rendered magenta.** Nothing in the project references glTFast's shaders — the
+  materials only exist once a `.glb` has been fetched at runtime — so the build stripped all
+  three. The Editor never strips, which is exactly why the preview looked right. They are now in
+  `m_AlwaysIncludedShaders`; the APK grew from 40 MB to 82 MB, which is the stripped variants
+  coming back.
+- **The scene never loaded.** Unity blocks cleartext HTTP on Android by default, so the `.glb`
+  fetch died with "Non-secure network connections disabled in Player Settings" while rosbridge
+  kept working — a live topic list and an empty world.
+- **A held object span on its axis forever.** `mju_quat2Vel` reads a quaternion with negative *w*
+  as a turn of more than half a circle, so the controller chased the orientation the long way
+  round and flipped sign again on the way. The error quaternion is now negated when *w* < 0.
+- **A grabbed ball left at 82 m.** The spring was force-limited, so the same 200 N clamp meant
+  1300 m/s² on a 150 g ball. Gains are now accelerations scaled by mass and inertia.
+- **Held objects trailed the hand.** The damper fought the body's absolute velocity rather than
+  its velocity relative to the target, leaving a standing error of `kd·v/kp` — 10 cm per m/s.
+  Fixing it needed the hand's velocity differenced *between pose messages*: a first attempt
+  differenced per simulation step, which is 500 Hz against a 50 Hz stream, so it read zero on
+  nine steps in ten and spiked on the tenth.
+- **Reset dropped every loose body at the origin.** `SceneNode` reset to keyframe 0, but a
+  robot's keyframe only covers that robot's joints — the cube and ball were zeroed rather than
+  restored. `reset_keyframe` now defaults to the model's initial state.
+- **Rays and published poses were 1.5 m out.** `XROrigin` applies `CameraYOffset` only in device
+  space, so the camera offset object had always been at identity and converting device poses
+  through the origin root happened to work. Switching tracking mode broke that assumption
+  everywhere at once.
 
 ## A regression worth remembering
 

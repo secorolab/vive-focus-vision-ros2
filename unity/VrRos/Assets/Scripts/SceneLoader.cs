@@ -42,6 +42,9 @@ namespace VrRos
         public float groundSize = 40f;
         public Material groundMaterial;
 
+        [Tooltip("Collide the imported meshes so the pointer can select a body")]
+        public bool addColliders = true;
+
         /// <summary>Body holders, indexed to match /vr/body_poses. Null where a body has no geometry.</summary>
         public Transform[] Bodies { get; private set; } = new Transform[0];
 
@@ -61,6 +64,20 @@ namespace VrRos
         /// an unbounded MuJoCo ground plane would become. It is scene dressing, not simulated
         /// geometry: contact still happens in MuJoCo against the real plane.
         /// </summary>
+        /* Convex colliders, because the bodies move every frame and a moving concave MeshCollider
+         * is rebuilt by PhysX on each change. Nothing here is simulated on the client, so the
+         * approximation only has to be good enough to point at. */
+        private static void AddColliders(Transform meshRoot)
+        {
+            foreach (MeshFilter filter in meshRoot.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (filter.sharedMesh == null) continue;
+                var collider = filter.gameObject.AddComponent<MeshCollider>();
+                collider.sharedMesh = filter.sharedMesh;
+                collider.convex = true;
+            }
+        }
+
         private void CreateGround()
         {
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -148,11 +165,15 @@ namespace VrRos
                 holder.SetParent(transform, false);
                 holders[i] = holder;
 
+                // The pointer raycasts against the meshes and needs the hit mapped back to an index.
+                holder.gameObject.AddComponent<VrBodyTag>().index = i;
+
                 if (byName.TryGetValue(name, out Transform mesh))
                 {
                     mesh.SetParent(holder, false);
                     mesh.localPosition = Vector3.zero;
                     mesh.localRotation = correction;
+                    if (addColliders) AddColliders(mesh);
                 }
                 else
                 {

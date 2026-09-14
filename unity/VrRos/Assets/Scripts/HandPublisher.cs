@@ -59,6 +59,8 @@ namespace VrRos
 
         private void Update()
         {
+            // Live, so the menu button can switch modes mid-session.
+            if (config != null && !config.HandMode) return;
             if (!bridge.IsConnected) return;
 
             if (_hands == null || !_hands.running)

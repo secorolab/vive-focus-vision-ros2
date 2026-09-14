@@ -54,6 +54,8 @@ namespace VrRos
                 frameId = config.Active.frameId;
             }
 
+            /* Advertised in both modes even though publishing is gated: the mode can change at
+             * runtime, and advertising on the switch would drop the first messages. */
             bridge.Advertise($"{rawNs}/head/pose", "geometry_msgs/msg/PoseStamped");
             foreach (string hand in new[] { "left", "right" })
             {
@@ -69,6 +71,8 @@ namespace VrRos
             _nextPublish = Time.unscaledTime + (maxRateHz > 0f ? 1f / maxRateHz : 0f);
 
             PublishPose($"{rawNs}/head/pose", InputDevices.GetDeviceAtXRNode(XRNode.CenterEye));
+            if (config != null && config.HandMode) return;
+
             PublishHand("left", XRNode.LeftHand);
             PublishHand("right", XRNode.RightHand);
         }
