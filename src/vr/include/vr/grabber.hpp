@@ -44,7 +44,7 @@ struct GrabConf
     double kd               = 40.0;  // [1/s]
     double kp_rot           = 100.0; // [1/s^2]
     double kd_rot           = 20.0;  // [1/s]
-    double max_accel        = 50.0;  // [m/s^2]    clamped, or a far reach launches the object
+    double max_accel        = 150.0; // [m/s^2]    clamped, or a far reach launches the object
     double max_ang_accel    = 100.0; // [rad/s^2]
 
     /* The hand velocity the damper is given is differenced from poses that arrive over Wi-Fi in

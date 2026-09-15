@@ -45,8 +45,9 @@ namespace VrRos
         [Tooltip("Collide the imported meshes so the pointer can select a body")]
         public bool addColliders = true;
 
-        /// <summary>Body holders, indexed to match /vr/body_poses. Null where a body has no geometry.</summary>
+        /// <summary>Body holders, indexed by MuJoCo body id. Null where a body has no geometry.</summary>
         public Transform[] Bodies { get; private set; } = new Transform[0];
+
 
         public bool Loaded { get; private set; }
 
@@ -56,6 +57,8 @@ namespace VrRos
         {
             if (config != null && config.Active != null) outNs = config.Active.outNs;
             bridge.Subscribe($"{outNs}/scene", "std_msgs/msg/String", OnScene);
+
+            // Somewhere to stand before the first scene arrives; the load replaces it.
             if (drawGround) CreateGround();
         }
 
@@ -64,9 +67,12 @@ namespace VrRos
         /// an unbounded MuJoCo ground plane would become. It is scene dressing, not simulated
         /// geometry: contact still happens in MuJoCo against the real plane.
         /// </summary>
-        /* Convex colliders, because the bodies move every frame and a moving concave MeshCollider
-         * is rebuilt by PhysX on each change. Nothing here is simulated on the client, so the
-         * approximation only has to be good enough to point at. */
+        /* Concave colliders. Convex ones are cheaper, but a convex hull of a cabinet or a counter
+         * is a solid block: the ray stops on the hull and can never reach a cup standing on the
+         * surface or an object inside an open shelf. Nothing here is simulated on the client -
+         * these exist only to be pointed at - so the exact triangles are both affordable and the
+         * only thing that gives the right answer. Moving a concave collider by its transform is
+         * fine; only changing its mesh would force PhysX to re-cook it, and these never change. */
         private static void AddColliders(Transform meshRoot)
         {
             foreach (MeshFilter filter in meshRoot.GetComponentsInChildren<MeshFilter>(true))
@@ -74,7 +80,7 @@ namespace VrRos
                 if (filter.sharedMesh == null) continue;
                 var collider = filter.gameObject.AddComponent<MeshCollider>();
                 collider.sharedMesh = filter.sharedMesh;
-                collider.convex = true;
+                collider.convex = false;
             }
         }
 
@@ -105,22 +111,47 @@ namespace VrRos
 
             string url = (string)payload["url"];
             JObject manifest = payload["manifest"] as JObject;
-            if (string.IsNullOrEmpty(url) || manifest == null)
+            JObject env = payload["env"] as JObject;
+
+            /* Either half is enough on its own. A simulated world needs the manifest; a place to
+             * stand in and look at does not, and demanding one would force every scene through
+             * the exporter for no benefit. */
+            bool hasWorld = !string.IsNullOrEmpty(url) && manifest != null;
+            if (!hasWorld && env == null)
             {
-                Debug.LogError("scene: message carries no url or manifest; run scene_export first");
+                Debug.LogError("scene: message carries neither a world nor scenery");
                 return;
             }
 
-            // Transient-local redelivers on every reconnect; only reload when the world changed.
-            if (url == _loadedUrl) return;
-            _loadedUrl = url;
-            _ = LoadAsync(url, manifest);
+            // Transient-local redelivers on every reconnect; only reload when something changed.
+            string key = $"{url}|{(string)env?["url"]}";
+            if (key == _loadedUrl) return;
+            _loadedUrl = key;
+
+            /* Fire and forget, but not silently: an unobserved Task swallows its exception, and
+             * a scene that simply never appears is the least debuggable failure there is. */
+            _ = LoadAsync(hasWorld ? url : null, manifest, env, payload)
+                .ContinueWith(t => Debug.LogError($"scene: load failed: {t.Exception}"),
+                              System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
         }
 
-        private async Task LoadAsync(string url, JObject manifest)
+        private async Task LoadAsync(string url, JObject manifest, JObject env, JObject payload)
         {
             Loaded = false;
             foreach (Transform child in transform) Destroy(child.gameObject);
+
+            /* Scenery brings its own floor, and so does a model whose floor is real geometry
+             * rather than an unbounded plane; either way a second one z-fights with it. */
+            bool wantGround = (bool?)payload["ground"] ?? true;
+            if (drawGround && wantGround && env == null) CreateGround();
+
+            // Scenery only: nothing is simulated, so there are no bodies to map or to drive.
+            if (url == null)
+            {
+                Bodies = new Transform[0];
+                if (env != null) await LoadEnvAsync(env);
+                return;
+            }
 
             using UnityWebRequest request = UnityWebRequest.Get(url);
             await request.SendWebRequest();
@@ -194,9 +225,89 @@ namespace VrRos
             }
 
             Destroy(importRoot.gameObject);
+
+            /* Shadows are what separate one white surface from another; without them a lit scene
+             * still reads as flat clay. The importer leaves them off, so turn them on for the
+             * lights the scene brought with it. */
+            foreach (Light light in GetComponentsInChildren<Light>(true))
+            {
+                light.shadows = LightShadows.Soft;
+                light.shadowBias = 0.02f;
+            }
+
+            /* Welded bodies come once instead of in the stream. Placed before Loaded goes true,
+             * so no streamed frame lands on a scene still half at the origin. */
+            int placed = 0;
+            if (payload["static"] is JArray statics)
+            {
+                foreach (JToken entry in statics)
+                {
+                    int b = (int)entry[0];
+                    if (b < 0 || b >= holders.Length || holders[b] == null) continue;
+                    holders[b].SetLocalPositionAndRotation(
+                        FrameConv.RosToUnity((float)entry[1], (float)entry[2], (float)entry[3]),
+                        FrameConv.RosToUnity((float)entry[4], (float)entry[5], (float)entry[6],
+                                             (float)entry[7]));
+                    placed++;
+                }
+            }
+
             Bodies = holders;
             Loaded = true;
-            Debug.Log($"scene: loaded {url} with {holders.Length} bodies and {kept} other nodes");
+            Debug.Log($"scene: loaded {url} with {holders.Length} bodies ({placed} placed as "
+                      + $"static) and {kept} other nodes");
+
+            if (env != null) await LoadEnvAsync(env);
+        }
+
+        /// <summary>
+        /// Loads the scenery: a textured .glb that is drawn and never simulated.
+        ///
+        /// It gets no body holder, no collider and no tag, because nothing on the PC knows it
+        /// exists — a pose stream would have nothing to say about it and the pointer must not
+        /// select it. Anything the user should collide with belongs in the MJCF as a geom.
+        /// </summary>
+        private async Task LoadEnvAsync(JObject env)
+        {
+            string url = (string)env["url"];
+            if (string.IsNullOrEmpty(url)) return;
+
+            using UnityWebRequest request = UnityWebRequest.Get(url);
+            await request.SendWebRequest();
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"env: GET {url} failed: {request.error}");
+                return;
+            }
+
+            var gltf = new GltfImport();
+            if (!await gltf.LoadGltfBinary(request.downloadHandler.data, new System.Uri(url)))
+            {
+                Debug.LogError($"env: {url} is not a loadable glb");
+                return;
+            }
+
+            var root = new GameObject("Scenery").transform;
+            root.SetParent(transform, false);
+            if (!await gltf.InstantiateMainSceneAsync(root))
+            {
+                Debug.LogError("env: instantiation failed");
+                return;
+            }
+
+            /* Placed in ROS coordinates like everything else the PC talks about, because the
+             * environment's own origin is wherever its author put it. */
+            JArray xyz = env["xyz"] as JArray;
+            if (xyz != null && xyz.Count == 3)
+            {
+                root.localPosition =
+                    FrameConv.RosToUnity((float)xyz[0], (float)xyz[1], (float)xyz[2]);
+            }
+            root.localRotation = Quaternion.Euler(0f, -(float)(env["yaw_deg"] ?? 0), 0f);
+            float scale = (float)(env["scale"] ?? 1f);
+            root.localScale = Vector3.one * (scale <= 0f ? 1f : scale);
+
+            Debug.Log($"env: loaded {url} at {root.localPosition}, scale {scale}");
         }
     }
 }

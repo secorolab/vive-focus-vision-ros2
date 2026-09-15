@@ -41,6 +41,13 @@ def generate_launch_description():
             default_value="0.0.0.0",
             description="address the headset reaches this machine on; used to build scene_url",
         ),
+        DeclareLaunchArgument(
+            "env_glb",
+            default_value="",
+            description="scenery to draw and not simulate: a .glb in scene_dir, by file name",
+        ),
+        DeclareLaunchArgument("env_yaw_deg", default_value="0.0"),
+        DeclareLaunchArgument("env_scale", default_value="1.0"),
     ]
 
     scene_dir = LaunchConfiguration("scene_dir")
@@ -50,6 +57,13 @@ def generate_launch_description():
 
     scene_url = PythonExpression(
         ["'http://' + '", host_ip, "' + ':' + '", http_port, "' + '/scene.glb'"]
+    )
+
+    # Empty stays empty, so that an unset env_glb does not become a URL to nothing.
+    env_glb = LaunchConfiguration("env_glb")
+    env_url = PythonExpression(
+        ["('http://' + '", host_ip, "' + ':' + '", http_port, "' + '/' + '", env_glb,
+         "') if '", env_glb, "' else ''"]
     )
 
     container = ComposableNodeContainer(
@@ -71,6 +85,13 @@ def generate_launch_description():
                         "model": LaunchConfiguration("model"),
                         "manifest": PythonExpression(["'", scene_dir, "' + '/manifest.json'"]),
                         "scene_url": scene_url,
+                        "env_url": env_url,
+                        "env_yaw_deg": ParameterValue(
+                            LaunchConfiguration("env_yaw_deg"), value_type=float
+                        ),
+                        "env_scale": ParameterValue(
+                            LaunchConfiguration("env_scale"), value_type=float
+                        ),
                     },
                 ],
             ),

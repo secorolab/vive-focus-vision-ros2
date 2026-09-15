@@ -11,6 +11,8 @@
 #include <limits>
 #include <sstream>
 
+#include <zlib.h>
+
 namespace vr {
 namespace {
 
@@ -60,15 +62,91 @@ std::array<float, 4> rotation_from_minus_z(const std::array<float, 3> &dir)
     return { axis[0] / s, axis[1] / s, axis[2] / s, s * 0.5f };
 }
 
+uint32_t crc32_of(const uint8_t *data, size_t n)
+{
+    static uint32_t table[256];
+    static bool     ready = false;
+    if (!ready) {
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; ++k) c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+            table[i] = c;
+        }
+        ready = true;
+    }
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; ++i) c = table[(c ^ data[i]) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+
+void png_chunk(std::vector<uint8_t> &out, const char tag[4], const std::vector<uint8_t> &payload)
+{
+    const uint32_t len = static_cast<uint32_t>(payload.size());
+    for (int i = 3; i >= 0; --i) out.push_back(static_cast<uint8_t>(len >> (8 * i)));
+    std::vector<uint8_t> tagged(tag, tag + 4);
+    tagged.insert(tagged.end(), payload.begin(), payload.end());
+    out.insert(out.end(), tagged.begin(), tagged.end());
+    const uint32_t crc = crc32_of(tagged.data(), tagged.size());
+    for (int i = 3; i >= 0; --i) out.push_back(static_cast<uint8_t>(crc >> (8 * i)));
+}
+
+/**
+ * Encodes RGBA8 as PNG. glTF permits only PNG and JPEG, so raw pixels cannot be embedded
+ * directly. zlib does the compression; a texture atlas is megabytes uncompressed and the stored
+ * form would bloat the .glb the headset has to download.
+ */
+std::vector<uint8_t> encode_png(const Texture &tex)
+{
+    std::vector<uint8_t> raw;
+    raw.reserve(static_cast<size_t>(tex.height) * (1 + tex.width * 4));
+    for (int y = 0; y < tex.height; ++y) {
+        raw.push_back(0); // filter type: none
+        const uint8_t *row = tex.rgba.data() + static_cast<size_t>(y) * tex.width * 4;
+        raw.insert(raw.end(), row, row + static_cast<size_t>(tex.width) * 4);
+    }
+
+    uLongf               bound = compressBound(static_cast<uLong>(raw.size()));
+    std::vector<uint8_t> deflated(bound);
+    if (compress2(deflated.data(), &bound, raw.data(), static_cast<uLong>(raw.size()), 6) != Z_OK) {
+        return {};
+    }
+    deflated.resize(bound);
+
+    std::vector<uint8_t> png = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+    std::vector<uint8_t> ihdr;
+    for (int i = 3; i >= 0; --i) ihdr.push_back(static_cast<uint8_t>(tex.width >> (8 * i)));
+    for (int i = 3; i >= 0; --i) ihdr.push_back(static_cast<uint8_t>(tex.height >> (8 * i)));
+    ihdr.insert(ihdr.end(), { 8, 6, 0, 0, 0 }); // 8-bit, RGBA, deflate, no filter, no interlace
+    png_chunk(png, "IHDR", ihdr);
+    png_chunk(png, "IDAT", deflated);
+    png_chunk(png, "IEND", {});
+    return png;
+}
+
 } // namespace
 
-int GlbBuilder::add_material(const std::array<float, 4> &rgba)
+int GlbBuilder::add_material(const std::array<float, 4> &rgba, int texture, float metallic,
+                             float roughness)
 {
     for (size_t i = 0; i < materials_.size(); ++i) {
-        if (materials_[i] == rgba) return static_cast<int>(i);
+        const Material &m = materials_[i];
+        if (m.rgba == rgba && m.texture == texture && m.metallic == metallic
+            && m.roughness == roughness) {
+            return static_cast<int>(i);
+        }
     }
-    materials_.push_back(rgba);
+    materials_.push_back({ rgba, texture, metallic, roughness });
     return static_cast<int>(materials_.size()) - 1;
+}
+
+int GlbBuilder::add_texture(const std::string &key, Texture texture)
+{
+    for (size_t i = 0; i < texture_keys_.size(); ++i) {
+        if (texture_keys_[i] == key) return static_cast<int>(i);
+    }
+    textures_.push_back(std::move(texture));
+    texture_keys_.push_back(key);
+    return static_cast<int>(textures_.size()) - 1;
 }
 
 int GlbBuilder::add_mesh_node(MeshGroup mesh)
@@ -122,9 +200,17 @@ bool GlbBuilder::write(const std::string &path) const
             append_bytes(bin, prim.normals.data(), prim.normals.size() * sizeof(float));
             pad_to_4(bin);
 
+            const bool   has_uv    = prim.uvs.size() == static_cast<size_t>(vertex_count) * 2;
+            const size_t uv_offset = bin.size();
+            if (has_uv) {
+                append_bytes(bin, prim.uvs.data(), prim.uvs.size() * sizeof(float));
+                pad_to_4(bin);
+            }
+
             const int idx_view = view_count++;
             const int pos_view = view_count++;
             const int nrm_view = view_count++;
+            const int uv_view  = has_uv ? view_count++ : -1;
             if (idx_view) buffer_views << ",";
             buffer_views << "{\"buffer\":0,\"byteOffset\":" << idx_offset
                          << ",\"byteLength\":" << prim.indices.size() * sizeof(uint32_t)
@@ -135,10 +221,16 @@ bool GlbBuilder::write(const std::string &path) const
                          << "{\"buffer\":0,\"byteOffset\":" << nrm_offset
                          << ",\"byteLength\":" << prim.normals.size() * sizeof(float)
                          << ",\"target\":" << kArrayBuffer << "}";
+            if (has_uv) {
+                buffer_views << ",{\"buffer\":0,\"byteOffset\":" << uv_offset
+                             << ",\"byteLength\":" << prim.uvs.size() * sizeof(float)
+                             << ",\"target\":" << kArrayBuffer << "}";
+            }
 
             const int idx_acc = accessor_count++;
             const int pos_acc = accessor_count++;
             const int nrm_acc = accessor_count++;
+            const int uv_acc  = has_uv ? accessor_count++ : -1;
             if (idx_acc) accessors << ",";
             accessors << "{\"bufferView\":" << idx_view << ",\"componentType\":" << kUnsignedInt
                       << ",\"count\":" << prim.indices.size() << ",\"type\":\"SCALAR\"},"
@@ -149,10 +241,15 @@ bool GlbBuilder::write(const std::string &path) const
                       << fmt_float(hi[2]) << "]},"
                       << "{\"bufferView\":" << nrm_view << ",\"componentType\":" << kFloat
                       << ",\"count\":" << vertex_count << ",\"type\":\"VEC3\"}";
+            if (has_uv) {
+                accessors << ",{\"bufferView\":" << uv_view << ",\"componentType\":" << kFloat
+                          << ",\"count\":" << vertex_count << ",\"type\":\"VEC2\"}";
+            }
 
             if (p) meshes_json << ",";
-            meshes_json << "{\"attributes\":{\"POSITION\":" << pos_acc << ",\"NORMAL\":" << nrm_acc
-                        << "},\"indices\":" << idx_acc;
+            meshes_json << "{\"attributes\":{\"POSITION\":" << pos_acc << ",\"NORMAL\":" << nrm_acc;
+            if (has_uv) meshes_json << ",\"TEXCOORD_0\":" << uv_acc;
+            meshes_json << "},\"indices\":" << idx_acc;
             if (prim.material >= 0) meshes_json << ",\"material\":" << prim.material;
             meshes_json << "}";
         }
@@ -207,22 +304,56 @@ bool GlbBuilder::write(const std::string &path) const
 
     json << "\"materials\":[";
     for (size_t i = 0; i < materials_.size(); ++i) {
-        const auto &c = materials_[i];
+        const auto &c = materials_[i].rgba;
         if (i) json << ",";
         json << "{\"pbrMetallicRoughness\":{\"baseColorFactor\":[" << fmt_float(c[0]) << ","
-             << fmt_float(c[1]) << "," << fmt_float(c[2]) << "," << fmt_float(c[3])
-             << "],\"metallicFactor\":0,\"roughnessFactor\":0.8}";
+             << fmt_float(c[1]) << "," << fmt_float(c[2]) << "," << fmt_float(c[3]) << "]";
+        if (materials_[i].texture >= 0) {
+            json << ",\"baseColorTexture\":{\"index\":" << materials_[i].texture << "}";
+        }
+        json << ",\"metallicFactor\":" << fmt_float(materials_[i].metallic)
+             << ",\"roughnessFactor\":" << fmt_float(materials_[i].roughness) << "}";
         if (c[3] < 1.0f) json << ",\"alphaMode\":\"BLEND\"";
         json << ",\"doubleSided\":true}";
     }
     json << "],";
+
+    if (!textures_.empty()) {
+        /* Images live in the buffer rather than as URIs, so the .glb stays one file the headset
+         * fetches in one request. */
+        std::ostringstream images, textures_json;
+        images << "\"images\":[";
+        textures_json << "\"textures\":[";
+        for (size_t t = 0; t < textures_.size(); ++t) {
+            const std::vector<uint8_t> png = encode_png(textures_[t]);
+            pad_to_4(bin);
+            const size_t offset = bin.size();
+            append_bytes(bin, png.data(), png.size());
+
+            const int view = view_count++;
+            buffer_views << ",{\"buffer\":0,\"byteOffset\":" << offset
+                         << ",\"byteLength\":" << png.size() << "}";
+            if (t) { images << ","; textures_json << ","; }
+            images << "{\"bufferView\":" << view << ",\"mimeType\":\"image/png\"}";
+            textures_json << "{\"sampler\":0,\"source\":" << t << "}";
+        }
+        images << "],";
+        textures_json << "],";
+        // One sampler: repeat in both directions, which is what tiled MuJoCo textures expect.
+        json << images.str() << textures_json.str()
+             << "\"samplers\":[{\"wrapS\":10497,\"wrapT\":10497}],";
+    }
+
+    /* Pad before the length is recorded, not after: an embedded PNG is any number of bytes, so
+     * the chunk needs padding that the declared buffer length must already account for. Every
+     * attribute was 4-byte aligned by construction, which is why this only appeared with images. */
+    pad_to_4(bin);
 
     json << meshes_json.str() << ",\"accessors\":[" << accessors.str() << "],\"bufferViews\":["
          << buffer_views.str() << "],\"buffers\":[{\"byteLength\":" << bin.size() << "}]}";
 
     std::string json_chunk = json.str();
     while (json_chunk.size() % 4 != 0) json_chunk.push_back(' ');
-    pad_to_4(const_cast<std::vector<uint8_t> &>(bin));
 
     const uint32_t json_len  = static_cast<uint32_t>(json_chunk.size());
     const uint32_t bin_len   = static_cast<uint32_t>(bin.size());

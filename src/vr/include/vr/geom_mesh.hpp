@@ -17,6 +17,9 @@ struct TriMesh
     std::vector<float>    positions;
     std::vector<float>    normals;
     std::vector<uint32_t> indices;
+    /* Two per vertex, or empty. Only mesh assets carry them: MuJoCo generates texture coordinates
+     * for its primitives at render time, and a checker on a box gains nothing here. */
+    std::vector<float>    uvs;
 };
 
 /** Tessellation density for the round primitives. */

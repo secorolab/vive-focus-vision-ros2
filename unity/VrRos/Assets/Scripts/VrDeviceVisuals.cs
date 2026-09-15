@@ -8,13 +8,13 @@ using UnityEngine.XR;
 namespace VrRos
 {
     /// <summary>
-    /// Shows the VIVE plugin's own controller and hand models, one set or the other.
+    /// Shows the controller or the hand models, one set or the other.
     ///
-    /// The models come from com.htc.upm.vive.openxr's Runtime/Prefabs: ViveFocus3ControllerAimL/R
-    /// carry ControllerModelActions, which animates the buttons but does not place the controller,
-    /// so the pose is written here from the same InputDevices read VrInputPublisher uses.
-    /// ViveHandL/R carry HandModelActions, which drives the skinned mesh straight from
-    /// XR_EXT_hand_tracking and needs no help.
+    /// Controllers are com.htc.upm.vive.openxr's ViveFocus3ControllerAimL/R: ControllerModelActions
+    /// animates the buttons but does not place the controller, so the pose is written here from
+    /// the same InputDevices read VrInputPublisher uses. Hands are the XR Hands package's sample
+    /// prefabs, driven by XRHandSkeletonDriver from the same XRHandSubsystem HandPublisher reads,
+    /// and need no help.
     ///
     /// Mode is not a preference: the runtime stops reporting hands while a controller is awake,
     /// so showing both would leave one set frozen wherever it was last seen.
@@ -32,7 +32,10 @@ namespace VrRos
         public GameObject leftHand;
         public GameObject rightHand;
 
-        private bool _togglePressed;
+        [Tooltip("Seconds the menu button must be held to switch modes; a tap is too easy to hit")]
+        public float toggleHoldSeconds = 1f;
+
+        private float _heldSince = -1f;
 
         private void Start()
         {
@@ -57,7 +60,7 @@ namespace VrRos
         }
 
         /* The menu button, which the Joy layout already reserves and nothing else reads. Only the
-         * left controller has one. Edge-triggered, or holding it would flap between modes. */
+         * left controller has one. Held, not tapped: a tap mid-grab switched modes by accident. */
         private void PollToggle()
         {
             if (config == null) return;
@@ -67,8 +70,13 @@ namespace VrRos
                         && device.TryGetFeatureValue(CommonUsages.menuButton, out bool menu)
                         && menu;
 
-            if (down && !_togglePressed) config.SetHandMode(!config.HandMode);
-            _togglePressed = down;
+            if (!down) _heldSince = -1f;
+            else if (_heldSince < 0f) _heldSince = Time.unscaledTime;
+            else if (Time.unscaledTime - _heldSince >= toggleHoldSeconds)
+            {
+                config.SetHandMode(!config.HandMode);
+                _heldSince = float.PositiveInfinity; // once per hold
+            }
         }
 
         private void ApplyMode()

@@ -28,8 +28,9 @@ for i, bv in enumerate(gltf["bufferViews"]):
     assert end <= len(bin_chunk), f"bufferView {i} overruns BIN chunk"
     assert bv["byteOffset"] % 4 == 0, f"bufferView {i} byteOffset not 4-aligned"
 
-SIZES = {5125: 4, 5126: 4}
-COMPONENTS = {"SCALAR": 1, "VEC3": 3}
+# The full glTF sets, not just what scene_export emits: this also checks assets from elsewhere.
+SIZES = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
+COMPONENTS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2": 4, "MAT3": 9, "MAT4": 16}
 for i, acc in enumerate(gltf["accessors"]):
     bv = gltf["bufferViews"][acc["bufferView"]]
     need = acc["count"] * SIZES[acc["componentType"]] * COMPONENTS[acc["type"]]
@@ -41,15 +42,25 @@ tris = verts = 0
 for mesh in gltf["meshes"]:
     for prim in mesh["primitives"]:
         pos = gltf["accessors"][prim["attributes"]["POSITION"]]
-        nrm = gltf["accessors"][prim["attributes"]["NORMAL"]]
         idx = gltf["accessors"][prim["indices"]]
-        assert pos["count"] == nrm["count"], "POSITION/NORMAL count mismatch"
+        # Every attribute is per vertex; a short one is an invalid accessor and the primitive
+        # silently fails to draw rather than erroring.
+        for attr in ("NORMAL", "TEXCOORD_0", "TANGENT", "COLOR_0"):
+            if attr in prim["attributes"]:
+                other = gltf["accessors"][prim["attributes"][attr]]
+                assert pos["count"] == other["count"], (
+                    f"POSITION/{attr} count mismatch: {pos['count']} vs {other['count']}"
+                )
         assert idx["count"] % 3 == 0, "index count not a multiple of 3"
         bv = gltf["bufferViews"][idx["bufferView"]]
-        data = bin_chunk[bv["byteOffset"] : bv["byteOffset"] + bv["byteLength"]]
-        hi = max(struct.unpack(f"<{idx['count']}I", data))
+        # Indices may be 8, 16 or 32 bit, and an accessor may start partway into its view.
+        start = bv.get("byteOffset", 0) + idx.get("byteOffset", 0)
+        code = {1: "B", 2: "H", 4: "I"}[SIZES[idx["componentType"]]]
+        data = bin_chunk[start : start + idx["count"] * SIZES[idx["componentType"]]]
+        hi = max(struct.unpack(f"<{idx['count']}{code}", data))
         assert hi < pos["count"], f"index {hi} out of range for {pos['count']} vertices"
-        assert prim["material"] < len(gltf["materials"]), "material index out of range"
+        if "material" in prim:
+            assert prim["material"] < len(gltf["materials"]), "material index out of range"
         tris += idx["count"] // 3
         verts += pos["count"]
 

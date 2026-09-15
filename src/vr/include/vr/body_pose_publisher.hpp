@@ -5,12 +5,13 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <mujoco/mujoco.h>
 
-#include <geometry_msgs/msg/pose_array.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <vr/msg/body_poses.hpp>
 
 namespace vr {
 
@@ -22,6 +23,15 @@ struct SceneConf
     std::string frame_id  = "world";    // frame the poses are expressed in
     std::string topic_ns  = "/vr";      // -> <topic_ns>/body_poses, <topic_ns>/scene
     double      rate_hz   = 60.0;
+
+    /* Optional scenery: a textured .glb the client draws and nothing simulates. A room is not a
+     * rigid body and gains nothing from being one, and the exporter carries no textures, so an
+     * environment is better authored elsewhere and placed here. Its geometry is invisible to
+     * MuJoCo: anything the user should collide with still needs geoms in the MJCF. */
+    std::string env_url;
+    double      env_xyz[3]   = { 0.0, 0.0, 0.0 }; // ROS coordinates
+    double      env_yaw_deg  = 0.0;
+    double      env_scale    = 1.0;
 };
 
 /**
@@ -40,8 +50,13 @@ struct SceneConf
  * Poses are MuJoCo world coordinates, already REP-103 (Z up, right-handed); the conversion to
  * the client's left-handed Y-up space happens on the client, once.
  *
- * Pose i is body i, matching mjModel body order and the manifest's bodies[] - the client indexes
- * straight into it, so nothing here may reorder.
+ * Each frame carries only the bodies that moved, named by id, and the scene message carries the
+ * welded ones' fixed poses once in "static". Sending all 194 bodies of a kitchen so that one
+ * bottle could move cost 16 KB of rosbridge JSON per frame - it saturated the socket, and a
+ * grabbed object tracked the ray visibly slowly.
+ *
+ * A full frame goes out for a new subscriber and at least every half second, because this topic
+ * carries state: a client that joins a world at rest would otherwise place nothing.
  */
 class BodyPosePublisher
 {
@@ -61,9 +76,14 @@ class BodyPosePublisher
   private:
     SceneConf                                                   conf_;
     rclcpp::Node                                               &node_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr poses_pub_;
+    rclcpp::Publisher<vr::msg::BodyPoses>::SharedPtr            poses_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr         scene_pub_;
-    geometry_msgs::msg::PoseArray                               poses_;
+    vr::msg::BodyPoses                                          poses_;
+    std::vector<int>                                            dynamic_; // bodies that can move
+    std::vector<mjtNum>                                         sent_;    // last published, 7/body
+    bool                                                        have_sent_   = false;
+    double                                                      last_full_s_ = 0.0;
+    size_t                                                      last_subs_   = 0;
     int                                                         nbody_      = 0;
     double                                                      period_s_   = 0.0;
     double                                                      next_due_s_ = 0.0;

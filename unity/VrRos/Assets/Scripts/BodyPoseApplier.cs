@@ -2,18 +2,19 @@
 // Copyright (c) 2026 Vamsi Kalagaturu
 // See LICENSE for details.
 
+using System.Collections.Concurrent;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace VrRos
 {
     /// <summary>
-    /// Drives the loaded body holders from /vr/body_poses. Pose i belongs to body i: the order
-    /// is MuJoCo's body order, which is what scene_export wrote into the manifest.
+    /// Drives the loaded body holders from /vr/body_poses, which carries only the bodies that
+    /// moved: poses[i] belongs to body ids[i].
     ///
-    /// Parsing a PoseArray through JObject allocates per frame. That is fine for the tens of
-    /// bodies a manipulation scene has; a scene with hundreds should move this topic to
-    /// rosbridge's CBOR compression, or to a flat float32 array, before blaming the renderer.
+    /// The JSON walk and the frame conversion both happen on the socket task; the main thread
+    /// only writes Transforms, which is the one part that cannot happen anywhere else. Every
+    /// frame is applied: each carries only what moved since the last one.
     /// </summary>
     public class BodyPoseApplier : MonoBehaviour
     {
@@ -28,36 +29,82 @@ namespace VrRos
 
         public int Received { get; private set; }
 
+        /// <summary>One decoded frame, already in Unity's convention.</summary>
+        private sealed class Frame
+        {
+            public int[] Id = new int[0];
+            public Vector3[] Position = new Vector3[0];
+            public Quaternion[] Rotation = new Quaternion[0];
+            public int Count;
+
+            public void Resize(int n)
+            {
+                if (Position.Length >= n) return;
+                Id = new int[n];
+                Position = new Vector3[n];
+                Rotation = new Quaternion[n];
+            }
+        }
+
+        // Frames come back here after Apply, so a steady stream allocates nothing.
+        private readonly ConcurrentBag<Frame> _pool = new ConcurrentBag<Frame>();
+        private int _warned = -1;
+
         private void Start()
         {
             if (config != null && config.Active != null) outNs = config.Active.outNs;
-            bridge.Subscribe($"{outNs}/body_poses", "geometry_msgs/msg/PoseArray", OnPoses);
+            bridge.Subscribe<Frame>($"{outNs}/body_poses", "vr/msg/BodyPoses", Decode, Apply);
         }
 
-        private void OnPoses(JObject msg)
+        /// <summary>Socket task: walks the JSON and converts to Unity's frame. No Unity API here.</summary>
+        private Frame Decode(JObject msg)
         {
-            if (msg == null || !scene.Loaded) return;
-            JArray poses = msg["poses"] as JArray;
-            if (poses == null) return;
+            JArray poses = msg?["poses"] as JArray;
+            JArray ids = msg?["ids"] as JArray;
+            if (poses == null || ids == null || ids.Count != poses.Count) return null;
 
-            Transform[] bodies = scene.Bodies;
-            if (poses.Count != bodies.Length)
-            {
-                // A mismatch means the running model is not the one that was exported.
-                Debug.LogWarning($"body_poses has {poses.Count} poses but the scene has "
-                                 + $"{bodies.Length} bodies; re-run scene_export for this model");
-                return;
-            }
+            if (!_pool.TryTake(out Frame frame)) frame = new Frame();
+            frame.Resize(poses.Count);
+            frame.Count = poses.Count;
 
-            for (int i = 0; i < bodies.Length; i++)
+            for (int i = 0; i < poses.Count; i++)
             {
-                if (bodies[i] == null) continue;
                 JToken p = poses[i]["position"];
                 JToken q = poses[i]["orientation"];
-                bodies[i].SetLocalPositionAndRotation(
-                    FrameConv.RosToUnity((float)p["x"], (float)p["y"], (float)p["z"]),
-                    FrameConv.RosToUnity((float)q["x"], (float)q["y"], (float)q["z"],
-                                         (float)q["w"]));
+                frame.Id[i] = (int)ids[i];
+                frame.Position[i] = FrameConv.RosToUnity((float)p["x"], (float)p["y"], (float)p["z"]);
+                frame.Rotation[i] = FrameConv.RosToUnity((float)q["x"], (float)q["y"],
+                                                         (float)q["z"], (float)q["w"]);
+            }
+            return frame;
+        }
+
+        /// <summary>Main thread: nothing but Transform writes.</summary>
+        private void Apply(Frame frame)
+        {
+            if (scene.Loaded) Write(frame);
+            _pool.Add(frame);
+        }
+
+        private void Write(Frame frame)
+        {
+            Transform[] bodies = scene.Bodies;
+            for (int i = 0; i < frame.Count; i++)
+            {
+                int b = frame.Id[i];
+                if (b < 0 || b >= bodies.Length)
+                {
+                    // An id outside the manifest means this is not the model that was exported.
+                    if (_warned != b)
+                    {
+                        _warned = b;
+                        Debug.LogWarning($"body_poses names body {b} but the scene has "
+                                         + $"{bodies.Length}; re-run scene_export for this model");
+                    }
+                    continue;
+                }
+                if (bodies[b] == null) continue;
+                bodies[b].SetLocalPositionAndRotation(frame.Position[i], frame.Rotation[i]);
             }
             Received++;
         }

@@ -10,10 +10,12 @@
  * A simulation an application already owns should use vr::BodyPosePublisher directly. */
 
 #include <chrono>
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <map>
 #include <string>
+#include <vector>
 
 #include <mj_kdl_wrapper/mj_kdl_wrapper.hpp>
 #include <mujoco/mujoco.h>
@@ -37,6 +39,15 @@ class SceneNode : public rclcpp::Node
         SceneConf conf;
         conf.manifest_path = declare_parameter<std::string>("manifest", "");
         conf.scene_url     = declare_parameter<std::string>("scene_url", "");
+
+        /* Scenery the client draws and nothing simulates; see SceneConf. Placed here because the
+         * environment's own origin will not be the world origin. */
+        conf.env_url     = declare_parameter<std::string>("env_url", "");
+        conf.env_yaw_deg = declare_parameter<double>("env_yaw_deg", 0.0);
+        conf.env_scale   = declare_parameter<double>("env_scale", 1.0);
+        const auto env_xyz =
+          declare_parameter<std::vector<double>>("env_xyz", { 0.0, 0.0, 0.0 });
+        if (env_xyz.size() == 3) std::copy(env_xyz.begin(), env_xyz.end(), conf.env_xyz);
         conf.frame_id      = declare_parameter<std::string>("frame_id", "world");
         conf.rate_hz       = declare_parameter<double>("rate_hz", 60.0);
         conf.topic_ns      = declare_parameter<std::string>("out_ns", "/vr");
@@ -77,7 +88,7 @@ class SceneNode : public rclcpp::Node
             grab.kd            = declare_parameter<double>("grab_kd", 40.0);
             grab.kp_rot        = declare_parameter<double>("grab_kp_rot", 100.0);
             grab.kd_rot        = declare_parameter<double>("grab_kd_rot", 20.0);
-            grab.max_accel     = declare_parameter<double>("grab_max_accel", 50.0);
+            grab.max_accel     = declare_parameter<double>("grab_max_accel", 150.0);
             grab.max_ang_accel = declare_parameter<double>("grab_max_ang_accel", 100.0);
             grab.vel_filter    = declare_parameter<double>("grab_vel_filter", 0.3);
             grab.max_hand_speed = declare_parameter<double>("grab_max_hand_speed", 4.0);

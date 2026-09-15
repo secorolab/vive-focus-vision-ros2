@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,11 @@ struct Options
     float                    sky_radius = 30.0f;
     bool                     export_ground = false;
     bool                     export_sky    = false;
+    /* A headset renders this, and a scene composed from someone else's assets carries things it
+     * does not need: a robot that is not being teleoperated, and textures authored for a desktop
+     * renderer. Both cost frame rate. */
+    std::vector<std::string> exclude;
+    int                      max_texture = 0; // 0 keeps the source resolution
     vr::TessOptions   tess;
 };
 
@@ -75,6 +81,18 @@ bool parse_args(int argc, char **argv, Options *opt)
             opt->tess.segments = std::stoi(argv[++i]);
         } else if (a == "--rings" && has_next) {
             opt->tess.rings = std::stoi(argv[++i]);
+        } else if (a == "--exclude" && has_next) {
+            std::string spec = argv[++i];
+            size_t      pos;
+            while (!spec.empty()) {
+                pos                    = spec.find(',');
+                const std::string head = spec.substr(0, pos);
+                if (!head.empty()) opt->exclude.push_back(head);
+                if (pos == std::string::npos) break;
+                spec = spec.substr(pos + 1);
+            }
+        } else if (a == "--max-texture" && has_next) {
+            opt->max_texture = std::stoi(argv[++i]);
         } else if (a == "--export-sky") {
             opt->export_sky = true;
         } else if (a == "--export-ground") {
@@ -133,6 +151,56 @@ void checker_colours(const mjModel *m, int tex, std::array<float, 3> *a, std::ar
 }
 
 /** Texture id in the base-colour role, or -1. */
+/**
+ * Copies one of MuJoCo's textures into the .glb, widening to RGBA. MuJoCo stores pixels with one,
+ * three or four channels; glTF wants a PNG, and the writer encodes from RGBA.
+ */
+int add_mj_texture(const mjModel *m, int texid, int max_size, vr::GlbBuilder *builder)
+{
+    const int w = m->tex_width[texid];
+    const int h = m->tex_height[texid];
+    const int c = m->tex_nchannel[texid];
+    if (w <= 0 || h <= 0 || c <= 0) return -1;
+
+    /* Halve until it fits. Powers of two keep the box filter exact and keep the result
+     * mipmappable, which matters more on a headset than the lost detail does. */
+    int step = 1;
+    while (max_size > 0 && (w / step > max_size || h / step > max_size)) step *= 2;
+    const int ow = std::max(1, w / step);
+    const int oh = std::max(1, h / step);
+
+    vr::Texture tex;
+    tex.width  = ow;
+    tex.height = oh;
+    tex.rgba.resize(static_cast<size_t>(ow) * oh * 4);
+
+    const mjtByte *src = m->tex_data + m->tex_adr[texid];
+    for (int y = 0; y < oh; ++y) {
+        for (int x = 0; x < ow; ++x) {
+            int sum[4] = { 0, 0, 0, 0 }, n = 0;
+            for (int dy = 0; dy < step; ++dy) {
+                for (int dx = 0; dx < step; ++dx) {
+                    const int sx = x * step + dx, sy = y * step + dy;
+                    if (sx >= w || sy >= h) continue;
+                    const mjtByte *p = src + (static_cast<size_t>(sy) * w + sx) * c;
+                    sum[0] += p[0];
+                    sum[1] += c >= 3 ? p[1] : p[0]; // grey textures replicate their one channel
+                    sum[2] += c >= 3 ? p[2] : p[0];
+                    sum[3] += c == 4 ? p[3] : 255;
+                    ++n;
+                }
+            }
+            const size_t o = (static_cast<size_t>(y) * ow + x) * 4;
+            for (int k = 0; k < 4; ++k) {
+                tex.rgba[o + k] = static_cast<uint8_t>(n ? sum[k] / n : 0);
+            }
+        }
+    }
+
+    const char *name = mj_id2name(m, mjOBJ_TEXTURE, texid);
+    return builder->add_texture(name ? name : ("tex_" + std::to_string(texid)), std::move(tex));
+}
+
 int base_texture(const mjModel *m, int matid)
 {
     if (matid < 0) return -1;
@@ -275,9 +343,22 @@ int main(int argc, char **argv)
     int                   exported_geoms  = 0;
     int                   invisible_geoms = 0;
     int                   ground_planes   = 0;
+    std::set<int>         textured;       // MuJoCo texture ids that made it into the file
     std::map<int, int>    skipped_types; // geom type -> count
 
+    int excluded_bodies = 0;
+
     for (int b = 0; b < model->nbody; ++b) {
+        /* Whole bodies the scene does not need. The manifest still lists them, so the index a
+         * pose carries keeps matching; they simply have no geometry to draw. */
+        const std::string bname = body_name(model, b);
+        if (std::any_of(opt.exclude.begin(), opt.exclude.end(), [&](const std::string &p) {
+                return bname.rfind(p, 0) == 0;
+            })) {
+            ++excluded_bodies;
+            continue;
+        }
+
         /* One primitive per distinct colour so a body is a single mesh with few draw calls. */
         std::map<int, vr::Primitive> by_material;
 
@@ -327,7 +408,42 @@ int main(int argc, char **argv)
                 continue;
             }
 
-            const int material = builder.add_material(colour);
+            /* A 2D texture on a mesh that carries texture coordinates. Anything else - a skybox,
+             * a procedural checker on a primitive, a mesh with no UVs - stays a flat colour,
+             * because without coordinates there is nowhere to put the image. */
+            int   tex_index   = -1;
+            float uv_scale[2] = { 1.0f, 1.0f };
+            if (!tri.uvs.empty() && tex >= 0 && model->tex_type[tex] == mjTEXTURE_2D) {
+                tex_index = add_mj_texture(model, tex, opt.max_texture, &builder);
+                if (tex_index >= 0) {
+                    textured.insert(tex);
+                    const int matid = model->geom_matid[g];
+                    if (matid >= 0 && model->geom_type[g] != mjGEOM_MESH) {
+                        uv_scale[0] = model->mat_texrepeat[2 * matid];
+                        uv_scale[1] = model->mat_texrepeat[2 * matid + 1];
+                    }
+                }
+            }
+
+            /* Texturing replaces the colour rather than tinting it: MuJoCo's rgba on a textured
+             * material is the fallback, and multiplying by it darkens every texture we export. */
+            const std::array<float, 4> factor =
+              tex_index >= 0 ? std::array<float, 4>{ 1.0f, 1.0f, 1.0f, colour[3] } : colour;
+
+            /* MuJoCo's own surface response rather than one matte constant for everything, which
+             * made metal, ceramic and glass indistinguishable. mat_metallic/mat_roughness are the
+             * direct PBR fields; where a model predates them they are -1 and the older
+             * shininess/specular pair stands in. */
+            float metallic = 0.0f, roughness = 0.8f;
+            if (const int matid = model->geom_matid[g]; matid >= 0) {
+                metallic  = model->mat_metallic[matid] >= 0.0f ? model->mat_metallic[matid]
+                                                               : 0.0f;
+                roughness = model->mat_roughness[matid] >= 0.0f
+                              ? model->mat_roughness[matid]
+                              : std::clamp(1.0f - model->mat_shininess[matid], 0.05f, 1.0f);
+            }
+
+            const int material = builder.add_material(factor, tex_index, metallic, roughness);
             auto     &prim     = by_material[material];
             prim.material      = material;
 
@@ -353,6 +469,19 @@ int main(int argc, char **argv)
                 prim.normals.insert(prim.normals.end(),
                                     { static_cast<float>(nr[0]), static_cast<float>(nr[2]),
                                       static_cast<float>(-nr[1]) });
+
+                /* Every vertex of a primitive needs a coordinate or none does, so an untextured
+                 * geom sharing a material with a textured one still contributes a pair. */
+                if (tex_index >= 0 && 2 * v + 1 < tri.uvs.size()) {
+                    /* glTF has no texrepeat, so the tiling is baked into the coordinates. For a
+                     * primitive those arrive in metres, which is what makes texuniform's
+                     * repeats-per-metre meaningful; a mesh asset's own coordinates are already
+                     * normalised and must not be scaled. */
+                    prim.uvs.insert(prim.uvs.end(),
+                                    { tri.uvs[2 * v] * uv_scale[0], tri.uvs[2 * v + 1] * uv_scale[1] });
+                } else if (!prim.uvs.empty()) {
+                    prim.uvs.insert(prim.uvs.end(), { 0.0f, 0.0f });
+                }
             }
             for (uint32_t idx : tri.indices) prim.indices.push_back(base + idx);
             ++exported_geoms;
@@ -385,6 +514,7 @@ int main(int argc, char **argv)
         }
         body_node[b] = builder.add_mesh_node(std::move(mesh));
     }
+
 
     std::error_code ec;
     std::filesystem::create_directories(opt.out_dir, ec);
@@ -419,11 +549,18 @@ int main(int argc, char **argv)
                             static_cast<float>(-p[1]) };
         light.direction = { static_cast<float>(d[0]), static_cast<float>(d[2]),
                             static_cast<float>(-d[1]) };
-        const float *diff = model->light_diffuse + 3 * l;
-        light.colour      = { diff[0], diff[1], diff[2] };
         /* glTF measures directional lights in lux and the others in candela, while MuJoCo's
-         * diffuse is a plain 0..1 weight; these are the values that look like the simulator. */
-        light.intensity = light.type == "directional" ? 3.0f : 20.0f;
+         * diffuse is a plain 0..1 weight. Split it: the largest channel becomes the strength and
+         * the rest becomes hue, so a light at full diffuse is one ordinary sun rather than three
+         * and a dim light stays dim. Ignoring the weight blew out every scene with more than one
+         * light in it. */
+        const float *diff   = model->light_diffuse + 3 * l;
+        const float  weight = std::max({ diff[0], diff[1], diff[2] });
+        light.colour        = weight > 0.0f
+                                ? std::array<float, 3>{ diff[0] / weight, diff[1] / weight,
+                                                        diff[2] / weight }
+                                : std::array<float, 3>{ 1.0f, 1.0f, 1.0f };
+        light.intensity     = (light.type == "directional" ? 1.0f : 15.0f) * weight;
         builder.add_light(light);
         ++exported_lights;
     }
@@ -483,9 +620,11 @@ int main(int argc, char **argv)
         std::printf("  skipped %d geom(s) of type %d (no static triangle form)\n", count, type);
     }
     if (model->ntex > 0) {
-        std::printf("  note: %d texture(s) in the model; only flat material colours are "
-                    "exported\n",
-                    model->ntex);
+        /* A texture only survives on a mesh that carries coordinates for it; the rest fall back
+         * to the material's flat colour, so say which happened rather than claiming either. */
+        std::printf("  %d of %ld texture(s) exported; the rest have no mesh texture coordinates "
+                    "and fall back to flat colour\n",
+                    static_cast<int>(textured.size()), static_cast<long>(model->ntex));
     }
     std::printf("wrote %s and %s\n", glb_path.c_str(), manifest_path.c_str());
 

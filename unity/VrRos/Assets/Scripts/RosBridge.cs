@@ -34,11 +34,14 @@ namespace VrRos
 
         public bool IsConnected => _ws != null && _ws.State == WebSocketState.Open;
 
+        [Tooltip("Most handler calls per frame; the rest wait, so a backlog cannot stall a frame")]
+        public int maxHandlersPerFrame = 24;
+
         private ClientWebSocket _ws;
         private CancellationTokenSource _cancel;
-        private readonly ConcurrentQueue<string> _inbox = new ConcurrentQueue<string>();
-        private readonly Dictionary<string, Action<JObject>> _handlers =
-            new Dictionary<string, Action<JObject>>();
+        private readonly ConcurrentDictionary<string, Sink> _sinks =
+            new ConcurrentDictionary<string, Sink>();
+        private readonly List<Sink> _flushOrder = new List<Sink>();
         private readonly List<(string topic, string type)> _advertised =
             new List<(string, string)>();
         private readonly List<(string topic, string type)> _subscribed =
@@ -62,26 +65,42 @@ namespace VrRos
                 _ = ConnectAsync();
             }
 
-            // Handlers touch Transforms, so they run on the main thread, never on the socket task.
-            while (_inbox.TryDequeue(out string raw))
+            /* Parsing and decoding already happened on the socket task. What is left here is only
+             * the part that cannot leave this thread - writing to Transforms - and it is budgeted,
+             * because an unbounded drain makes a slow frame produce a bigger backlog, which makes
+             * the next frame slower again. */
+            int budget = maxHandlersPerFrame;
+            for (int i = 0; i < _flushOrder.Count && budget > 0; i++)
             {
-                JObject envelope;
-                try
-                {
-                    envelope = JObject.Parse(raw);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"rosbridge: unparseable frame: {e.Message}");
-                    continue;
-                }
+                budget -= _flushOrder[i].Flush(budget);
+            }
+        }
 
-                if ((string)envelope["op"] != "publish") continue;
-                string topic = (string)envelope["topic"];
-                if (topic != null && _handlers.TryGetValue(topic, out var handler))
-                {
-                    handler(envelope["msg"] as JObject);
-                }
+        /// <summary>Parses and decodes one frame. Runs on the socket task, never on the main thread.</summary>
+        private void Route(string raw)
+        {
+            JObject envelope;
+            try
+            {
+                envelope = JObject.Parse(raw);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"rosbridge: unparseable frame: {e.Message}");
+                return;
+            }
+
+            if ((string)envelope["op"] != "publish") return;
+            string topic = (string)envelope["topic"];
+            if (topic == null || !_sinks.TryGetValue(topic, out Sink sink)) return;
+
+            try
+            {
+                sink.Decode(envelope["msg"] as JObject);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"rosbridge: {topic} decode failed: {e.Message}");
             }
         }
 
@@ -91,11 +110,88 @@ namespace VrRos
             SendRaw($"{{\"op\":\"advertise\",\"topic\":\"{topic}\",\"type\":\"{type}\"}}");
         }
 
+        /// <summary>
+        /// Every message reaches the handler, on the main thread. For topics that carry events.
+        /// </summary>
         public void Subscribe(string topic, string type, Action<JObject> handler)
+            => Add(topic, type, new QueuedSink(handler));
+
+        /// <summary>
+        /// Decodes off the main thread; every message is applied, in order, on it.
+        ///
+        /// <paramref name="decode"/> runs on the socket task, so it must not touch the Unity API;
+        /// <paramref name="apply"/> is where Transforms belong. A frame that carries only what
+        /// changed cannot be skipped: its bodies would stay stale until the next full frame.
+        /// </summary>
+        public void Subscribe<T>(string topic, string type, Func<JObject, T> decode, Action<T> apply)
+            => Add(topic, type, new DecodedSink<T>(decode, apply));
+
+        private void Add(string topic, string type, Sink sink)
         {
-            _handlers[topic] = handler;
+            _sinks[topic] = sink;
+            _flushOrder.Add(sink);
             _subscribed.Add((topic, type));
             SendRaw($"{{\"op\":\"subscribe\",\"topic\":\"{topic}\",\"type\":\"{type}\"}}");
+        }
+
+        /// <summary>Decoded off the socket task, applied on the main thread.</summary>
+        private abstract class Sink
+        {
+            public abstract void Decode(JObject msg);
+
+            /// <summary>Applies at most <paramref name="budget"/> messages; returns how many.</summary>
+            public abstract int Flush(int budget);
+        }
+
+        private sealed class QueuedSink : Sink
+        {
+            private readonly Action<JObject> _handler;
+            private readonly ConcurrentQueue<JObject> _queue = new ConcurrentQueue<JObject>();
+
+            public QueuedSink(Action<JObject> handler) { _handler = handler; }
+
+            public override void Decode(JObject msg) => _queue.Enqueue(msg);
+
+            public override int Flush(int budget)
+            {
+                int n = 0;
+                while (n < budget && _queue.TryDequeue(out JObject msg))
+                {
+                    _handler(msg);
+                    n++;
+                }
+                return n;
+            }
+        }
+
+        private sealed class DecodedSink<T> : Sink
+        {
+            private readonly Func<JObject, T> _decode;
+            private readonly Action<T> _apply;
+            private readonly ConcurrentQueue<T> _queue = new ConcurrentQueue<T>();
+
+            public DecodedSink(Func<JObject, T> decode, Action<T> apply)
+            {
+                _decode = decode;
+                _apply = apply;
+            }
+
+            public override void Decode(JObject msg)
+            {
+                T decoded = _decode(msg);
+                if (decoded != null) _queue.Enqueue(decoded);
+            }
+
+            public override int Flush(int budget)
+            {
+                int n = 0;
+                while (n < budget && _queue.TryDequeue(out T value))
+                {
+                    _apply(value);
+                    n++;
+                }
+                return n;
+            }
         }
 
         /// <summary>Publishes a pre-built rosbridge envelope.</summary>
@@ -129,7 +225,12 @@ namespace VrRos
                     SendRaw($"{{\"op\":\"subscribe\",\"topic\":\"{topic}\",\"type\":\"{type}\"}}");
                 }
 
-                _ = ReceiveLoopAsync(_ws, _cancel.Token);
+                /* Off the Unity synchronization context, or every await resumes on the main
+                 * thread and the loop reads exactly one message per rendered frame: at 30 fps
+                 * a 60 Hz stream falls behind and plays back late. */
+                ClientWebSocket socket = _ws;
+                CancellationToken token = _cancel.Token;
+                _ = Task.Run(() => ReceiveLoopAsync(socket, token));
             }
             catch (Exception e)
             {
@@ -145,11 +246,12 @@ namespace VrRos
             {
                 while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
-                    var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token)
+                                             .ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close) break;
                     message.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                     if (!result.EndOfMessage) continue; // a frame larger than the buffer
-                    _inbox.Enqueue(message.ToString());
+                    Route(message.ToString());
                     message.Clear();
                 }
             }

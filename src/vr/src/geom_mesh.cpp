@@ -37,6 +37,16 @@ void build_box(TriMesh *m, float sx, float sy, float sz)
 
     for (int f = 0; f < 6; ++f) {
         const uint32_t base = vertex_count(m);
+
+        /* Extent of this face along its own u and v axes, so the texture is applied in metres
+         * and a long counter gets more repeats than a short one. MuJoCo does this itself for
+         * primitives at render time via texuniform/texrepeat; a baked mesh has to carry it. */
+        float du = 0.0f, dv = 0.0f;
+        for (int c = 0; c < 3; ++c) {
+            du += std::fabs(u[f][c]) * half[c];
+            dv += std::fabs(v[f][c]) * half[c];
+        }
+
         for (int corner = 0; corner < 4; ++corner) {
             const float su = (corner == 0 || corner == 3) ? -1.0f : 1.0f;
             const float sv = (corner < 2) ? -1.0f : 1.0f;
@@ -45,6 +55,8 @@ void build_box(TriMesh *m, float sx, float sy, float sz)
                 p[c] = (n[f][c] + su * u[f][c] + sv * v[f][c]) * half[c];
             }
             push_vertex(m, p[0], p[1], p[2], n[f][0], n[f][1], n[f][2]);
+            m->uvs.push_back(su * du);
+            m->uvs.push_back(sv * dv);
         }
         push_tri(m, base, base + 1, base + 2);
         push_tri(m, base, base + 2, base + 3);
@@ -58,6 +70,8 @@ void build_plane(TriMesh *m, float hx, float hy)
     push_vertex(m, hx, -hy, 0, 0, 0, 1);
     push_vertex(m, hx, hy, 0, 0, 0, 1);
     push_vertex(m, -hx, hy, 0, 0, 0, 1);
+    // In metres, like the box: the material's texrepeat decides the tiling density.
+    m->uvs.insert(m->uvs.end(), { -hx, -hy, hx, -hy, hx, hy, -hx, hy });
     push_tri(m, base, base + 1, base + 2);
     push_tri(m, base, base + 2, base + 3);
 }
@@ -166,6 +180,12 @@ void build_asset_mesh(TriMesh *m, const mjModel *model, int mesh_id)
     const int face_adr = model->mesh_faceadr[mesh_id];
     const int face_num = model->mesh_facenum[mesh_id];
 
+    /* Texcoords are indexed by their own face table, not the vertex one: a seam shares a position
+     * between two different points in the texture. Flattening every face into fresh vertices, as
+     * this already does for flat shading, is what makes that representable. */
+    const int tc_adr = model->mesh_texcoordadr[mesh_id];
+    const bool has_uv = tc_adr >= 0;
+
     for (int f = 0; f < face_num; ++f) {
         const int *face = model->mesh_face + 3 * (face_adr + f);
         float      p[3][3];
@@ -185,6 +205,19 @@ void build_asset_mesh(TriMesh *m, const mjModel *model, int mesh_id)
         const uint32_t base = vertex_count(m);
         for (int c = 0; c < 3; ++c) push_vertex(m, p[c][0], p[c][1], p[c][2], n[0], n[1], n[2]);
         push_tri(m, base, base + 1, base + 2);
+
+        if (has_uv) {
+            const int *tcface = model->mesh_facetexcoord + 3 * (face_adr + f);
+            for (int c = 0; c < 3; ++c) {
+                const float *uv = model->mesh_texcoord + 2 * (tc_adr + tcface[c]);
+                /* glTF's V runs down from the top left, MuJoCo's runs up from the bottom. */
+                /* No V flip. MuJoCo's texcoords already match what the importer expects, and
+                 * flipping them mirrored every label in the scene - readable text is what makes
+                 * this obvious, and what caught it. */
+                m->uvs.push_back(uv[0]);
+                m->uvs.push_back(uv[1]);
+            }
+        }
     }
 }
 

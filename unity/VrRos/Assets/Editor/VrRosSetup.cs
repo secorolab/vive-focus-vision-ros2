@@ -93,15 +93,52 @@ public static class VrRosSetup
         // The scene server is plain HTTP on the LAN; the default blocks the .glb fetch outright.
         PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
 
+        ConfigureQuality();
+
         Debug.Log("VrRosSetup: player settings configured (IL2CPP, ARM64, API 29+, cleartext HTTP)");
     }
 
-    /* VIVE's own models rather than stand-ins. They hang off the camera offset because both
-     * driver scripts work in tracking space, so the rig's own motion has to come from the
-     * parent. */
+    /// <summary>
+    /// Quality settings sized for a room, not for Unity's defaults.
+    ///
+    /// The default 150 m shadow distance across four cascades re-renders the whole world into
+    /// shadow maps every frame, which on the headset cost more than everything else put together:
+    /// a kitchen drew at 30 fps, and since the pose stream is applied once per rendered frame,
+    /// the frame rate was also the rate at which a held object could move.
+    /// </summary>
+    private static void ConfigureQuality()
+    {
+        /* The static setters write the level that is active in the batch-mode editor, which is
+         * not the one Android runs; every level gets the same values so the platform default
+         * cannot miss them. */
+        int active = QualitySettings.GetQualityLevel();
+        for (int level = 0; level < QualitySettings.names.Length; level++)
+        {
+            QualitySettings.SetQualityLevel(level, false);
+            QualitySettings.shadowDistance = 12f;    // [m], past the far wall of a kitchen
+            QualitySettings.shadowCascades = 1;      // cascades buy range, and there is none to buy
+            QualitySettings.shadowResolution = ShadowResolution.Medium;
+            QualitySettings.shadowProjection = ShadowProjection.StableFit;
+            QualitySettings.pixelLightCount = 1;     // the exported scene has exactly one
+            QualitySettings.softParticles = false;
+            QualitySettings.realtimeReflectionProbes = false;
+            QualitySettings.billboardsFaceCameraPosition = false;
+            QualitySettings.vSyncCount = 0;          // the XR runtime owns pacing, not vsync
+        }
+        QualitySettings.SetQualityLevel(active, false);
+
+        Debug.Log($"VrRosSetup: quality set on {QualitySettings.names.Length} levels (shadow "
+                  + "distance 12 m, 1 cascade)");
+    }
+
+    /* Controllers are VIVE's own models. Hands are the XR Hands package's, whose skeleton driver
+     * writes the root pose local to its parent, so under the camera offset they follow the rig
+     * wherever it walks or turns. VIVE's hand prefab writes world rotations from tracking space
+     * and is only right with an unrotated rig. */
     private static void AddDeviceVisuals(GameObject xrOrigin, VrConfig cfg)
     {
-        const string Prefabs = "Packages/com.htc.upm.vive.openxr/Runtime/Prefabs";
+        const string Vive = "Packages/com.htc.upm.vive.openxr/Runtime/Prefabs";
+        const string Hands = "Assets/Samples/XR Hands/1.5.1/HandVisualizer/Prefabs";
 
         Transform offset = xrOrigin.transform.Find("Camera Offset");
         if (offset == null)
@@ -112,10 +149,10 @@ public static class VrRosSetup
 
         var visuals = xrOrigin.AddComponent<VrDeviceVisuals>();
         visuals.config = cfg;
-        visuals.leftController = Spawn($"{Prefabs}/ViveFocus3ControllerAimL.prefab", offset);
-        visuals.rightController = Spawn($"{Prefabs}/ViveFocus3ControllerAimR.prefab", offset);
-        visuals.leftHand = Spawn($"{Prefabs}/ViveHandL.prefab", offset);
-        visuals.rightHand = Spawn($"{Prefabs}/ViveHandR.prefab", offset);
+        visuals.leftController = Spawn($"{Vive}/ViveFocus3ControllerAimL.prefab", offset);
+        visuals.rightController = Spawn($"{Vive}/ViveFocus3ControllerAimR.prefab", offset);
+        visuals.leftHand = Spawn($"{Hands}/Left Hand Tracking.prefab", offset);
+        visuals.rightHand = Spawn($"{Hands}/Right Hand Tracking.prefab", offset);
     }
 
     private static GameObject Spawn(string assetPath, Transform parent)
@@ -142,6 +179,18 @@ public static class VrRosSetup
         GameObject defaultCamera = GameObject.Find("Main Camera");
         if (defaultCamera != null) UnityEngine.Object.DestroyImmediate(defaultCamera);
 
+        /* The scene carries its own lights, exported from the MJCF. Unity's default sun on top of
+         * them, plus full skybox ambient, flattens everything: white counters against white walls
+         * lose the shading that separates them and read as a void. */
+        GameObject defaultLight = GameObject.Find("Directional Light");
+        if (defaultLight != null) UnityEngine.Object.DestroyImmediate(defaultLight);
+
+        /* Flat rather than the skybox, so the level does not depend on whatever sky happens to be
+         * set, and high enough to stand in for the bounce light a real room has: the exported
+         * lights are MuJoCo's own and are usually a single weak directional. */
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.62f, 0.63f, 0.66f);
+
         if (!EditorApplication.ExecuteMenuItem("GameObject/XR/XR Origin (VR)"))
         {
             Debug.LogError("VrRosSetup: could not create an XR Origin (VR) — is XR Interaction "
@@ -158,6 +207,8 @@ public static class VrRosSetup
         var hands = root.AddComponent<HandPublisher>();
         var gaze = root.AddComponent<GazePublisher>();
         var sim = root.AddComponent<VrSimControls>();
+        var stats = root.AddComponent<VrStats>();
+        stats.poses = poses;
 
         // SceneLoader parents the downloaded world under its own transform, so it gets its own.
         var sceneRoot = new GameObject("VrScene");

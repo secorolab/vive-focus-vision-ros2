@@ -70,7 +70,7 @@ Read by the scene component, which owns the grabber.
 | `grab_reach_m` | `0.15` | fallback only: how close a hand must be when no pointer target exists |
 | `grab_kp`, `grab_kd` | `400`, `40` | translation response [1/s², 1/s] |
 | `grab_kp_rot`, `grab_kd_rot` | `100`, `20` | rotation response [1/s², 1/s] |
-| `grab_max_accel`, `grab_max_ang_accel` | `50`, `100` | clamps [m/s², rad/s²] |
+| `grab_max_accel`, `grab_max_ang_accel` | `150`, `100` | clamps [m/s², rad/s²] |
 | `grab_vel_filter` | `0.3` | low-pass weight on the hand velocity the damper is fed |
 | `grab_max_hand_speed` | `4.0` | [m/s] above this a sample is jitter, not motion |
 | `grab_max_hand_turn_rate` | `15.0` | [rad/s] |

@@ -8,12 +8,12 @@ QualitySettings:
   m_QualitySettings:
   - serializedVersion: 4
     name: Very Low
-    pixelLightCount: 0
+    pixelLightCount: 1
     shadows: 0
-    shadowResolution: 0
+    shadowResolution: 1
     shadowProjection: 1
     shadowCascades: 1
-    shadowDistance: 15
+    shadowDistance: 12
     shadowNearPlaneOffset: 3
     shadowCascade2Split: 0.33333334
     shadowCascade4Split: {x: 0.06666667, y: 0.2, z: 0.46666667}
@@ -60,12 +60,12 @@ QualitySettings:
     excludedTargetPlatforms: []
   - serializedVersion: 4
     name: Low
-    pixelLightCount: 0
+    pixelLightCount: 1
     shadows: 0
-    shadowResolution: 0
+    shadowResolution: 1
     shadowProjection: 1
     shadowCascades: 1
-    shadowDistance: 20
+    shadowDistance: 12
     shadowNearPlaneOffset: 3
     shadowCascade2Split: 0.33333334
     shadowCascade4Split: {x: 0.06666667, y: 0.2, z: 0.46666667}
@@ -114,10 +114,10 @@ QualitySettings:
     name: Medium
     pixelLightCount: 1
     shadows: 1
-    shadowResolution: 0
+    shadowResolution: 1
     shadowProjection: 1
     shadowCascades: 1
-    shadowDistance: 20
+    shadowDistance: 12
     shadowNearPlaneOffset: 3
     shadowCascade2Split: 0.33333334
     shadowCascade4Split: {x: 0.06666667, y: 0.2, z: 0.46666667}
@@ -133,7 +133,7 @@ QualitySettings:
     billboardsFaceCameraPosition: 0
     useLegacyDetailDistribution: 0
     adaptiveVsync: 0
-    vSyncCount: 1
+    vSyncCount: 0
     realtimeGICPUUsage: 25
     adaptiveVsyncExtraA: 0
     adaptiveVsyncExtraB: 0
@@ -164,12 +164,12 @@ QualitySettings:
     excludedTargetPlatforms: []
   - serializedVersion: 4
     name: High
-    pixelLightCount: 2
+    pixelLightCount: 1
     shadows: 2
     shadowResolution: 1
     shadowProjection: 1
-    shadowCascades: 2
-    shadowDistance: 40
+    shadowCascades: 1
+    shadowDistance: 12
     shadowNearPlaneOffset: 3
     shadowCascade2Split: 0.33333334
     shadowCascade4Split: {x: 0.06666667, y: 0.2, z: 0.46666667}
@@ -181,11 +181,11 @@ QualitySettings:
     antiAliasing: 0
     softParticles: 0
     softVegetation: 1
-    realtimeReflectionProbes: 1
-    billboardsFaceCameraPosition: 1
+    realtimeReflectionProbes: 0
+    billboardsFaceCameraPosition: 0
     useLegacyDetailDistribution: 0
     adaptiveVsync: 0
-    vSyncCount: 1
+    vSyncCount: 0
     realtimeGICPUUsage: 50
     adaptiveVsyncExtraA: 0
     adaptiveVsyncExtraB: 0
@@ -216,12 +216,12 @@ QualitySettings:
     excludedTargetPlatforms: []
   - serializedVersion: 4
     name: Very High
-    pixelLightCount: 3
+    pixelLightCount: 1
     shadows: 2
-    shadowResolution: 2
+    shadowResolution: 1
     shadowProjection: 1
-    shadowCascades: 2
-    shadowDistance: 70
+    shadowCascades: 1
+    shadowDistance: 12
     shadowNearPlaneOffset: 3
     shadowCascade2Split: 0.33333334
     shadowCascade4Split: {x: 0.06666667, y: 0.2, z: 0.46666667}
@@ -231,13 +231,13 @@ QualitySettings:
     textureMipmapLimitSettings: []
     anisotropicTextures: 2
     antiAliasing: 2
-    softParticles: 1
+    softParticles: 0
     softVegetation: 1
-    realtimeReflectionProbes: 1
-    billboardsFaceCameraPosition: 1
+    realtimeReflectionProbes: 0
+    billboardsFaceCameraPosition: 0
     useLegacyDetailDistribution: 0
     adaptiveVsync: 0
-    vSyncCount: 1
+    vSyncCount: 0
     realtimeGICPUUsage: 50
     adaptiveVsyncExtraA: 0
     adaptiveVsyncExtraB: 0
@@ -268,12 +268,12 @@ QualitySettings:
     excludedTargetPlatforms: []
   - serializedVersion: 4
     name: Ultra
-    pixelLightCount: 4
+    pixelLightCount: 1
     shadows: 2
-    shadowResolution: 2
+    shadowResolution: 1
     shadowProjection: 1
-    shadowCascades: 4
-    shadowDistance: 150
+    shadowCascades: 1
+    shadowDistance: 12
     shadowNearPlaneOffset: 3
     shadowCascade2Split: 0.33333334
     shadowCascade4Split: {x: 0.06666667, y: 0.2, z: 0.46666667}
@@ -283,13 +283,13 @@ QualitySettings:
     textureMipmapLimitSettings: []
     anisotropicTextures: 2
     antiAliasing: 2
-    softParticles: 1
+    softParticles: 0
     softVegetation: 1
-    realtimeReflectionProbes: 1
-    billboardsFaceCameraPosition: 1
+    realtimeReflectionProbes: 0
+    billboardsFaceCameraPosition: 0
     useLegacyDetailDistribution: 0
     adaptiveVsync: 0
-    vSyncCount: 1
+    vSyncCount: 0
     realtimeGICPUUsage: 100
     adaptiveVsyncExtraA: 0
     adaptiveVsyncExtraB: 0
