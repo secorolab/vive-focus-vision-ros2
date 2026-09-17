@@ -43,24 +43,34 @@ generated, not stored: nothing in this repository ships a world.
 RoboCasa is a heavy dependency and only needed to build the MJCF, so it goes in a throwaway venv
 rather than the workspace:
 
+Not in `/tmp`: the install runs to gigabytes and the worlds take it to rebuild, which is exactly
+how the first kitchen was lost. It sits beside the other cached heavy things, next to
+`~/.cache/mj_kdl_wrapper`:
+
 ```bash
-python3 -m venv /tmp/robocasa-venv
-/tmp/robocasa-venv/bin/pip install "git+https://github.com/robocasa/robocasa.git"
-/tmp/robocasa-venv/bin/pip install --force-reinstall --no-deps \
+VENV=~/.cache/vive_vr_ros2/robocasa-venv
+python3 -m venv "$VENV"
+"$VENV/bin/pip" install "git+https://github.com/robocasa/robocasa.git"
+"$VENV/bin/pip" install --force-reinstall --no-deps \
     "git+https://github.com/ARISE-Initiative/robosuite.git@master"
-/tmp/robocasa-venv/bin/python -m robocasa.scripts.download_kitchen_assets
+"$VENV/bin/python" -m robocasa.scripts.download_kitchen_assets
 ```
 
 Then build the world and put something graspable in it:
 
 ```bash
-RC=/tmp/robocasa-venv/lib/python3.12/site-packages/robocasa
-/tmp/robocasa-venv/bin/python scripts/make_kitchen.py /tmp/kitchen.xml
-python3 scripts/add_kitchen_objects.py \
-    "$RC/models/assets/objects/lightwheel" /tmp/kitchen.xml /tmp/kitchen_objects.xml
+WORLDS=~/.cache/vive_vr_ros2/worlds && mkdir -p "$WORLDS"
+RC=$("$VENV/bin/python" -c 'import os, robocasa; print(os.path.dirname(robocasa.__file__))')
 
-ros2 run vive_vr_ros2 scene_export /tmp/kitchen_objects.xml -o /tmp/vive_vr_kitchen
+"$VENV/bin/python" scripts/make_kitchen.py "$WORLDS/kitchen.xml"
+python3 scripts/add_kitchen_objects.py \
+    "$RC/models/assets/objects/lightwheel" "$WORLDS/kitchen.xml" "$WORLDS/kitchen_objects.xml"
+
+ros2 run vive_vr_ros2 scene_export "$WORLDS/kitchen_objects.xml" -o /tmp/vive_vr_kitchen
 ```
+
+The export goes to `/tmp` because it is derived — one command rebuilds it from the MJCF. The
+MJCF is not, so it does not.
 
 The second step exists because **every fixture in a RoboCasa kitchen is welded**, so a kitchen
 on its own has nothing that can be picked up. It adds six objects with a freejoint each on the
