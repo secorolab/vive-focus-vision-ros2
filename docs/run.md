@@ -34,6 +34,41 @@ Finite planes are kept: those are geometry someone modelled. A textured one is t
 alternating squares of the texture's two colours, which is MuJoCo's checkerboard without needing
 a sampler or UVs.
 
+## The kitchen
+
+The large test world is a [RoboCasa](https://github.com/robocasa/robocasa) kitchen — around 190
+bodies, which is what the pose stream's send-only-what-moved design was measured against. It is
+generated, not stored: nothing in this repository ships a world.
+
+RoboCasa is a heavy dependency and only needed to build the MJCF, so it goes in a throwaway venv
+rather than the workspace:
+
+```bash
+python3 -m venv /tmp/robocasa-venv
+/tmp/robocasa-venv/bin/pip install "git+https://github.com/robocasa/robocasa.git"
+/tmp/robocasa-venv/bin/pip install --force-reinstall --no-deps \
+    "git+https://github.com/ARISE-Initiative/robosuite.git@master"
+/tmp/robocasa-venv/bin/python -m robocasa.scripts.download_kitchen_assets
+```
+
+Then build the world and put something graspable in it:
+
+```bash
+RC=/tmp/robocasa-venv/lib/python3.12/site-packages/robocasa
+/tmp/robocasa-venv/bin/python scripts/make_kitchen.py /tmp/kitchen.xml
+python3 scripts/add_kitchen_objects.py \
+    "$RC/models/assets/objects/lightwheel" /tmp/kitchen.xml /tmp/kitchen_objects.xml
+
+ros2 run vive_vr_ros2 scene_export /tmp/kitchen_objects.xml -o /tmp/vive_vr_kitchen
+```
+
+The second step exists because **every fixture in a RoboCasa kitchen is welded**, so a kitchen
+on its own has nothing that can be picked up. It adds six objects with a freejoint each on the
+counter's near edge.
+
+`--env`, `--layout` and `--style` pick a different kitchen; `NavigateKitchen` with layout 1,
+style 1 is the one the figures above were measured on.
+
 ## What the file contains
 
 Per body: its geometry in body-local coordinates, and its pose at the loaded state written into
