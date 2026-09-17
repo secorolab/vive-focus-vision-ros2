@@ -87,22 +87,24 @@ turning one off saves ROS traffic and TF listeners' work, not Wi-Fi.
 ```bash
 ros2 launch vr sim.launch.py \
     model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vr_robot \
-    host_ip:=192.168.2.118
+    scene_dir:=/tmp/vr_robot
 ```
 
 | Argument | Default | Meaning |
 |---|---|---|
 | `model` | — | MJCF to simulate; required |
 | `scene_dir` | `/tmp/vr_scene` | directory served over HTTP; where `scene_export` wrote |
-| `host_ip` | `0.0.0.0` | the address **the headset can reach**; goes into the `.glb` URL |
+| `host_ip` | the default route's | the address **the headset can reach**; goes into the `.glb` URL |
 | `http_port` | `8000` | |
 | `env_glb`, `env_yaw_deg`, `env_scale` | — | scenery drawn but not simulated |
 
 Everything `tracking.launch.py` takes is accepted here too and passed through.
 
-`host_ip` must be this machine's LAN address, not `0.0.0.0`: it is embedded in the URL the
-headset fetches, and `0.0.0.0` means nothing to a remote client.
+`host_ip` is embedded in the URL the headset fetches, so it has to be an address the headset can
+reach — `0.0.0.0` means nothing to a remote client. The default is now this machine's address on
+the default route, which is right whenever the headset is on the interface that route uses. It is
+a default and not a detection: a machine whose default route is Ethernet while the headset is on
+Wi-Fi still has to be told, `host_ip:=192.168.2.118`.
 
 This includes `tracking.launch.py`, adds a plain `python3 -m http.server` for the `.glb`, and
 loads `vr::SceneNode` into the container that launch already started. The two components share

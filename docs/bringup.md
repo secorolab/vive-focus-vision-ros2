@@ -39,7 +39,8 @@ not enabled; see [Configuration](configuration.md#openxr-features).
 
 The world should appear once the client fetches the `.glb`. If it does not, check in order: that
 `adb logcat` shows the fetch URL and no HTTP error, that the URL's host is reachable *from the
-headset* (`host_ip` must not be `0.0.0.0`), and that `/vr/scene` is being published.
+headset* (the `host_ip` default follows this machine's default route, which is the wrong one if
+the headset is on another interface), and that `/vr/scene` is being published.
 
 **If the world appears rotated 180°**, negate the Y component of `SceneLoader.gltfCorrectionEuler`.
 ±90° are the only two possibilities — see

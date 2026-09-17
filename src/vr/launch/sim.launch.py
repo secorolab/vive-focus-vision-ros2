@@ -10,6 +10,7 @@ so the pose stream and the controller stream cross between them inside one proce
 """
 
 import os
+import socket
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -19,6 +20,24 @@ from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
 from launch_ros.parameter_descriptions import ParameterValue
+
+
+def default_route_address() -> str:
+    """This machine's address on the default route, which is the .glb URL's best guess.
+
+    Connecting a UDP socket performs the route lookup and assigns a source address without
+    sending anything; TEST-NET-1 is reserved and routed nowhere, so nothing is ever contacted.
+    A machine whose default route is not the interface the headset is on needs host_ip
+    passed explicitly - the guess is a default, not a detection.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 1))
+        return probe.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        probe.close()
 
 
 def generate_launch_description():
@@ -41,8 +60,9 @@ def generate_launch_description():
         DeclareLaunchArgument("http_port", default_value="8000"),
         DeclareLaunchArgument(
             "host_ip",
-            default_value="0.0.0.0",
-            description="address the headset reaches this machine on; used to build scene_url",
+            default_value=default_route_address(),
+            description="address the headset reaches this machine on; used to build scene_url. "
+                        "Defaults to this machine's address on the default route",
         ),
         DeclareLaunchArgument(
             "env_glb",

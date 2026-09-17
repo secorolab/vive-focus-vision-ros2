@@ -30,7 +30,7 @@ source install/setup.bash
 ros2 run vr scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vr_robot
 ros2 launch vr sim.launch.py \
     model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vr_robot host_ip:=<this machine's LAN IP>
+    scene_dir:=/tmp/vr_robot
 ```
 
 For poses, buttons, hands and gaze without a simulation — no model, no world on the headset:
