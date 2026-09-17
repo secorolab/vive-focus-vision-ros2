@@ -21,12 +21,12 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 
 ## Quick start
 
-This repository is one ROS 2 package. It is cloned into a workspace, not built in place, and
-one script prepares that workspace:
+This repository is one ROS 2 package, cloned into a workspace rather than built in place:
 
 ```bash
 mkdir -p ~/work/p/vrws && cd ~/work/p/vrws
 git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+vcs import src < src/vive-vr-ros2/dependencies.repos
 
 python3 -m venv --system-site-packages venv && source venv/bin/activate
 ./src/vive-vr-ros2/scripts/setup.sh

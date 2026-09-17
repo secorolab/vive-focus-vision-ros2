@@ -7,8 +7,9 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Prepares a fresh workspace, once. Create and activate a virtualenv first:
+Installs what a fresh workspace needs beyond the clone, once:
 
+  vcs import src < src/vive-vr-ros2/dependencies.repos
   python3 -m venv --system-site-packages venv && source venv/bin/activate
   ./src/vive-vr-ros2/scripts/setup.sh [WORKSPACE]
 
@@ -17,8 +18,8 @@ WORKSPACE is the directory holding src/vive-vr-ros2, and defaults to the current
   --no-scenes    skip RoboCasa and its assets (no kitchen)
   --no-unity     skip the VIVE plugin (no APK builds)
 
-It clones the workspace dependencies, installs the scene tooling into the active virtualenv and
-fetches the VIVE plugin. Then source your ROS distro and colcon build.
+The scene tooling goes into the active virtualenv. Then source your ROS distro and colcon
+build.
 EOF
 }
 
@@ -44,9 +45,9 @@ repo="$workspace/src/vive-vr-ros2"
 }
 
 if [ ! -d "$workspace/src/mj_kdl_wrapper" ]; then
-    command -v vcs >/dev/null || { echo "vcs not found; apt install python3-vcstool" >&2; exit 1; }
-    echo "==> cloning workspace dependencies"
-    vcs import src < "$repo/dependencies.repos"
+    echo "workspace dependencies are missing. Clone them:" >&2
+    echo "  cd $workspace && vcs import src < src/vive-vr-ros2/dependencies.repos" >&2
+    exit 1
 fi
 
 if [ "$scenes" -eq 1 ]; then

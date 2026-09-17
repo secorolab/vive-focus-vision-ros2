@@ -12,14 +12,14 @@ One script, run from the workspace root after cloning:
 ```bash
 mkdir -p ~/work/p/vrws && cd ~/work/p/vrws
 git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+vcs import src < src/vive-vr-ros2/dependencies.repos    # apt install python3-vcstool
 
 python3 -m venv --system-site-packages venv && source venv/bin/activate
 ./src/vive-vr-ros2/scripts/setup.sh          # --no-scenes, --no-unity to skip parts
 ```
 
-The venv is yours to make, and **`--system-site-packages`** is not optional: without it the
-venv hides `rclpy`, `launch` and the rest of ROS 2's Python packages. The script clones the
-dependencies listed in `dependencies.repos`, installs the scene tooling into whatever
+**`--system-site-packages`** is not optional: without it the venv hides `rclpy`, `launch` and
+the rest of ROS 2's Python packages. The script installs the scene tooling into whatever
 virtualenv is active, downloads the kitchen asset packs and fetches the VIVE plugin. Then:
 
 ```bash
