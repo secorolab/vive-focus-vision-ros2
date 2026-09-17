@@ -30,6 +30,8 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 - [First run on the headset](bringup.md) — the on-device checklist
 - [Testing](testing.md) — what is verified, how, and what is not
 - [Design notes](design.md) — why the system is shaped this way, and what was rejected
+- [Teleoperation](teleop.md) — proposed: the clutch, the delta stream, and why it needs no
+  calibration
 - [Known limits](limits.md) — what is missing or approximate, and what it costs
 
 ## Status
