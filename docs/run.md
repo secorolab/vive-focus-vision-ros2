@@ -50,13 +50,14 @@ python3 scripts/build_scenes.py --only kitchen --force
 ```
 
 Each lands in `~/.cache/vive_vr_ros2/scenes/<name>/` as `scene.glb` and `manifest.json`, and is
-skipped when already built. A scene is either a `model`, an MJCF handed to `scene_export`, or a
-`generator` that produces and exports its own — the kitchen is generated, because RoboCasa
-assembles fixtures into an arena only when an environment is constructed.
+skipped when already built. A scene is either a `model`, an MJCF to export, or a `generator`
+that produces one and prints its path — `build_scenes.py` does the exporting either way, so
+there is one place that decides where a scene lands.
 
-Every fixture in a RoboCasa kitchen is welded, so a kitchen on its own has nothing that can be
-picked up. `scripts/add_kitchen_objects.py` adds six objects with a freejoint each on the
-counter's near edge, which is what makes it a useful world here.
+The kitchen is generated because RoboCasa assembles fixtures into an arena only when an
+environment is constructed. `scripts/make_kitchen.py` does that, then adds six objects with a
+freejoint each on the counter's near edge: every fixture in a RoboCasa kitchen is welded, so
+without them there is nothing to pick up.
 
 ## What the file contains
 

@@ -25,6 +25,24 @@ def export_dir(name: str) -> pathlib.Path:
     return CACHE / "scenes" / name
 
 
+def model_for(scene: dict, force: bool) -> pathlib.Path | None:
+    """The MJCF to export: declared, or produced by a generator that prints its path."""
+    if "model" in scene:
+        model = pathlib.Path(scene["model"]).expanduser()
+        return model if model.exists() else None
+
+    cmd = [str(ROOT / scene["generator"]), *map(str, scene.get("args", []))]
+    if force:
+        cmd.append("--force")
+    print(f"  {' '.join(cmd)}")
+    run = subprocess.run(cmd, check=False, text=True, capture_output=True)
+    sys.stdout.write(run.stdout)
+    sys.stderr.write(run.stderr)
+    if run.returncode != 0:
+        return None
+    return pathlib.Path(run.stdout.strip().splitlines()[-1])
+
+
 def build(scene: dict, scene_export: str, force: bool) -> bool:
     name = scene["name"]
     out = export_dir(name)
@@ -33,20 +51,14 @@ def build(scene: dict, scene_export: str, force: bool) -> bool:
         print(f"{name}: already in {out}")
         return True
 
-    if "generator" in scene:
-        # -o so a generator lands under its scene name too, rather than one of its own choosing.
-        cmd = [str(ROOT / scene["generator"]), *map(str, scene.get("args", [])), "-o", str(out)]
-        if force:
-            cmd.append("--force")
-    else:
-        model = pathlib.Path(scene["model"]).expanduser()
-        if not model.exists():
-            print(f"{name}: no model at {model}", file=sys.stderr)
-            return False
-        cmd = [scene_export, str(model), "-o", str(out)]
+    print(f"{name}:")
+    model = model_for(scene, force)
+    if model is None or not model.exists():
+        print(f"{name}: no model to export", file=sys.stderr)
+        return False
 
-    print(f"{name}: {' '.join(cmd)}")
-    return subprocess.run(cmd, check=False).returncode == 0
+    return subprocess.run([scene_export, str(model), "-o", str(out)],
+                          check=False).returncode == 0
 
 
 def main() -> int:

@@ -27,9 +27,10 @@ one script prepares that workspace:
 ```bash
 mkdir -p ~/work/p/vrws && cd ~/work/p/vrws
 git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+
+python3 -m venv --system-site-packages venv && source venv/bin/activate
 ./src/vive-vr-ros2/scripts/setup.sh
 
-source venv/bin/activate
 source /opt/ros/jazzy/setup.bash
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_SCENES=ON
 ```
