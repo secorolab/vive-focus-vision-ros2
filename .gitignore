@@ -35,3 +35,7 @@ unity/VrRos/Assets/Temp.meta
 # Resources at runtime.
 unity/VrRos/Assets/Resources/
 unity/VrRos/Assets/Resources.meta
+
+# Python bytecode from running the scripts in place
+__pycache__/
+*.pyc
