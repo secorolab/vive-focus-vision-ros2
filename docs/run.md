@@ -40,44 +40,22 @@ The large test world is a [RoboCasa](https://github.com/robocasa/robocasa) kitch
 bodies, which is what the pose stream's send-only-what-moved design was measured against. It is
 generated, not stored: nothing in this repository ships a world.
 
-RoboCasa is a heavy dependency and only needed to build the MJCF, so it goes in a throwaway venv
-rather than the workspace:
-
-Not in `/tmp`: the install runs to gigabytes and the worlds take it to rebuild, which is exactly
-how the first kitchen was lost. It sits beside the other cached heavy things, next to
-`~/.cache/mj_kdl_wrapper`:
-
 ```bash
-VENV=~/.cache/vive_vr_ros2/robocasa-venv
-python3 -m venv "$VENV"
-"$VENV/bin/pip" install "git+https://github.com/robocasa/robocasa.git"
-"$VENV/bin/pip" install --force-reinstall --no-deps \
-    "git+https://github.com/ARISE-Initiative/robosuite.git@master"
-"$VENV/bin/python" -m robocasa.scripts.download_kitchen_assets
+./scripts/build_kitchen.sh          # --env, --layout, --style pick a different kitchen
 ```
 
-Then build the world and put something graspable in it:
+It creates a venv, installs RoboCasa, downloads the asset pack, builds the MJCF, adds the
+graspable objects and exports the `.glb`, then prints the launch line. Each step is skipped if
+it was already done, so a second run costs nothing and `--force` rebuilds the world.
 
-```bash
-WORLDS=~/.cache/vive_vr_ros2/worlds && mkdir -p "$WORLDS"
-RC=$("$VENV/bin/python" -c 'import os, robocasa; print(os.path.dirname(robocasa.__file__))')
+Everything lands under `~/.cache/vive_vr_ros2`, beside the MuJoCo and Menagerie caches, and not
+in `/tmp`: the install runs to gigabytes and rebuilding the MJCF needs all of it. The first
+kitchen was lost exactly that way.
 
-"$VENV/bin/python" scripts/make_kitchen.py "$WORLDS/kitchen.xml"
-python3 scripts/add_kitchen_objects.py \
-    "$RC/models/assets/objects/lightwheel" "$WORLDS/kitchen.xml" "$WORLDS/kitchen_objects.xml"
-
-ros2 run vive_vr_ros2 scene_export "$WORLDS/kitchen_objects.xml" -o /tmp/vive_vr_kitchen
-```
-
-The export goes to `/tmp` because it is derived — one command rebuilds it from the MJCF. The
-MJCF is not, so it does not.
-
-The second step exists because **every fixture in a RoboCasa kitchen is welded**, so a kitchen
-on its own has nothing that can be picked up. It adds six objects with a freejoint each on the
-counter's near edge.
-
-`--env`, `--layout` and `--style` pick a different kitchen; `NavigateKitchen` with layout 1,
-style 1 is the one the figures above were measured on.
+Two things the script does that are easy to miss when doing it by hand. RoboCasa pins an older
+robosuite than its own code needs, so robosuite is reinstalled from master afterwards. And
+**every fixture in a RoboCasa kitchen is welded** — a kitchen on its own has nothing that can be
+picked up, so six objects with a freejoint each are added on the counter's near edge.
 
 ## What the file contains
 
@@ -118,7 +96,7 @@ ros2 launch vive_vr_ros2 tracking.launch.py
 | `publish_hand_joints` | `true` | republish `<hand>/joints` |
 | `publish_hand_tf` | `true` | 26 TF frames per hand |
 | `publish_gaze` | `true` | republish `<out>/gaze` |
-| `container_name` | `vr_container` | where `sim.launch.py` loads the simulation |
+| `container_name` | `vive_container` | where `sim.launch.py` loads the simulation |
 
 This starts `rosbridge_websocket` and a component container holding `vive_vr_ros2::InputNode`, which also
 publishes `<out>/pc_time` — the beacon the client's clock offset is estimated from, so poses are
