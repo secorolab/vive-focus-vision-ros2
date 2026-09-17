@@ -10,16 +10,17 @@ so the pose stream and the controller stream cross between them inside one proce
 """
 
 import os
+import pathlib
 import socket
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription,
+                            OpaqueFunction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
-from launch_ros.parameter_descriptions import ParameterValue
 
 
 def default_route_address() -> str:
@@ -46,16 +47,11 @@ def generate_launch_description():
 
     args = [
         DeclareLaunchArgument("model", description="MJCF file to simulate"),
-        # Derived from model, which is where scene_export writes by default, so the world that
-        # is drawn and the world that is simulated cannot silently be different ones.
         DeclareLaunchArgument(
             "scene_dir",
-            default_value=PythonExpression(
-                ["__import__('os').path.expanduser('~/.cache/vive_vr_ros2/exports/') + "
-                 "(lambda p: p.parent.name if p.stem == 'scene' else p.stem)"
-                 "(__import__('pathlib').Path('", LaunchConfiguration("model"), "'))"]
-            ),
-            description="directory holding scene.glb and manifest.json, served over HTTP",
+            default_value="",
+            description="scene.glb and manifest.json, served over HTTP; "
+                        "defaults to where scene_export wrote for this model",
         ),
         DeclareLaunchArgument(
             "params_file",
@@ -83,71 +79,65 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_gaze", default_value="true"),
     ]
 
-    scene_dir = LaunchConfiguration("scene_dir")
-    http_port = LaunchConfiguration("http_port")
-    host_ip = LaunchConfiguration("host_ip")
-    params_file = LaunchConfiguration("params_file")
+    return LaunchDescription(args + [OpaqueFunction(function=launch_setup)])
 
-    scene_url = PythonExpression(
-        ["'http://' + '", host_ip, "' + ':' + '", http_port, "' + '/scene.glb'"]
-    )
 
-    # Empty stays empty, so that an unset env_glb does not become a URL to nothing.
-    env_glb = LaunchConfiguration("env_glb")
-    env_url = PythonExpression(
-        ["('http://' + '", host_ip, "' + ':' + '", http_port, "' + '/' + '", env_glb,
-         "') if '", env_glb, "' else ''"]
-    )
+def launch_setup(context, *unused_args, **unused_kwargs):
+    """Everything that needs argument values rather than substitutions."""
+    share = get_package_share_directory("vive_vr_ros2")
 
-    tracking = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(share, "launch", "tracking.launch.py")),
-        launch_arguments={
-            "params_file": params_file,
-            "rosbridge_port": LaunchConfiguration("rosbridge_port"),
-            "container_name": LaunchConfiguration("container_name"),
-            "publish_hand_joints": LaunchConfiguration("publish_hand_joints"),
-            "publish_hand_tf": LaunchConfiguration("publish_hand_tf"),
-            "publish_gaze": LaunchConfiguration("publish_gaze"),
-        }.items(),
-    )
+    def arg(name):
+        return LaunchConfiguration(name).perform(context)
+
+    model = arg("model")
+    host_ip, http_port = arg("host_ip"), arg("http_port")
+
+    scene_dir = arg("scene_dir")
+    if not scene_dir:
+        # Menagerie names every world <robot>/scene.xml, so a bare stem collides; this is the
+        # same rule scene_export uses, which is what keeps the drawn and simulated worlds one.
+        stem = pathlib.Path(model).stem
+        name = pathlib.Path(model).parent.name if stem == "scene" else stem
+        scene_dir = os.path.expanduser(f"~/.cache/vive_vr_ros2/scenes/{name}")
+
+    env_glb = arg("env_glb")
+    base = f"http://{host_ip}:{http_port}"
 
     scene = LoadComposableNodes(
-        target_container=LaunchConfiguration("container_name"),
+        target_container=arg("container_name"),
         composable_node_descriptions=[
             ComposableNode(
                 package="vive_vr_ros2",
                 plugin="vive_vr_ros2::SceneNode",
                 name="vive_scene",
-                # The config file carries everything stable; only what the launch computes
-                # (which model, where it is served from) is passed alongside it.
                 parameters=[
-                    params_file,
+                    arg("params_file"),
                     {
-                        "model": LaunchConfiguration("model"),
-                        "manifest": PythonExpression(["'", scene_dir, "' + '/manifest.json'"]),
-                        "scene_url": scene_url,
-                        "env_url": env_url,
-                        "env_yaw_deg": ParameterValue(
-                            LaunchConfiguration("env_yaw_deg"), value_type=float
-                        ),
-                        "env_scale": ParameterValue(
-                            LaunchConfiguration("env_scale"), value_type=float
-                        ),
+                        "model": model,
+                        "manifest": os.path.join(scene_dir, "manifest.json"),
+                        "scene_url": f"{base}/scene.glb",
+                        "env_url": f"{base}/{env_glb}" if env_glb else "",
+                        "env_yaw_deg": float(arg("env_yaw_deg")),
+                        "env_scale": float(arg("env_scale")),
                     },
                 ],
             ),
         ],
     )
 
-    return LaunchDescription(
-        args
-        + [
-            tracking,
-            # The headset fetches the .glb over plain HTTP; only the pose stream needs ROS.
-            ExecuteProcess(
-                cmd=["python3", "-m", "http.server", http_port, "--directory", scene_dir],
-                output="screen",
-            ),
-            scene,
-        ]
-    )
+    return [
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(share, "launch", "tracking.launch.py")),
+            launch_arguments={
+                k: arg(k)
+                for k in ("params_file", "rosbridge_port", "container_name",
+                          "publish_hand_joints", "publish_hand_tf", "publish_gaze")
+            }.items(),
+        ),
+        # The headset fetches the .glb over plain HTTP; only the pose stream needs ROS.
+        ExecuteProcess(
+            cmd=["python3", "-m", "http.server", http_port, "--directory", scene_dir],
+            output="screen",
+        ),
+        scene,
+    ]

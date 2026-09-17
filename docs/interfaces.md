@@ -14,7 +14,7 @@ to start if they match.
 | `<raw>/{head,left,right}/pose` → `<out>/…` | `geometry_msgs/PoseStamped` | headset → PC | 90 Hz |
 | `<raw>/{left,right}/joy` → `<out>/…` | `sensor_msgs/Joy` | headset → PC | 90 Hz |
 | `<raw>/{left,right}/joints` → `<out>/…` and TF | `geometry_msgs/PoseArray` (26) | headset → PC | 60 Hz |
-| `<raw>/gaze` → `<out>/gaze` | `vr/EyeGaze` | headset → PC | 60 Hz |
+| `<raw>/gaze` → `<out>/gaze` | `vive_vr_ros2/EyeGaze` | headset → PC | 60 Hz |
 | `<raw>/{left,right}/target` → `<out>/…` | `std_msgs/Int32` | headset → PC | on change |
 | `<out>/{left,right}/held` | `std_msgs/Int32`, transient local | PC → headset | on change |
 | `<out>/{left,right}/active` | `std_msgs/Bool`, latched | PC | on change |
@@ -136,7 +136,7 @@ Two details that are not obvious and were both found by getting them wrong:
 
 ## Eye gaze
 
-`vr/EyeGaze` is the only custom message in the project. Nothing gaze-, eye-, hand- or
+`vive_vr_ros2/EyeGaze` is the only custom message in the project. Nothing gaze-, eye-, hand- or
 skeleton-shaped exists in any installed msgs package — not `sensor_msgs`, `geometry_msgs` or
 `vision_msgs` — which is the whole justification for defining one.
 

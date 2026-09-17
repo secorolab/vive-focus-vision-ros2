@@ -35,7 +35,7 @@ namespace {
 struct Options
 {
     std::string              mjcf;
-    // Empty means ~/.cache/vive_vr_ros2/exports/<model stem>: writing a 7 MB glb into whatever
+    // Empty means ~/.cache/vive_vr_ros2/scenes/<model stem>: writing a 7 MB glb into whatever
     // directory the command was run from is never what was wanted.
     std::string              out_dir;
     std::vector<int>         groups  = { 0, 1, 2 };
@@ -57,7 +57,7 @@ void usage(const char *argv0)
                  "          [--rings N] [--plane-extent M] [--sky-radius M]\n"
                  "          [--export-ground] [--export-sky]\n\n"
                  "Writes OUT_DIR/scene.glb and OUT_DIR/manifest.json.\n"
-                 "OUT_DIR defaults to ~/.cache/vive_vr_ros2/exports/<model>.\n",
+                 "OUT_DIR defaults to ~/.cache/vive_vr_ros2/scenes/<model>.\n",
                  argv0);
 }
 
@@ -340,7 +340,7 @@ int main(int argc, char **argv)
         const std::filesystem::path mjcf(opt.mjcf);
         const std::string           stem = mjcf.stem().string();
         const std::string name = stem == "scene" ? mjcf.parent_path().filename().string() : stem;
-        opt.out_dir = std::string(home) + "/.cache/vive_vr_ros2/exports/" + name;
+        opt.out_dir = std::string(home) + "/.cache/vive_vr_ros2/scenes/" + name;
         std::fprintf(stderr, "writing to %s\n", opt.out_dir.c_str());
     }
 

@@ -6,7 +6,7 @@
 python3 scripts/fake_headset.py --seconds 10     # with the stack running
 python3 scripts/fake_headset.py --still          # exercises the inactive branch
 python3 scripts/fake_grab.py --body 2            # pinches an object and checks it rises
-python3 scripts/check_glb.py ~/.cache/vive_vr_ros2/exports/kinova_gen3/scene.glb
+python3 scripts/check_glb.py ~/.cache/vive_vr_ros2/scenes/kinova_gen3/scene.glb
 ```
 
 `fake_headset.py` stands in for the Unity client, speaking the same rosbridge contract over the

@@ -21,24 +21,23 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 
 ## Quick start
 
-This repository is one ROS 2 package. It is cloned into a workspace, not built in place:
+This repository is one ROS 2 package. It is cloned into a workspace, not built in place, and
+one script prepares that workspace:
 
 ```bash
-mkdir -p ~/work/p/vrws/src && cd ~/work/p/vrws
+mkdir -p ~/work/p/vrws && cd ~/work/p/vrws
 git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
-vcs import src < src/vive-vr-ros2/dependencies.repos
-./src/vive-vr-ros2/scripts/fetch_vive_plugin.sh     # 361 MB, untracked on purpose
+./src/vive-vr-ros2/scripts/setup.sh
 
+source venv/bin/activate
 source /opt/ros/jazzy/setup.bash
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
-source install/setup.bash
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_SCENES=ON
 ```
 
-Then export a world and run it:
+`BUILD_SCENES=ON` exports the worlds in `scenes/` — a Kinova arm on a table, and a RoboCasa
+kitchen — into `~/.cache/vive_vr_ros2/scenes/`. Then run one:
 
 ```bash
-ros2 run vive_vr_ros2 scene_export \
-    ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ros2 launch vive_vr_ros2 sim.launch.py \
     model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ```
@@ -59,7 +58,7 @@ And the headset half, on any machine with the Unity editor installed:
 
 - [Installation](docs/install.md) — workspace dependencies, ROS build, Unity editor and licence
 - [Running](docs/run.md) — export a world, launch the stack, what should appear
-- [Interfaces](docs/interfaces.md) — topics, TF frames, `Joy` layout, `vr/EyeGaze`, frame conventions
+- [Interfaces](docs/interfaces.md) — topics, TF frames, `Joy` layout, `EyeGaze`, frame conventions
 - [Configuration](docs/configuration.md) — `vive_vr.yaml`, the device config file, OpenXR features
 - [The Unity client](docs/unity.md) — project layout, scripts, scripted setup and APK build
 - [Embedding in a simulation](docs/embedding.md) — `BodyPosePublisher` in an existing application

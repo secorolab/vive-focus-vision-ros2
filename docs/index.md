@@ -23,7 +23,7 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 
 - [Installation](install.md) — workspace dependencies, ROS build, Unity editor and licence
 - [Running](run.md) — export a world, launch the stack, what should appear
-- [Interfaces](interfaces.md) — topics, TF frames, the `Joy` layout, `vr/EyeGaze`, frame conventions
+- [Interfaces](interfaces.md) — topics, TF frames, the `Joy` layout, `EyeGaze`, frame conventions
 - [Configuration](configuration.md) — `vive_vr.yaml`, the device config file, OpenXR features
 - [The Unity client](unity.md) — project layout, scripts, scripted setup and APK build
 - [Embedding in a simulation](embedding.md) — `BodyPosePublisher` in an existing application

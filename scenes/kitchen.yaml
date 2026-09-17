@@ -1,0 +1,8 @@
+name: kitchen
+description: >
+  RoboCasa kitchen, around 190 bodies, with six graspable objects added because every fixture
+  in one is welded. The world the pose stream was measured against.
+generator: scripts/build_kitchen.sh
+args: [--env, NavigateKitchen, --layout, "1", --style, "1"]
+# Several GB of RoboCasa assets on first build, which is why scenes are not built by default.
+heavy: true

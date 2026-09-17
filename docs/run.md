@@ -34,28 +34,29 @@ Finite planes are kept: those are geometry someone modelled. A textured one is t
 alternating squares of the texture's two colours, which is MuJoCo's checkerboard without needing
 a sampler or UVs.
 
-## The kitchen
+## Scenes
 
-The large test world is a [RoboCasa](https://github.com/robocasa/robocasa) kitchen — around 190
-bodies, which is what the pose stream's send-only-what-moved design was measured against. It is
-generated, not stored: nothing in this repository ships a world.
+`scenes/*.yaml` declares each world. `kinova` is the Kinova Gen3 on a table, nine bodies, the
+smoke-test world; `kitchen` is a [RoboCasa](https://github.com/robocasa/robocasa) kitchen of
+around 190 bodies, the one the pose stream's send-only-what-moved design was measured against.
+Adding a third is one more yaml file.
+
+With the Python environment from [Installation](install.md#python-environment) active:
 
 ```bash
-./scripts/build_kitchen.sh          # --env, --layout, --style pick a different kitchen
+colcon build --cmake-args -DBUILD_SCENES=ON      # exports every scene into the cache
+python3 scripts/build_scenes.py --list           # what exists, and what is built
+python3 scripts/build_scenes.py --only kitchen --force
 ```
 
-It creates a venv, installs RoboCasa, downloads the asset pack, builds the MJCF, adds the
-graspable objects and exports the `.glb`, then prints the launch line. Each step is skipped if
-it was already done, so a second run costs nothing and `--force` rebuilds the world.
+Each lands in `~/.cache/vive_vr_ros2/scenes/<name>/` as `scene.glb` and `manifest.json`, and is
+skipped when already built. A scene is either a `model`, an MJCF handed to `scene_export`, or a
+`generator` that produces and exports its own — the kitchen is generated, because RoboCasa
+assembles fixtures into an arena only when an environment is constructed.
 
-Everything lands under `~/.cache/vive_vr_ros2`, beside the MuJoCo and Menagerie caches, and not
-in `/tmp`: the install runs to gigabytes and rebuilding the MJCF needs all of it. The first
-kitchen was lost exactly that way.
-
-Two things the script does that are easy to miss when doing it by hand. RoboCasa pins an older
-robosuite than its own code needs, so robosuite is reinstalled from master afterwards. And
-**every fixture in a RoboCasa kitchen is welded** — a kitchen on its own has nothing that can be
-picked up, so six objects with a freejoint each are added on the counter's near edge.
+Every fixture in a RoboCasa kitchen is welded, so a kitchen on its own has nothing that can be
+picked up. `scripts/add_kitchen_objects.py` adds six objects with a freejoint each on the
+counter's near edge, which is what makes it a useful world here.
 
 ## What the file contains
 

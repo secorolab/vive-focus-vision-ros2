@@ -1,0 +1,4 @@
+# A scene is either a `model` to export, or a `generator` that produces and exports one.
+name: kinova
+description: Kinova Gen3 arm on a table. Nine bodies; the smoke-test world.
+model: ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml

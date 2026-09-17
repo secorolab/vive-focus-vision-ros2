@@ -109,6 +109,21 @@ if(BUILD_DOCS)
   add_subdirectory(docs)
 endif()
 
+# Off by default: the kitchen downloads gigabytes of RoboCasa assets, and a code build has no
+# business needing the network.
+option(BUILD_SCENES "Export the scenes in scenes/ into the cache" OFF)
+add_custom_target(scenes
+  COMMAND ${CMAKE_COMMAND} -E env python3 "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_scenes.py"
+          --scene-export "$<TARGET_FILE:scene_export>"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "Exporting scenes into the cache"
+  VERBATIM
+)
+if(BUILD_SCENES)
+  set_property(TARGET scenes PROPERTY EXCLUDE_FROM_ALL FALSE)
+  add_custom_target(scenes_all ALL DEPENDS scenes)
+endif()
+
 install(DIRECTORY include/ DESTINATION include)
 install(TARGETS vive_vr_core vive_vr_components
   EXPORT export_vive_vr_ros2

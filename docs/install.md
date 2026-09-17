@@ -5,6 +5,28 @@ produces the headset APK. Neither needs the other to build.
 
 ## ROS 2 side
 
+### Setup
+
+One script, run from the workspace root after cloning:
+
+```bash
+mkdir -p ~/work/p/vrws && cd ~/work/p/vrws
+git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+./src/vive-vr-ros2/scripts/setup.sh          # --no-scenes, --no-unity to skip parts
+```
+
+It clones the workspace dependencies listed in `dependencies.repos`, creates `venv/` **with
+`--system-site-packages`**, installs the scene tooling into it, downloads the kitchen asset
+packs and fetches the VIVE plugin. Then:
+
+```bash
+source venv/bin/activate
+source /opt/ros/jazzy/setup.bash
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_SCENES=ON
+```
+
+The rest of this section is what that script does, and why.
+
 ### Workspace dependencies
 
 This repository is a single ROS 2 package, cloned into a workspace's `src/` rather than built in
@@ -16,7 +38,7 @@ git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
 vcs import src < src/vive-vr-ros2/dependencies.repos    # apt install python3-vcstool
 ```
 
-`vive_vr_ros2` depends on `mj_kdl_wrapper`, which needs the secorolab Orocos KDL fork built as its own
+`vive_vr_ros2` depends on `mj_kdl_wrapper`, which needs the secorolab Orocos KDL fork built as
 workspace package. This is not optional and not a preference: the ROS distro ships
 `liborocos-kdl.so.1.5` and `python3-pykdl` with the **same SONAME and module name** as the fork,
 and a single process can hold only one — the loader keeps the first and silently drops the
@@ -54,12 +76,42 @@ sudo apt install ros-jazzy-rosbridge-suite \
     cmake g++ libeigen3-dev libglfw3-dev libgl-dev libegl-dev ffmpeg
 ```
 
+### Python environment
+
+Use a venv, and create it **with `--system-site-packages`**: without that flag the venv hides
+`rclpy`, `launch` and the rest of the ROS 2 Python packages, and nothing in the workspace runs
+inside it.
+
+```bash
+cd ~/work/p/vrws
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
+```
+
+Only the scene tooling needs anything beyond ROS. RoboCasa builds the kitchen; robosuite is
+reinstalled from master afterwards because RoboCasa pins an older one than its own code needs:
+
+```bash
+pip install "git+https://github.com/robocasa/robocasa.git"
+pip install --force-reinstall --no-deps \
+    "git+https://github.com/ARISE-Initiative/robosuite.git@master"
+python3 -m robocasa.scripts.download_kitchen_assets --type tex fixtures_lw objs_lw
+```
+
+Those three asset packs are the kitchen's textures, its fixtures and the objects that are made
+graspable. `--type all` is around 10 GB, most of it Objaverse and AI-generated sets that nothing
+here loads.
+
 ### Build
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 ```
+
+With the environment above active, add `-DBUILD_SCENES=ON` and the build also exports the
+scenes in `scenes/` into `~/.cache/vive_vr_ros2/scenes/`. It is off by default so that a code
+build needs neither RoboCasa nor the assets.
 
 `colcon.meta` belongs to the workspace, not to this package, and turns off the wrapper's examples
 and tests. `unity/COLCON_IGNORE` is kept as a safety net for anyone who runs colcon from inside

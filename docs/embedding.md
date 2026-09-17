@@ -19,7 +19,7 @@ of a `mj_kdl_wrapper` application.
 vive_vr_ros2::SceneConf conf;
 // scene_export writes these; no tilde expansion here, so give it a real path
 conf.manifest_path = std::string(std::getenv("HOME"))
-                   + "/.cache/vive_vr_ros2/exports/kinova_gen3/manifest.json";
+                   + "/.cache/vive_vr_ros2/scenes/kinova_gen3/manifest.json";
 conf.scene_url     = "http://192.168.2.118:8000/scene.glb";
 conf.frame_id      = "world";
 conf.rate_hz       = 60.0;
