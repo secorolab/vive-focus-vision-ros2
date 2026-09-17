@@ -58,7 +58,7 @@ suspended, and losing the boundary, which silently stops all input.
 mkdir -p ~/work/p/vrws/src && cd ~/work/p/vrws
 git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
 vcs import src < src/vive-vr-ros2/dependencies.repos
-./src/vive-vr-ros2/scripts/fetch_vive_plugin.sh     # 361 MB, untracked on purpose
+./src/vive-vr-ros2/scripts/fetch_vive_plugin.py     # 361 MB, untracked on purpose
 
 source /opt/ros/jazzy/setup.bash
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo

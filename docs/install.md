@@ -139,7 +139,7 @@ release artefact, so it belongs in a setup step rather than in history. `manifes
 it by relative path, so Unity cannot open the project until it is fetched:
 
 ```bash
-./scripts/fetch_vive_plugin.sh
+./scripts/fetch_vive_plugin.py
 ```
 
 Idempotent and checksum-pinned; re-running it on a good file does nothing. `VIVE_OPENXR_VERSION`

@@ -76,7 +76,7 @@ fi
 
 if [ "$unity" -eq 1 ] && ! ls "$repo"/unity/VrRos/vendor/*.tgz >/dev/null 2>&1; then
     echo "==> fetching the VIVE OpenXR plugin"
-    "$repo/scripts/fetch_vive_plugin.sh"
+    "$repo/scripts/fetch_vive_plugin.py"
 fi
 
 cat <<EOF

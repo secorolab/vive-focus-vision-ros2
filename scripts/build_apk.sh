@@ -44,7 +44,7 @@ done
 
 # The plugin is a 361 MB tarball kept out of git, and Unity cannot open the project without it.
 if ! ls "$project"/vendor/*.tgz >/dev/null 2>&1; then
-    echo "VIVE plugin missing; run scripts/fetch_vive_plugin.sh" >&2
+    echo "VIVE plugin missing; run scripts/fetch_vive_plugin.py" >&2
     exit 1
 fi
 
