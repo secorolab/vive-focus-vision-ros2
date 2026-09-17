@@ -20,6 +20,11 @@ unity/VrRos/*_BurstDebugInformation_DoNotShip/
 # Run tools/fetch_vive_plugin.sh to get it.
 unity/VrRos/vendor/
 
+# TMP's own .unitypackage, unpacked by VrRosSetup.ImportTmpResources. It keeps its GUIDs across
+# imports, so the scene's font reference survives without it being tracked here.
+unity/VrRos/Assets/TextMesh Pro/
+unity/VrRos/Assets/TextMesh Pro.meta
+
 # exported scenes are build artefacts of scene_export
 /tmp/vr_scene/
 /tmp/vr_robot/

@@ -2,25 +2,28 @@
 # Copyright (c) 2026 Vamsi Kalagaturu
 # See LICENSE for details.
 
-"""Brings up everything the headset talks to: rosbridge, the scene file server, the components.
+"""The full stack: tracking, plus an MJCF world simulated here and drawn on the headset.
 
-SceneNode and InputNode share one container, so the pose stream and the controller stream cross
-between them intra-process rather than through the network stack.
+tracking.launch.py brings up rosbridge and InputNode; this file adds the HTTP server the client
+fetches the .glb from and loads SceneNode into the container tracking.launch.py already started,
+so the pose stream and the controller stream cross between them inside one process.
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from launch_ros.actions import ComposableNodeContainer, Node
+from launch_ros.actions import LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
 from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    default_params = os.path.join(get_package_share_directory("vr"), "config", "vr.yaml")
+    share = get_package_share_directory("vr")
+    default_params = os.path.join(share, "config", "vr.yaml")
 
     args = [
         DeclareLaunchArgument("model", description="MJCF file to simulate"),
@@ -48,6 +51,10 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("env_yaw_deg", default_value="0.0"),
         DeclareLaunchArgument("env_scale", default_value="1.0"),
+        DeclareLaunchArgument("container_name", default_value="vr_container"),
+        DeclareLaunchArgument("publish_hand_joints", default_value="true"),
+        DeclareLaunchArgument("publish_hand_tf", default_value="true"),
+        DeclareLaunchArgument("publish_gaze", default_value="true"),
     ]
 
     scene_dir = LaunchConfiguration("scene_dir")
@@ -66,12 +73,20 @@ def generate_launch_description():
          "') if '", env_glb, "' else ''"]
     )
 
-    container = ComposableNodeContainer(
-        name="vr_container",
-        namespace="",
-        package="rclcpp_components",
-        executable="component_container",
-        output="screen",
+    tracking = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(share, "launch", "tracking.launch.py")),
+        launch_arguments={
+            "params_file": params_file,
+            "rosbridge_port": LaunchConfiguration("rosbridge_port"),
+            "container_name": LaunchConfiguration("container_name"),
+            "publish_hand_joints": LaunchConfiguration("publish_hand_joints"),
+            "publish_hand_tf": LaunchConfiguration("publish_hand_tf"),
+            "publish_gaze": LaunchConfiguration("publish_gaze"),
+        }.items(),
+    )
+
+    scene = LoadComposableNodes(
+        target_container=LaunchConfiguration("container_name"),
         composable_node_descriptions=[
             ComposableNode(
                 package="vr",
@@ -95,36 +110,18 @@ def generate_launch_description():
                     },
                 ],
             ),
-            ComposableNode(
-                package="vr",
-                plugin="vr::InputNode",
-                name="vr_input",
-                parameters=[params_file],
-            ),
         ],
     )
 
     return LaunchDescription(
         args
         + [
-            Node(
-                package="rosbridge_server",
-                executable="rosbridge_websocket",
-                name="rosbridge_websocket",
-                # Launch arguments are strings; this parameter is declared int.
-                parameters=[
-                    {
-                        "port": ParameterValue(
-                            LaunchConfiguration("rosbridge_port"), value_type=int
-                        )
-                    }
-                ],
-            ),
+            tracking,
             # The headset fetches the .glb over plain HTTP; only the pose stream needs ROS.
             ExecuteProcess(
                 cmd=["python3", "-m", "http.server", http_port, "--directory", scene_dir],
                 output="screen",
             ),
-            container,
+            scene,
         ]
     )

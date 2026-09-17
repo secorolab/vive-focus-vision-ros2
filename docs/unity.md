@@ -28,11 +28,22 @@ scene by invoking the same `GameObject/XR/XR Origin (VR)` menu command a human w
 `VrRos` object and its `VrScene` child; and wires every inspector reference.
 
 ```
-XR Origin (VR)          camera, camera offset, tracked pose driver
+XR Origin (VR)          camera, camera offset, tracked pose driver,
+                        VrLocomotion, VrPointer, VrDeviceVisuals, VrWelcomePanel
 VrRos                   VrConfig, RosBridge, ClockSync, VrInputPublisher,
                         BodyPoseApplier, HandPublisher, GazePublisher
   └── VrScene           SceneLoader — parents the loaded world under its own transform
 ```
+
+It also imports TextMeshPro's Essential Resources if they are missing, which the welcome panel
+needs and which Unity otherwise asks for through a dialog.
+
+## Before a world arrives
+
+With no `<out>/scene` message the client shows a panel in front of the user — rosbridge address
+and connection state, input mode, the launch commands, and the path of the device config file —
+standing on a metre grid. It hides when a world loads and returns if the bridge drops, so an
+empty headset view always says which of the three possible failures it is.
 
 ## Scripts
 
@@ -52,6 +63,7 @@ VrRos                   VrConfig, RosBridge, ClockSync, VrInputPublisher,
 | `VrBodyTag` | a body's manifest index, so a raycast hit can be named |
 | `VrDeviceVisuals` | VIVE's own controller and hand models, one set or the other |
 | `VrSimControls` | buttons that act on the simulation rather than the rig |
+| `VrWelcomePanel` | connection, input mode and what to run on the PC, until a world arrives |
 
 ### Controls
 
@@ -133,6 +145,14 @@ DISPLAY=:0 VR_GLB=/tmp/vr_robot/scene.glb VR_PNG=~/out.png \
 
 `-nographics` cannot be used: it disables the graphics device, so the camera renders nothing and
 the PNG comes out blank.
+
+The welcome panel is checked the same way, from where the user's eyes will be, with no world
+loaded and nothing connected:
+
+```bash
+DISPLAY=:0 VR_PNG=~/welcome.png \
+  $UNITY -batchmode -quit -projectPath unity/VrRos -executeMethod VrScenePreview.RenderWelcome
+```
 
 With an Editor open, the Unity CLI drives it directly, which is faster and shows the real thing:
 

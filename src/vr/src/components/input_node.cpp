@@ -8,11 +8,13 @@
  * downstream: the vr_origin -> world calibration, and flagging a controller inactive because
  * VIVE keeps reporting a tracked pose for one lying on a table. */
 
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <string>
 #include <unordered_map>
 
+#include <builtin_interfaces/msg/time.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
@@ -137,21 +139,42 @@ class InputNode : public rclcpp::Node
         }
 
         /* Hands and gaze are optional: the client only publishes them when the corresponding
-         * OpenXR features are enabled, and a headset without them is still fully usable. */
+         * OpenXR features are enabled, and a headset without them is still fully usable. Turning
+         * one off here drops the republish, not the client's stream: the raw topic still costs
+         * the Wi-Fi it always did. */
         publish_hand_tf_ = declare_parameter<bool>("publish_hand_tf", true);
-        for (const std::string &hand : hands) {
-            joints_pubs_[hand] = create_publisher<geometry_msgs::msg::PoseArray>(
-              out_ns_ + "/" + hand + "/joints", rclcpp::SensorDataQoS());
-            hand_subs_.push_back(create_subscription<geometry_msgs::msg::PoseArray>(
-              raw_ns_ + "/" + hand + "/joints", rclcpp::SensorDataQoS(),
-              [this, hand](geometry_msgs::msg::PoseArray::SharedPtr msg) { on_hand(hand, *msg); }));
+        if (declare_parameter<bool>("publish_hand_joints", true)) {
+            for (const std::string &hand : hands) {
+                joints_pubs_[hand] = create_publisher<geometry_msgs::msg::PoseArray>(
+                  out_ns_ + "/" + hand + "/joints", rclcpp::SensorDataQoS());
+                hand_subs_.push_back(create_subscription<geometry_msgs::msg::PoseArray>(
+                  raw_ns_ + "/" + hand + "/joints", rclcpp::SensorDataQoS(),
+                  [this, hand](geometry_msgs::msg::PoseArray::SharedPtr msg) {
+                      on_hand(hand, *msg);
+                  }));
+            }
         }
 
-        gaze_pub_ = create_publisher<vr::msg::EyeGaze>(out_ns_ + "/gaze",
-                                                       rclcpp::SensorDataQoS());
-        gaze_sub_ = create_subscription<vr::msg::EyeGaze>(
-          raw_ns_ + "/gaze", rclcpp::SensorDataQoS(),
-          [this](vr::msg::EyeGaze::SharedPtr msg) { on_gaze(*msg); });
+        if (declare_parameter<bool>("publish_gaze", true)) {
+            gaze_pub_ = create_publisher<vr::msg::EyeGaze>(out_ns_ + "/gaze",
+                                                           rclcpp::SensorDataQoS());
+            gaze_sub_ = create_subscription<vr::msg::EyeGaze>(
+              raw_ns_ + "/gaze", rclcpp::SensorDataQoS(),
+              [this](vr::msg::EyeGaze::SharedPtr msg) { on_gaze(*msg); });
+        }
+
+        /* The client's only view of PC time. It lives here rather than with the simulation so a
+         * tracking-only run still stamps its poses on the same clock as anything recording them. */
+        const auto pc_time_topic = declare_parameter<std::string>("pc_time_topic", "/vr/pc_time");
+        const auto pc_time_rate  = declare_parameter<double>("pc_time_rate_hz", 10.0);
+        pc_time_pub_ = create_publisher<builtin_interfaces::msg::Time>(pc_time_topic,
+                                                                      rclcpp::SensorDataQoS());
+        const auto pc_time_period = std::chrono::duration<double>(1.0 / pc_time_rate);
+        pc_time_timer_ = create_wall_timer(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(pc_time_period), [this] {
+              builtin_interfaces::msg::Time msg = now();
+              pc_time_pub_->publish(msg);
+          });
 
         RCLCPP_INFO(get_logger(), "%s -> %s, calibration xyz [%.3f %.3f %.3f] rpy [%.3f %.3f %.3f]",
                     origin_frame_.c_str(), world_frame_.c_str(), xyz[0], xyz[1], xyz[2], rpy[0],
@@ -354,6 +377,8 @@ class InputNode : public rclcpp::Node
                                                                                      joints_pubs_;
     rclcpp::Publisher<vr::msg::EyeGaze>::SharedPtr                                      gaze_pub_;
     rclcpp::Subscription<vr::msg::EyeGaze>::SharedPtr                                   gaze_sub_;
+    rclcpp::Publisher<builtin_interfaces::msg::Time>::SharedPtr                      pc_time_pub_;
+    rclcpp::TimerBase::SharedPtr                                                   pc_time_timer_;
     bool                                                                       publish_hand_tf_ = true;
     std::unique_ptr<tf2_ros::TransformBroadcaster>                                      tf_;
     std::unique_ptr<tf2_ros::StaticTransformBroadcaster>                                static_tf_;

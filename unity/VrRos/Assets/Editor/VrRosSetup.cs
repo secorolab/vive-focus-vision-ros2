@@ -4,6 +4,7 @@
 
 using System;
 using System.IO;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.SceneManagement;
@@ -26,8 +27,61 @@ public static class VrRosSetup
     {
         ConfigurePlayerSettings();
         IncludeGltfShaders();
+        ImportTmpResources();
         BuildScene();
         Debug.Log("VrRosSetup: done");
+    }
+
+    /* TextMeshPro ships its default font and its shaders as a .unitypackage imported by clicking
+     * through a dialog on first use; without them the welcome panel renders nothing at all.
+     *
+     * TMP's own importer calls AssetDatabase.ImportPackage, which only queues the work for the
+     * editor loop and so never runs under -batchmode -quit. ImportPackageImmediately does run,
+     * but is internal, hence the reflection: the alternative is a manual click this project has
+     * spent its whole life avoiding. */
+    [MenuItem("VrRos/Import TMP Resources")]
+    public static void ImportTmpResources()
+    {
+        if (TMPro.TMP_Settings.instance != null) return;
+
+        string packagePath = TmpEssentialsPackage();
+        if (packagePath == null || !File.Exists(packagePath))
+        {
+            Debug.LogError($"VrRosSetup: no TMP Essential Resources package at '{packagePath}'");
+            return;
+        }
+
+        MethodInfo immediate = typeof(AssetDatabase).GetMethod(
+            "ImportPackageImmediately", BindingFlags.Static | BindingFlags.Public
+                                        | BindingFlags.NonPublic);
+        if (immediate != null)
+        {
+            immediate.Invoke(null, new object[] { packagePath });
+        }
+        else
+        {
+            AssetDatabase.ImportPackage(packagePath, false); // pre-6000 editors; needs a rerun
+        }
+        AssetDatabase.Refresh();
+
+        if (TMPro.TMP_Settings.instance == null)
+        {
+            Debug.LogError("VrRosSetup: TMP Essential Resources are not visible yet — run "
+                           + "SetupAll once more and they will be picked up");
+        }
+        else
+        {
+            Debug.Log("VrRosSetup: imported TMP Essential Resources");
+        }
+    }
+
+    private static string TmpEssentialsPackage()
+    {
+        var package = UnityEditor.PackageManager.PackageInfo.FindForPackageName("com.unity.ugui");
+        return package == null
+                 ? null
+                 : Path.Combine(package.resolvedPath, "Package Resources",
+                                "TMP Essential Resources.unitypackage");
     }
 
     /* Nothing in the project references glTFast's shaders — the materials only exist at runtime,
@@ -262,6 +316,14 @@ public static class VrRosSetup
             }
 
             AddDeviceVisuals(xrOrigin, cfg);
+
+            /* Also on the rig: it hangs in the tracking space in front of the user rather than
+             * in the world, which does not exist yet when the panel is what they are reading. */
+            var welcome = xrOrigin.AddComponent<VrWelcomePanel>();
+            welcome.bridge = bridge;
+            welcome.config = cfg;
+            welcome.scene = loader;
+            welcome.rig = space;
 
             /* On the rig, because it casts from tracking-space device poses and draws the ray in
              * the world the user is standing in. */

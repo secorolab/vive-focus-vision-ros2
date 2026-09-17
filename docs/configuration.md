@@ -10,7 +10,7 @@ JSON file on the device. The two describe the same contract from opposite ends, 
 Another file can be supplied in its place:
 
 ```bash
-ros2 launch vr vr.launch.py model:=... params_file:=/path/to/my.yaml
+ros2 launch vr sim.launch.py model:=... params_file:=/path/to/my.yaml
 ```
 
 A single value can be overridden on the command line:
@@ -25,8 +25,13 @@ ros2 run vr input_node --ros-args -p motion_eps_m:=0.01
 |---|---|---|
 | `raw_ns` | `/vr/raw` | namespace the headset publishes into |
 | `out_ns` | `/vr` | namespace the PC publishes into |
+| `pc_time_topic` | `/vr/pc_time` | clock topic for the client's offset estimate |
+| `pc_time_rate_hz` | `10.0` | |
 
-The two must differ. `vr::InputNode` refuses to start otherwise, because it would be subscribing
+The clock beacon is published by the input component, so a tracking-only run is stamped on PC
+time too; the topic name is shared because it is part of the contract with the client either way.
+
+The two namespaces must differ. `vr::InputNode` refuses to start otherwise, because it would be subscribing
 to its own output.
 
 ### Scene component
@@ -38,8 +43,6 @@ to its own output.
 | `scene_url` | `""` | URL the headset fetches `scene.glb` from |
 | `frame_id` | `world` | frame the body poses are expressed in |
 | `rate_hz` | `60.0` | body pose stream rate |
-| `pc_time_topic` | `/vr/pc_time` | clock topic for the client's offset estimate |
-| `pc_time_rate_hz` | `10.0` | |
 | `timestep` | `0.002` | simulation timestep |
 | `add_floor` | `false` | let the scene builder add a ground plane |
 | `add_skybox` | `false` | let the scene builder add a sky and directional light |
@@ -57,7 +60,9 @@ to its own output.
 | `stale_after_s` | `1.0` | no movement for this long, and the controller is reported inactive |
 | `hands` | `[left, right]` | |
 | `head_name` | `head` | tracked and published, but has no buttons |
+| `publish_hand_joints` | `true` | republish `<hand>/joints` |
 | `publish_hand_tf` | `true` | 26 TF frames per hand; the `PoseArray` is published either way |
+| `publish_gaze` | `true` | republish `<out>/gaze` |
 
 ### Grabbing
 
@@ -86,6 +91,9 @@ headset's play space and the robot's world frame; see [Known
 limits](limits.md#play-space-calibration). `publish_hand_tf` exists because two hands at 60 Hz
 are 3120 transforms a second, which every `tf2` listener pays for; see
 [Interfaces](interfaces.md#hand-joints).
+
+The three `publish_*` parameters drop the republish, not the stream: the headset publishes into
+`raw_ns` regardless, so they save ROS traffic and listener work rather than Wi-Fi.
 
 ## Headset settings
 

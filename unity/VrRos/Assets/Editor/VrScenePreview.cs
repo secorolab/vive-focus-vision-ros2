@@ -220,6 +220,60 @@ public static class VrScenePreview
         if (stand != null) UnityEngine.Object.DestroyImmediate(stand);
     }
 
+    /// <summary>
+    /// Renders the welcome panel to a PNG, from where the user's eyes are.
+    ///
+    ///   Unity -batchmode -quit -projectPath . -executeMethod VrScenePreview.RenderWelcome
+    ///     (VR_PNG=/path/out.png)
+    ///
+    /// Start and Awake are sent by hand because edit mode runs neither, which is also why this
+    /// needs no play mode, no XR runtime and no device.
+    /// </summary>
+    [MenuItem("VrRos/Preview Welcome Panel")]
+    public static void RenderWelcome()
+    {
+        string png = Environment.GetEnvironmentVariable("VR_PNG") ?? "/tmp/vr_welcome.png";
+        UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+            UnityEditor.SceneManagement.NewSceneSetup.EmptyScene,
+            UnityEditor.SceneManagement.NewSceneMode.Single);
+
+        var config = new GameObject("VrRos").AddComponent<VrRos.VrConfig>();
+        config.SendMessage("Awake");
+
+        // No RosBridge: disconnected, with no world, is the state this panel exists for.
+        var rig = new GameObject("Rig").transform;
+        rig.position = new Vector3(0f, config.defaults.eyeHeight, 0f);
+        var panel = new GameObject("Panel").AddComponent<VrRos.VrWelcomePanel>();
+        panel.rig = rig;
+        panel.config = config;
+        panel.SendMessage("Start");
+
+        // The lobby floor, without SceneLoader's Start, which would want a bridge to subscribe to.
+        var loader = new GameObject("VrScene").AddComponent<VrRos.SceneLoader>();
+        loader.SendMessage("CreateGround");
+
+        var camGo = new GameObject("PreviewCamera");
+        var cam = camGo.AddComponent<Camera>();
+        cam.clearFlags = CameraClearFlags.Skybox;
+        cam.transform.SetPositionAndRotation(rig.position, Quaternion.Euler(6f, 0f, 0f));
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.62f, 0.63f, 0.66f);
+
+        var rt = new RenderTexture(1280, 800, 24);
+        cam.targetTexture = rt;
+        cam.Render();
+
+        RenderTexture.active = rt;
+        var shot = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
+        shot.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+        shot.Apply();
+        RenderTexture.active = null;
+        cam.targetTexture = null;
+
+        File.WriteAllBytes(png, shot.EncodeToPNG());
+        Debug.Log($"VrScenePreview: welcome panel -> {png}");
+    }
+
     [Serializable] private class Body { public string name; public int node; }
     [Serializable] private class Pose { public float[] p; public float[] q; }
     [Serializable]

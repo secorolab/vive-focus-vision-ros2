@@ -14,14 +14,18 @@
     raw_ns: /vr/raw
     out_ns: /vr
 
+    # The beacon the client's ClockSync estimates its offset against. InputNode publishes it, so
+    # tracking alone is still stamped on PC time; the parameter is shared because the topic name
+    # is part of the contract with the client either way.
+    pc_time_topic: /vr/pc_time
+    pc_time_rate_hz: 10.0
+
 vr_scene:
   ros__parameters:
     # model and scene_url have no sensible default: the launch file supplies them.
     manifest: ""
     frame_id: world
     rate_hz: 60.0
-    pc_time_topic: /vr/pc_time
-    pc_time_rate_hz: 10.0
 
 vr_input:
   ros__parameters:
@@ -42,6 +46,11 @@ vr_input:
     hands: [left, right]
     # Published in the world frame but carrying no button state, so it is not in `hands`.
     head_name: head
+
+    # What of the client's stream is republished into out_ns. These drop the republish only: the
+    # headset still sends what it sends, so turning one off saves ROS traffic, not Wi-Fi.
+    publish_hand_joints: true
+    publish_gaze: true
 
     # 26 joints per hand become 26 TF frames per hand, parented as a real hand skeleton. Turn
     # this off if the TF tree matters more than the hands do: at 60 Hz it is 3120 transforms a

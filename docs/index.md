@@ -59,9 +59,12 @@ source /opt/ros/jazzy/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE
 
 source install/setup.bash
 ros2 run vr scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vr_robot
-ros2 launch vr vr.launch.py \
+ros2 launch vr sim.launch.py \
     model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
     scene_dir:=/tmp/vr_robot host_ip:=<this machine's LAN IP>
 ```
+
+`ros2 launch vr tracking.launch.py` is the same stack without the simulation: poses, buttons,
+hands and gaze only.
 
 Full detail in [Installation](install.md) and [Running](run.md).

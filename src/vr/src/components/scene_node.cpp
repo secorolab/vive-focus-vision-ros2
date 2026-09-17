@@ -20,7 +20,6 @@
 #include <mj_kdl_wrapper/mj_kdl_wrapper.hpp>
 #include <mujoco/mujoco.h>
 
-#include <builtin_interfaces/msg/time.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <std_srvs/srv/trigger.hpp>
@@ -53,8 +52,6 @@ class SceneNode : public rclcpp::Node
         conf.topic_ns      = declare_parameter<std::string>("out_ns", "/vr");
         rate_hz_           = conf.rate_hz;
 
-        const auto pc_time_topic = declare_parameter<std::string>("pc_time_topic", "/vr/pc_time");
-        const auto pc_time_rate  = declare_parameter<double>("pc_time_rate_hz", 10.0);
         const auto timestep      = declare_parameter<double>("timestep", 0.002);
         const auto gravity_z     = declare_parameter<double>("gravity_z", -9.81);
 
@@ -102,16 +99,6 @@ class SceneNode : public rclcpp::Node
                 last_held_[hand] = -2; // not -1, so the first "holding nothing" is still published
             }
         }
-
-        /* The client estimates its clock offset against this; see ClockSync on the Unity side. */
-        pc_time_ = create_publisher<builtin_interfaces::msg::Time>(pc_time_topic,
-                                                                   rclcpp::SensorDataQoS());
-        const auto pc_time_period = std::chrono::duration<double>(1.0 / pc_time_rate);
-        time_timer_               = create_wall_timer(
-          std::chrono::duration_cast<std::chrono::nanoseconds>(pc_time_period), [this] {
-              builtin_interfaces::msg::Time msg = now();
-              pc_time_->publish(msg);
-          });
 
         /* -1 restores the model's own initial pose. A robot's keyframe only covers that robot's
          * joints, so in a world with free bodies it resets them to zero - dropping every loose
@@ -182,11 +169,10 @@ class SceneNode : public rclcpp::Node
 
     std::unique_ptr<BodyPosePublisher>                          scene_out_;
     std::unique_ptr<Grabber>                                    grabber_;
-    rclcpp::Publisher<builtin_interfaces::msg::Time>::SharedPtr pc_time_;
     std::map<std::string, rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr> held_pubs_;
     std::map<std::string, int>                                               last_held_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr          reset_srv_;
-    rclcpp::TimerBase::SharedPtr                                sim_timer_, time_timer_;
+    rclcpp::TimerBase::SharedPtr                                sim_timer_;
 };
 
 } // namespace vr

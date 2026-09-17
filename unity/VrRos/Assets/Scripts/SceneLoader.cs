@@ -52,6 +52,7 @@ namespace VrRos
         public bool Loaded { get; private set; }
 
         private string _loadedUrl;
+        private static Texture2D _gridTexture;
 
         private void Start()
         {
@@ -92,7 +93,47 @@ namespace VrRos
             ground.transform.localScale = Vector3.one * (groundSize / 10f); // Unity's plane is 10 m
             Destroy(ground.GetComponent<Collider>()); // nothing here is physically simulated
 
-            if (groundMaterial != null) ground.GetComponent<Renderer>().material = groundMaterial;
+            var renderer = ground.GetComponent<Renderer>();
+            if (groundMaterial != null)
+            {
+                renderer.material = groundMaterial;
+                return;
+            }
+
+            /* A metre grid rather than the default flat white: before a world arrives this floor
+             * is all there is, and an untextured plane gives the eye nothing to judge distance or
+             * motion against - it reads as a scene that failed to load rather than as a lobby. */
+            Material material = renderer.material;
+            material.mainTexture = GridTexture();
+            material.mainTextureScale = Vector2.one * groundSize;
+        }
+
+        /// <summary>One square metre of floor: a pale tile with two darker edges, tiled.</summary>
+        private static Texture2D GridTexture()
+        {
+            if (_gridTexture != null) return _gridTexture;
+
+            const int size = 128;
+            const int line = 3;
+            var fill = new Color32(190, 192, 196, 255);
+            var edge = new Color32(148, 151, 157, 255);
+
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++) pixels[y * size + x] = x < line || y < line ? edge : fill;
+            }
+
+            var texture = new Texture2D(size, size, TextureFormat.RGB24, true);
+            texture.SetPixels32(pixels);
+            texture.Apply(true);
+            texture.wrapMode = TextureWrapMode.Repeat;
+            texture.filterMode = FilterMode.Trilinear;
+            // Grazing angles are most of a floor seen from standing height; without this it moirés.
+            texture.anisoLevel = 8;
+
+            _gridTexture = texture;
+            return texture;
         }
 
         private void OnScene(JObject msg)
