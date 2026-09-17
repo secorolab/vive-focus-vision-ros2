@@ -17,7 +17,7 @@ from geometry_msgs.msg import PoseStamped, TransformStamped
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import Joy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 
 SENSOR = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
 LATCHED = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
@@ -40,8 +40,10 @@ class Driver(Node):
         self.clutch = []
         self.at = (1.0, 0.0, 1.0, 0.0)
         self.streaming = True
+        self.grips = []
         self.create_subscription(TransformStamped, "/vr/teleop/right/delta", self.on_delta, SENSOR)
         self.create_subscription(Bool, "/vr/teleop/right/clutch", self.on_clutch, LATCHED)
+        self.create_subscription(Float32, "/vr/teleop/right/gripper", self.on_grip, SENSOR)
         self.create_timer(1.0 / 50.0, self.tick)
 
     def on_delta(self, msg):
@@ -49,6 +51,9 @@ class Driver(Node):
 
     def on_clutch(self, msg):
         self.clutch.append(msg.data)
+
+    def on_grip(self, msg):
+        self.grips.append(msg.data)
 
     def tick(self):
         if not self.streaming:
@@ -63,11 +68,12 @@ class Driver(Node):
         msg.pose.orientation.w = math.cos(half)
         self.pose_pub.publish(msg)
 
-    def button(self, down):
+    def button(self, down, trigger=0.0):
+        """Clutch is stick_click (index 4); the trigger axis drives the gripper."""
         msg = Joy()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.buttons = [0, 1 if down else 0, 0, 0]
-        msg.axes = [0.0, 0.0]
+        msg.buttons = [0, 0, 0, 0, 1 if down else 0, 0]
+        msg.axes = [0.0, 0.0, trigger, 0.0]
         self.joy_pub.publish(msg)
 
     def spin(self, seconds):
@@ -110,9 +116,24 @@ def main():
     check("90 deg yaw appears as qz = sin(45)", abs(r.z - expect) < 1e-4,
           f"qz={r.z:.6f} expected {expect:.6f}")
 
+    # Gripper: the trigger's analog pull, only while the clutch is closed.
+    d.grips.clear()
+    for _ in range(6):
+        d.button(True, trigger=0.6)
+        d.spin(0.05)
+    check("gripper follows the trigger axis", d.grips and abs(d.grips[-1] - 0.6) < 1e-4,
+          f"got {d.grips[-1] if d.grips else None}")
+
     d.button(False)
     d.spin(0.4)
     check("clutch opens on release", d.clutch[-1] is False, f"saw {d.clutch}")
+
+    n_grip = len(d.grips)
+    for _ in range(6):
+        d.button(False, trigger=0.9)
+        d.spin(0.05)
+    check("no gripper commands while the clutch is open", len(d.grips) == n_grip,
+          f"{len(d.grips) - n_grip} published after release")
     n = len(d.deltas)
     d.at = (1.0, 0.0, 1.5, 0.0)
     d.spin(0.4)

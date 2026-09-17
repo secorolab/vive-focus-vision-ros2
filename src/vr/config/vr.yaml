@@ -69,8 +69,12 @@ vr_teleop:
     teleop:
       right:
         hand: right
-        # Matches grab_button's convention: an index into the Joy buttons, 1 is squeeze.
-        clutch_button: 1
+        # Stick click. Not squeeze: that is grab_button, and one press must not both grab a
+        # simulated body and engage teleop. Not the trigger either, which is the gripper.
+        clutch_button: 4
+        # The index finger's analog pull, axes[2], published as 0 open to 1 closed while the
+        # clutch is held. Set to -1 to fall back to the trigger's button.
+        gripper_axis: 2
         ee_pose_topic: ""
         # Controller axes onto tool axes, degrees. Identity is wrong for any real gripper -
         # OpenXR's grip pose puts -Z toward the thumb and a tool frame puts +Z along the

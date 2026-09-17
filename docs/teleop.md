@@ -77,10 +77,18 @@ Published, per arm:
 |---|---|---|
 | `<out>/teleop/<arm>/delta` | `geometry_msgs/TransformStamped` | motion since the press, in tool |
 | `<out>/teleop/<arm>/clutch` | `std_msgs/Bool` | on change, not per tick |
+| `<out>/teleop/<arm>/gripper` | `std_msgs/Float32` | 0 open to 1 closed, while clutched |
 
 `TransformStamped` rather than `PoseStamped` deliberately: a pose names a place in a frame, and
 this is a relative motion with no place attached. `frame_id` is the arm's tool frame as it was at
 the press, `child_frame_id` the commanded tool frame.
+
+The gripper is the index finger's **analog** pull, `axes[2]`, not the trigger button: a partial
+grip survives the trip, and a consumer that only wants two states can threshold it. Setting
+`gripper_axis` to `-1` falls back to the button. It is published only while the clutch is closed,
+for the same reason the deltas are — a disengaged operator must not be closing a real hand. On
+release the last value is simply not followed by another, so a gripper holding something keeps
+holding it rather than springing open.
 
 Subscribed, per arm:
 
@@ -100,7 +108,8 @@ vr_teleop:
     teleop:
       right:
         hand: right
-        clutch_button: 1
+        clutch_button: 4
+        gripper_axis: 2
         ee_pose_topic: ""
         tool_from_controller_rpy: [0.0, 0.0, 0.0]
       left:
@@ -116,7 +125,11 @@ to keep in step with the blocks.
 `<out_ns>/teleop/<arm>/{delta,clutch}`, so the block above leaves them out.
 
 `clutch_button` indexes `Joy` buttons the way `grab_button` already does, so the two share a
-convention rather than inventing a second one. `1` is squeeze.
+convention rather than inventing a second one.
+
+It defaults to `4`, stick click, and not to squeeze: squeeze is `grab_button`, and one press
+must not both grab a simulated body and engage teleop. The trigger is the gripper. The full
+allocation is in [Interfaces](interfaces.md#controller-buttons).
 
 ## What happens when things fail
 
@@ -172,10 +185,11 @@ ros2 run vr teleop_node --ros-args --params-file install/vr/share/vr/config/vr.y
 python3 tools/teleop_check.py
 ```
 
-Nine checks, all passing as of 2026-09-17: the clutch closes on press and opens on release; the
+Eleven checks, all passing as of 2026-09-17: the clutch closes on press and opens on release; the
 delta is exactly identity at the press; a 10 cm move gives `dz = 0.100000`; a 90° yaw gives
-`qz = 0.707107`; no deltas are published while the clutch is open; and when the poses stop, the
-clutch opens and the last delta is *not* repeated.
+`qz = 0.707107`; the gripper follows the trigger axis; neither deltas nor gripper commands are
+published while the clutch is open; and when the poses stop, the clutch opens and the last delta
+is *not* repeated.
 
 Still unverified: anything with an arm on the end of it. `tool_from_controller_rpy` stays
 identity until a gripper has been watched moving, because the observed value is the only honest

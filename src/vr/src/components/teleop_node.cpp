@@ -23,6 +23,7 @@
 #include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/float32.hpp>
 #include <tf2/LinearMath/Quaternion.hpp>
 #include <tf2/LinearMath/Transform.hpp>
 #include <tf2/LinearMath/Vector3.hpp>
@@ -96,8 +97,13 @@ class TeleopNode : public rclcpp::Node
          * constant of the controller-and-gripper pairing, not a per-session measurement. */
         tf2::Transform tool_R = tf2::Transform::getIdentity();
 
+        /* The index finger's analog pull, 0 open to 1 closed. An axis rather than the button
+         * so a partial grip survives the trip; a consumer wanting two states thresholds it. */
+        int gripper_axis = 2;
+
         rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr delta_pub;
         rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                  clutch_pub;
+        rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr               gripper_pub;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   pose_sub;
         rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr             joy_sub;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr   ee_sub;
@@ -117,13 +123,18 @@ class TeleopNode : public rclcpp::Node
         arm->name = name;
 
         const std::string prefix = "teleop." + name + ".";
-        arm->hand          = declare_parameter<std::string>(prefix + "hand", name);
-        arm->clutch_button = static_cast<int>(declare_parameter<int>(prefix + "clutch_button", 1));
+        arm->hand = declare_parameter<std::string>(prefix + "hand", name);
+        /* Stick click, not squeeze: squeeze is grab_button, and one press must not both grab a
+         * simulated body and engage teleop. The trigger is the gripper. */
+        arm->clutch_button = static_cast<int>(declare_parameter<int>(prefix + "clutch_button", 4));
+        arm->gripper_axis  = static_cast<int>(declare_parameter<int>(prefix + "gripper_axis", 2));
 
         const std::string delta_topic = declare_parameter<std::string>(
           prefix + "delta_topic", out_ns_ + "/teleop/" + name + "/delta");
         const std::string clutch_topic = declare_parameter<std::string>(
           prefix + "clutch_topic", out_ns_ + "/teleop/" + name + "/clutch");
+        const std::string gripper_topic = declare_parameter<std::string>(
+          prefix + "gripper_topic", out_ns_ + "/teleop/" + name + "/gripper");
         const std::string ee_topic =
           declare_parameter<std::string>(prefix + "ee_pose_topic", "");
 
@@ -142,6 +153,8 @@ class TeleopNode : public rclcpp::Node
          * for a press that may not come. */
         arm->clutch_pub = create_publisher<std_msgs::msg::Bool>(
           clutch_topic, rclcpp::QoS(1).transient_local());
+        arm->gripper_pub =
+          create_publisher<std_msgs::msg::Float32>(gripper_topic, rclcpp::SensorDataQoS());
 
         Arm *a       = arm.get();
         arm->pose_sub = create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -160,9 +173,11 @@ class TeleopNode : public rclcpp::Node
         }
 
         publish_clutch(*a, false);
-        RCLCPP_INFO(get_logger(), "%s: %s hand, button %d, tool rpy [%.1f %.1f %.1f] deg -> %s",
-                    name.c_str(), arm->hand.c_str(), arm->clutch_button, rpy[0], rpy[1], rpy[2],
-                    delta_topic.c_str());
+        RCLCPP_INFO(get_logger(),
+                    "%s: %s hand, clutch button %d, gripper axis %d, tool rpy "
+                    "[%.1f %.1f %.1f] deg -> %s",
+                    name.c_str(), arm->hand.c_str(), arm->clutch_button, arm->gripper_axis,
+                    rpy[0], rpy[1], rpy[2], delta_topic.c_str());
         arms_.push_back(std::move(arm));
     }
 
@@ -185,6 +200,8 @@ class TeleopNode : public rclcpp::Node
             return;
         }
 
+        publish_gripper(arm, msg);
+
         const bool down = msg.buttons[static_cast<size_t>(arm.clutch_button)] != 0;
         if (down == arm.pressed) return;
         arm.pressed = down;
@@ -205,6 +222,27 @@ class TeleopNode : public rclcpp::Node
         arm.ref      = arm.pose;
         arm.clutched = true;
         publish_clutch(arm, true);
+    }
+
+    /** Only while the clutch is closed: a disengaged operator must not be closing a real hand. */
+    void publish_gripper(const Arm &arm, const sensor_msgs::msg::Joy &msg)
+    {
+        if (!arm.clutched) return;
+
+        float value;
+        if (arm.gripper_axis >= 0 &&
+            static_cast<size_t>(arm.gripper_axis) < msg.axes.size()) {
+            value = msg.axes[static_cast<size_t>(arm.gripper_axis)];
+        } else if (!msg.buttons.empty()) {
+            // No analog axis to read: the trigger's button is all there is.
+            value = msg.buttons[0] != 0 ? 1.0f : 0.0f;
+        } else {
+            return;
+        }
+
+        std_msgs::msg::Float32 out;
+        out.data = std::clamp(value, 0.0f, 1.0f);
+        arm.gripper_pub->publish(out);
     }
 
     void publish_delta(const Arm &arm)

@@ -23,6 +23,7 @@ to start if they match.
 | `<out>/pc_time` | `builtin_interfaces/Time` | PC → headset | 10 Hz |
 | `<out>/teleop/<arm>/delta` | `geometry_msgs/TransformStamped` | PC | while clutched |
 | `<out>/teleop/<arm>/clutch` | `std_msgs/Bool`, latched | PC | on change |
+| `<out>/teleop/<arm>/gripper` | `std_msgs/Float32`, 0–1 | PC | while clutched |
 
 Services: `/vr_scene/reset` (`std_srvs/Trigger`).
 
@@ -38,6 +39,15 @@ axes    = [stick_x, stick_y, trigger, squeeze]
 `menu` exists on the left controller only and reads 0 on the right. The **system button is
 reserved by the runtime** and never reaches the application, so it cannot be used for anything.
 
+Who owns what on the right controller, so that nothing is bound twice:
+
+| Control | Index | Owner |
+|---|---|---|
+| trigger | `axes[2]` | teleop gripper, 0 open to 1 closed |
+| squeeze | `buttons[1]` | the simulated grabber, `grab_button` |
+| primary A, secondary B | `buttons[2,3]` | locomotion up and down |
+| stick click | `buttons[4]` | teleop clutch, `clutch_button` |
+
 The pose published is the **grip** pose — the hand/handle pose, the one to retarget to an
 end-effector. The aim pose (the pointing ray, for UI) is not published yet.
 
@@ -47,9 +57,13 @@ end-effector. The aim pose (the pointing ray, for UI) is not published yet.
 lying on a table. A controller that has not moved `motion_eps_m` within `stale_after_s` is
 reported inactive.
 
-A consumer that acts on poses — teleop above all — should gate on this rather than on the
-runtime's own tracked flag, which stays true. The topic is latched, so a subscriber gets the
-current state on connect rather than waiting for the next change.
+It answers "is anyone holding this", not "is this tracked". The topic is latched, so a subscriber
+gets the current state on connect rather than waiting for the next change.
+
+**Do not gate teleop on it.** An earlier version of this page advised exactly that, and it is
+wrong: an operator holding a position looks identical to a controller on a table, so the clutch
+would drop mid-task for standing still. `vr::TeleopNode` treats the *absence of pose messages* as
+the dropout instead — see [Teleoperation](teleop.md).
 
 ## Hand joints
 
