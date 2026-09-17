@@ -35,7 +35,7 @@ namespace VrRos
         [Tooltip("Publish rate; hand joints are the heaviest topic here")]
         public float rateHz = 60f;
 
-        public string rawNs = "/vr/raw";
+        public string rawNs = "/vive_vr/raw";
         public string frameId = "world";
 
         [Tooltip("The XR rig, which maps tracking space into the world the scene is drawn in")]

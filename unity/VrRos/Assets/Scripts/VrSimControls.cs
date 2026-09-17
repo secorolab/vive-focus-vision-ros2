@@ -21,7 +21,7 @@ namespace VrRos
         public VrConfig config;
 
         [Tooltip("Service that restores the scene; SceneNode advertises it under its node name")]
-        public string resetService = "/vr_scene/reset";
+        public string resetService = "/vive_scene/reset";
 
         [Tooltip("Hand carrying the reset button")]
         public bool resetOnLeftHand = true;

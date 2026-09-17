@@ -42,7 +42,7 @@ namespace VrRos
         public string frameId = "world";
 
         [Tooltip("Namespace the raw poses are published into; InputNode reads from here")]
-        public string rawNs = "/vr/raw";
+        public string rawNs = "/vive_vr/raw";
 
         private readonly StringBuilder _sb = new StringBuilder(512);
         private float _nextPublish;

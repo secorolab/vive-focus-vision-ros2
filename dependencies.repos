@@ -1,0 +1,19 @@
+# Workspace dependencies, for vcstool:
+#
+#   mkdir -p ~/work/p/vrws/src && cd ~/work/p/vrws
+#   git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+#   vcs import src < src/vive-vr-ros2/dependencies.repos
+#   colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+#
+# The KDL fork has to be a workspace package rather than the distro's: it carries the same
+# SONAME, so whichever is found first is the one everything links against.
+
+repositories:
+  mj_kdl_wrapper:
+    type: git
+    url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git
+    version: dev
+  orocos_kinematics_dynamics:
+    type: git
+    url: git@github.com:secorolab/orocos_kinematics_dynamics.git
+    version: feature/achd_fixed_joint

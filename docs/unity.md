@@ -7,7 +7,7 @@ the Android settings. None of it is a list of things to click.
 ## Building
 
 ```bash
-./tools/build_apk.sh --setup --install     # everything below, on any machine
+./scripts/build_apk.sh --setup --install     # everything below, on any machine
 ```
 
 Or by hand:
@@ -17,10 +17,10 @@ UNITY=~/Unity/Hub/Editor/6000.0.83f1/Editor/Unity
 
 # scene, wiring and Android player settings
 $UNITY -batchmode -quit -nographics \
-  -projectPath ~/work/p/vr/unity/VrRos -buildTarget Android -executeMethod VrRosSetup.SetupAll
+  -projectPath ~/work/p/vive_vr/unity/VrRos -buildTarget Android -executeMethod VrRosSetup.SetupAll
 
 # -> Build/VrRos.apk
-$UNITY -batchmode -quit -nographics -projectPath ~/work/p/vr/unity/VrRos \
+$UNITY -batchmode -quit -nographics -projectPath ~/work/p/vive_vr/unity/VrRos \
   -buildTarget Android -executeMethod VrRosSetup.BuildApk
 ```
 
@@ -88,7 +88,7 @@ Named as the Focus Vision manual names them.
 | Left menu | switch controllers ↔ hands |
 | Right A / B | up / down |
 | Thumbstick click, or a pinch in hand mode | grab whatever the ray is on |
-| Grip button | hold to engage teleop (`vr::TeleopNode`) |
+| Grip button | hold to engage teleop (`vive_vr_ros2::TeleopNode`) |
 | Trigger | the teleop gripper, 0 open to 1 closed |
 
 One stick does both walking and turning. Turning is continuous rather than snapped; snap turn is
@@ -154,7 +154,7 @@ The WebSocket receive loop runs on a background task and pushes raw frames into 
 to open:
 
 ```bash
-DISPLAY=:0 VR_GLB=/tmp/vr_robot/scene.glb VR_PNG=~/out.png \
+DISPLAY=:0 VR_GLB=/tmp/vive_vr_scene/scene.glb VR_PNG=~/out.png \
   $UNITY -batchmode -quit -projectPath unity/VrRos -executeMethod VrScenePreview.Render
 ```
 
@@ -193,7 +193,7 @@ device, in a window.
 $UNITY -batchmode -quit -nographics -projectPath unity/VrRos \
   -buildTarget Linux64 -executeMethod VrRosSetup.BuildLinux   # -> Build/Linux/VrRos
 
-ros2 launch vr tracking.launch.py &
+ros2 launch vive_vr_ros2 tracking.launch.py &
 ./unity/VrRos/Build/Linux/VrRos -screen-width 1600 -screen-height 900 -screen-fullscreen 0
 ```
 

@@ -12,7 +12,7 @@ Developer mode on, headset connected by USB — the **right-side** USB-C port, s
 is charge-only and produces an empty `adb devices`:
 
 ```bash
-./tools/build_apk.sh --setup --install --logcat
+./scripts/build_apk.sh --setup --install --logcat
 ```
 
 That builds, installs, launches and tails the log. By hand it is:
@@ -37,15 +37,15 @@ the old one sits alongside it with its own config file. `adb uninstall sh.vamsi.
 Start the stack ([Running](run.md)), launch the app, then on the PC:
 
 ```bash
-ros2 topic echo /vr/right/joy
+ros2 topic echo /vive_vr/right/joy
 ```
 
 Press each button in turn and watch the corresponding index flip — the same `101001`-shaped
 output the stand-in client produces, but from real presses. Then:
 
 ```bash
-ros2 topic hz /vr/right/pose          # roughly the display rate
-ros2 topic echo /vr/right/active      # true while held, false a second after putting it down
+ros2 topic hz /vive_vr/right/pose          # roughly the display rate
+ros2 topic echo /vive_vr/right/active      # true while held, false a second after putting it down
 ```
 
 If poses arrive but every button reads 0, the **VIVE Focus 3 Controller Interaction Profile** is
@@ -56,7 +56,7 @@ not enabled; see [Configuration](configuration.md#openxr-features).
 The world should appear once the client fetches the `.glb`. If it does not, check in order: that
 `adb logcat` shows the fetch URL and no HTTP error, that the URL's host is reachable *from the
 headset* (the `host_ip` default follows this machine's default route, which is the wrong one if
-the headset is on another interface), and that `/vr/scene` is being published.
+the headset is on another interface), and that `/vive_vr/scene` is being published.
 
 **If the world appears rotated 180°**, negate the Y component of `SceneLoader.gltfCorrectionEuler`.
 ±90° are the only two possibilities — see
@@ -67,14 +67,14 @@ the headset is on another interface), and that `/vr/scene` is being published.
 Objects should move. Verify from a rosbag replay against sim state rather than by eye:
 
 ```bash
-ros2 bag record /vr/body_poses /vr/right/pose /vr/right/joy /tf
+ros2 bag record /vive_vr/body_poses /vive_vr/right/pose /vive_vr/right/joy /tf
 ```
 
 ## 5. Hands and gaze
 
 ```bash
 ros2 run tf2_tools view_frames        # both hand skeletons, 26 joints each
-ros2 topic echo /vr/gaze
+ros2 topic echo /vive_vr/gaze
 ```
 
 Hands that never appear usually mean the **VIVE XR Hand Tracking** feature is off — the published
@@ -87,13 +87,13 @@ string exists anywhere in the VIVE plugin, but that is not proof.
 
 ## 6. Teleop
 
-Half built: `vr::TeleopNode` publishes the clutch, the hand delta and the gripper, and nothing
+Half built: `vive_vr_ros2::TeleopNode` publishes the clutch, the hand delta and the gripper, and nothing
 consumes them yet. To see the stream, with `teleop_node` running:
 
 ```bash
-ros2 topic echo /vr/teleop/right/clutch     # grip button, held
-ros2 topic echo /vr/teleop/right/delta      # motion since the press
-ros2 topic echo /vr/teleop/right/gripper    # trigger pull, 0 to 1
+ros2 topic echo /vive_vr/teleop/right/clutch     # grip button, held
+ros2 topic echo /vive_vr/teleop/right/delta      # motion since the press
+ros2 topic echo /vive_vr/teleop/right/gripper    # trigger pull, 0 to 1
 ```
 
 It does **not** need the play-space calibration, which an earlier version of this page said it

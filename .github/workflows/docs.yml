@@ -20,6 +20,9 @@ concurrency:
 
 jobs:
   build:
+    # A PR off main or dev was already built by its push; without this it runs twice.
+    if: github.event_name != 'pull_request' ||
+        !contains(fromJSON('["main", "dev"]'), github.head_ref)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,8 +38,11 @@ jobs:
           mkdir -p /tmp/doxygen && tar -xzf /tmp/doxygen.tar.gz -C /tmp/doxygen
           echo "DOXYGEN=/tmp/doxygen/doxygen-${DOXYGEN_VERSION}/bin/doxygen" >> "$GITHUB_ENV"
 
+      # No ament, no rclcpp, no MuJoCo: docs/ is a CMake project that needs only Doxygen.
       - name: Build documentation
-        run: ./tools/build_docs.sh "${{ github.workspace }}/build/docs"
+        run: |
+          cmake -S docs -B build/docs -DDOXYGEN_EXECUTABLE="$DOXYGEN"
+          cmake --build build/docs
 
       - uses: actions/upload-pages-artifact@v3
         with:

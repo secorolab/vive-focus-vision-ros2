@@ -6,7 +6,7 @@
 `manifest.json`.
 
 ```bash
-ros2 run vr scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vr_robot
+ros2 run vive_vr_ros2 scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vive_vr_scene
 ```
 
 ```
@@ -63,19 +63,19 @@ Everything the headset reports, calibrated into the world frame, with no simulat
 drawn on the device — the headset shows its welcome panel and waits.
 
 ```bash
-ros2 launch vr tracking.launch.py
+ros2 launch vive_vr_ros2 tracking.launch.py
 ```
 
 | Argument | Default | Meaning |
 |---|---|---|
-| `params_file` | `config/vr.yaml` | topics, frames, rates, calibration |
+| `params_file` | `config/vive_vr.yaml` | topics, frames, rates, calibration |
 | `rosbridge_port` | `9090` | |
 | `publish_hand_joints` | `true` | republish `<hand>/joints` |
 | `publish_hand_tf` | `true` | 26 TF frames per hand |
 | `publish_gaze` | `true` | republish `<out>/gaze` |
 | `container_name` | `vr_container` | where `sim.launch.py` loads the simulation |
 
-This starts `rosbridge_websocket` and a component container holding `vr::InputNode`, which also
+This starts `rosbridge_websocket` and a component container holding `vive_vr_ros2::InputNode`, which also
 publishes `<out>/pc_time` — the beacon the client's clock offset is estimated from, so poses are
 stamped on PC time whether or not anything is being simulated.
 
@@ -85,15 +85,15 @@ turning one off saves ROS traffic and TF listeners' work, not Wi-Fi.
 ## Launch: simulation and a world
 
 ```bash
-ros2 launch vr sim.launch.py \
+ros2 launch vive_vr_ros2 sim.launch.py \
     model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vr_robot
+    scene_dir:=/tmp/vive_vr_scene
 ```
 
 | Argument | Default | Meaning |
 |---|---|---|
 | `model` | — | MJCF to simulate; required |
-| `scene_dir` | `/tmp/vr_scene` | directory served over HTTP; where `scene_export` wrote |
+| `scene_dir` | `/tmp/vive_vr_scene` | directory served over HTTP; where `scene_export` wrote |
 | `host_ip` | the default route's | the address **the headset can reach**; goes into the `.glb` URL |
 | `http_port` | `8000` | |
 | `env_glb`, `env_yaw_deg`, `env_scale` | — | scenery drawn but not simulated |
@@ -107,7 +107,7 @@ a default and not a detection: a machine whose default route is Ethernet while t
 Wi-Fi still has to be told, `host_ip:=192.168.2.118`.
 
 This includes `tracking.launch.py`, adds a plain `python3 -m http.server` for the `.glb`, and
-loads `vr::SceneNode` into the container that launch already started. The two components share
+loads `vive_vr_ros2::SceneNode` into the container that launch already started. The two components share
 the container, so their topics cross intra-process rather than through the network stack.
 
 With `rmw_zenoh` as the RMW, a router must be running:
@@ -120,17 +120,17 @@ ros2 run rmw_zenoh_cpp rmw_zenohd
 
 ```bash
 ros2 topic list | grep vr
-ros2 topic hz /vr/body_poses          # ~60 Hz
-ros2 topic echo /vr/scene --once      # url + manifest, even if you subscribe late
+ros2 topic hz /vive_vr/body_poses          # ~60 Hz
+ros2 topic echo /vive_vr/scene --once      # url + manifest, even if you subscribe late
 ```
 
-`/vr/scene` is latched (transient local), so a client that connects minutes later still receives
+`/vive_vr/scene` is latched (transient local), so a client that connects minutes later still receives
 the world description.
 
 ## Reset
 
 ```bash
-ros2 service call /vr_scene/reset std_srvs/srv/Trigger
+ros2 service call /vive_scene/reset std_srvs/srv/Trigger
 ```
 
 This is `mj_kdl::reset`, which restores a keyframe **and** re-synchronises registered `Robot`
@@ -142,8 +142,8 @@ recording needs.
 Each component also builds as a standalone executable, which is easier to debug than a container:
 
 ```bash
-ros2 run vr scene_node --ros-args --params-file src/vr/config/vr.yaml -p model:=/path/to.xml
-ros2 run vr input_node --ros-args --params-file src/vr/config/vr.yaml
+ros2 run vive_vr_ros2 scene_node --ros-args --params-file config/vive_vr.yaml -p model:=/path/to.xml
+ros2 run vive_vr_ros2 input_node --ros-args --params-file config/vive_vr.yaml
 ```
 
 Next: [First run on the headset](bringup.md).

@@ -1,6 +1,6 @@
 # Teleoperation {#page_teleop}
 
-> **Built as `vr::TeleopNode`.** Nothing consumes the delta stream yet: no solver, no arm. See
+> **Built as `vive_vr_ros2::TeleopNode`.** Nothing consumes the delta stream yet: no solver, no arm. See
 > [Known limits](limits.md#no-teleop).
 
 ## What this component is responsible for
@@ -52,7 +52,7 @@ a transform rather than a point, it enters as a conjugation, not an offset:
 ```
 
 `R_tc` is a constant of the pairing — this controller, that gripper — and belongs in
-`vr.yaml`, not in a per-session procedure. It ships as identity: the correct value is found by
+`vive_vr.yaml`, not in a per-session procedure. It ships as identity: the correct value is found by
 watching which way the gripper actually goes in simulation, and writing down what was observed
 rather than what the conventions imply.
 
@@ -157,8 +157,8 @@ place that knows the arm's limits.
 
 ## Where it lives
 
-A third component, `vr::TeleopNode`, loaded into the same container as `vr::SceneNode` and
-`vr::InputNode`, following the
+A third component, `vive_vr_ros2::TeleopNode`, loaded into the same container as `vive_vr_ros2::SceneNode` and
+`vive_vr_ros2::InputNode`, following the
 [one package, composable nodes](design.md#one-package-composable-nodes) decision.
 
 It runs entirely on the PC and consumes what `InputNode` already publishes — calibrated poses and
@@ -182,14 +182,14 @@ Both extensions need the EE pose that is already subscribed, and neither is in t
 
 ## How it is verified
 
-`tools/teleop_check.py` drives `<raw>/right/{pose,joy}` the way the headset does — poses
+`scripts/teleop_check.py` drives `<raw>/right/{pose,joy}` the way the headset does — poses
 streaming on a timer, because a clutch held still must stay closed — and asserts what comes out
 the other end. With the stack and `teleop_node` running:
 
 ```bash
-ros2 launch vr tracking.launch.py &
-ros2 run vr teleop_node --ros-args --params-file install/vr/share/vr/config/vr.yaml &
-python3 tools/teleop_check.py
+ros2 launch vive_vr_ros2 tracking.launch.py &
+ros2 run vive_vr_ros2 teleop_node --ros-args --params-file install/vive_vr/share/vive_vr_ros2/config/vive_vr.yaml &
+python3 scripts/teleop_check.py
 ```
 
 Eleven checks, all passing as of 2026-09-17: the clutch closes on press and opens on release; the

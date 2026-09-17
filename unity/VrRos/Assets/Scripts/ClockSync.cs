@@ -26,7 +26,7 @@ namespace VrRos
         public VrConfig config;
 
         [Tooltip("Namespace the PC publishes its clock into")]
-        public string outNs = "/vr";
+        public string outNs = "/vive_vr";
 
         [Tooltip("Seconds after which the best sample is discarded and re-estimated")]
         public float windowSeconds = 30f;

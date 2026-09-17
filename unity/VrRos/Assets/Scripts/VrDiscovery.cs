@@ -14,7 +14,7 @@ namespace VrRos
     /// <summary>
     /// Finds the PC on the local network, so a changed address is not a file to edit.
     ///
-    /// One UDP broadcast, and the first matching reply wins. The PC's `vr_discovery` answers
+    /// One UDP broadcast, and the first matching reply wins. The PC's `vive_vr_discovery` answers
     /// unicast, which is what makes this work on Android without a MulticastLock: a device only
     /// needs that permission to receive traffic that was not addressed to it.
     ///
@@ -31,7 +31,7 @@ namespace VrRos
             public int port;
         }
 
-        // Must match MAGIC in src/vr/scripts/vr_discovery.
+        // Must match MAGIC in scripts/vive_vr_discovery.
         private const string Magic = "vrros-discover-1";
 
         /// <summary>

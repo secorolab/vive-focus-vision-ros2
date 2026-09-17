@@ -68,8 +68,8 @@ The first working version was a single node that ran the simulation, published t
 handled controller input — three unrelated jobs. The split follows what varies independently: the
 headset can change, the robot can change, the world source can change.
 
-`vr::InputNode` holds everything headset-specific, so swapping the Unity client for another
-OpenXR client changes one component and nothing downstream. `vr::SceneNode` holds the world.
+`vive_vr_ros2::InputNode` holds everything headset-specific, so swapping the Unity client for another
+OpenXR client changes one component and nothing downstream. `vive_vr_ros2::SceneNode` holds the world.
 Teleop will be a third, and deliberately will not know whether its target is sim or real.
 
 They are components rather than separate packages because that keeps one build and one config
@@ -139,6 +139,6 @@ Unity has no cross-vendor eye tracking abstraction.
 
 ## Configuration out of code
 
-Topic names, frames, rates and the play-space calibration live in `config/vr.yaml` on the ROS
+Topic names, frames, rates and the play-space calibration live in `config/vive_vr.yaml` on the ROS
 side and in a device-side JSON file on the client. The client file matters most: without it,
 changing the PC's IP address means rebuilding and reinstalling an APK.

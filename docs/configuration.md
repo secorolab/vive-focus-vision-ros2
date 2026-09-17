@@ -6,32 +6,32 @@ JSON file on the device. The two describe the same contract from opposite ends, 
 
 ## ROS parameters
 
-`src/vr/config/vr.yaml` is installed to `share/vr/config/vr.yaml` and loaded by the launch file.
+`config/vive_vr.yaml` is installed to `share/vive_vr_ros2/config/vive_vr.yaml` and loaded by the launch file.
 Another file can be supplied in its place:
 
 ```bash
-ros2 launch vr sim.launch.py model:=... params_file:=/path/to/my.yaml
+ros2 launch vive_vr_ros2 sim.launch.py model:=... params_file:=/path/to/my.yaml
 ```
 
 A single value can be overridden on the command line:
 
 ```bash
-ros2 run vr input_node --ros-args -p motion_eps_m:=0.01
+ros2 run vive_vr_ros2 input_node --ros-args -p motion_eps_m:=0.01
 ```
 
 ### Shared by both components
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `raw_ns` | `/vr/raw` | namespace the headset publishes into |
-| `out_ns` | `/vr` | namespace the PC publishes into |
-| `pc_time_topic` | `/vr/pc_time` | clock topic for the client's offset estimate |
+| `raw_ns` | `/vive_vr/raw` | namespace the headset publishes into |
+| `out_ns` | `/vive_vr` | namespace the PC publishes into |
+| `pc_time_topic` | `/vive_vr/pc_time` | clock topic for the client's offset estimate |
 | `pc_time_rate_hz` | `10.0` | |
 
 The clock beacon is published by the input component, so a tracking-only run is stamped on PC
 time too; the topic name is shared because it is part of the contract with the client either way.
 
-The two namespaces must differ. `vr::InputNode` refuses to start otherwise, because it would be subscribing
+The two namespaces must differ. `vive_vr_ros2::InputNode` refuses to start otherwise, because it would be subscribing
 to its own output.
 
 ### Scene component
@@ -97,7 +97,7 @@ The three `publish_*` parameters drop the republish, not the stream: the headset
 
 ### Teleoperation
 
-Read by `vr::TeleopNode`, one block per arm under `teleop.<arm>`. The arm names are whatever
+Read by `vive_vr_ros2::TeleopNode`, one block per arm under `teleop.<arm>`. The arm names are whatever
 appears in the file; see [Teleoperation](teleop.md) for the whole design.
 
 | Parameter | Default | Meaning |
@@ -130,7 +130,7 @@ adb push vr_config.json /sdcard/Android/data/de.uni_bremen.secoro.vrros/files/vr
   "host": "192.168.2.118",
   "port": 9090,
   "discoveryPort": 9091,
-  "rawNs": "/vr/raw",
+  "rawNs": "/vive_vr/raw",
   "outNs": "/vr",
   "maxRateHz": 90.0,
   "handRateHz": 60.0,
@@ -142,7 +142,7 @@ adb push vr_config.json /sdcard/Android/data/de.uni_bremen.secoro.vrros/files/vr
   "spawnPosition": { "x": -1.5, "y": 0.0, "z": 0.0 },
   "spawnYawDegrees": 0.0,
   "frameId": "world",
-  "resetService": "/vr_scene/reset",
+  "resetService": "/vive_scene/reset",
   "inputMode": "controllers"
 }
 ```
@@ -171,13 +171,13 @@ runtime.
 
 The address in that file goes stale whenever the PC changes network, so the client does not
 depend on it being right. When a connection attempt fails it broadcasts a probe on UDP
-`discoveryPort`, the `vr_discovery` process next to rosbridge answers with the address it is
+`discoveryPort`, the `vive_vr_discovery` process next to rosbridge answers with the address it is
 reachable at, and the client connects there and writes it back to `vr_config.json` — so it is
 wrong once, and only until the first retry.
 
 ```bash
-ros2 launch vr tracking.launch.py discovery_port:=9091   # the default; 0 turns it off
-ros2 run vr vr_discovery --port 9091 --rosbridge-port 9090   # on its own
+ros2 launch vive_vr_ros2 tracking.launch.py discovery_port:=9091   # the default; 0 turns it off
+ros2 run vive_vr_ros2 vive_vr_discovery --port 9091 --rosbridge-port 9090   # on its own
 ```
 
 The order matters: the file is tried first and discovery only runs after it fails, so a

@@ -3,10 +3,10 @@
 ## Tools
 
 ```bash
-python3 tools/fake_headset.py --seconds 10     # with the stack running
-python3 tools/fake_headset.py --still          # exercises the inactive branch
-python3 tools/fake_grab.py --body 2            # pinches an object and checks it rises
-python3 tools/check_glb.py /tmp/vr_robot/scene.glb
+python3 scripts/fake_headset.py --seconds 10     # with the stack running
+python3 scripts/fake_headset.py --still          # exercises the inactive branch
+python3 scripts/fake_grab.py --body 2            # pinches an object and checks it rises
+python3 scripts/check_glb.py /tmp/vive_vr_scene/scene.glb
 ```
 
 `fake_headset.py` stands in for the Unity client, speaking the same rosbridge contract over the
@@ -29,15 +29,15 @@ Measured by running the system, not inferred from a successful build:
 |---|---|
 | Export handles primitives and mesh assets | `mug_table.xml` and Menagerie `kinova_gen3/scene.xml`: 9 bodies, 86,950 triangles, 7.3 MB; validator passes |
 | Body pose stream holds its rate | 59.99 Hz measured; mug at z=0.042 matching the MJCF |
-| Latched scene reaches late subscribers | `/vr/scene` received by a subscriber that connected after publication |
+| Latched scene reaches late subscribers | `/vive_vr/scene` received by a subscriber that connected after publication |
 | Controller data survives the round trip | buttons `101001` exactly as sent; pose bit-exact to TF — `(0.11, 0.22, 0.33)`, quaternion `(0, 0, 0.7071068, 0.7071068)` |
 | Activity detection works both ways | `true` with a moving controller, `false` when held still |
 | Hand joints become a correct skeleton | 26 frames per hand at 57 Hz, every parent link verified with `view_frames` |
 | Gaze survives calibration | `frame_id: world`, both eyes, pupil data intact |
-| Stream survives a reset | 58.8 Hz before, 60.0 Hz after `/vr_scene/reset` |
+| Stream survives a reset | 58.8 Hz before, 60.0 Hz after `/vive_scene/reset` |
 | Grabbing lifts an object | scripted pinch caught `cube`, which rose from z=0.030 to z=0.375 and stayed |
 | An exported world renders assembled | the Kinova arm, imported into Unity from the `.glb` alone |
-| The client runs on the headset | `rosbridge: connected`, `scene: loaded … 12 bodies`, all `/vr/raw/*` advertised |
+| The client runs on the headset | `rosbridge: connected`, `scene: loaded … 12 bodies`, all `/vive_vr/raw/*` advertised |
 | `ClientWebSocket` works under IL2CPP/ARM64 | it connected and carried the whole session |
 | The glTF correction sign is right | the Kinova arm stands upright in the headset |
 | Poses agree with what is rendered | head at `(-1.23, -0.32, 1.13)`, pitch +32°, yaw −43° — matching a capture showing the arm 57° to the left and the horizon high |
@@ -70,7 +70,7 @@ Each of these was silent — the system kept running and looked plausible.
 - **The scene component truncated worlds.** Building through `mj_kdl::init_env` attaches only the
   *first root body* of each `RobotSpec`, which is right for a robot and wrong for a world file: a
   3-body test scene loaded as 2, the floor vanished and the object fell forever. It also broke the
-  contract that `/vr/body_poses` index *i* is manifest body *i*, so the client would have rendered
+  contract that `/vive_vr/body_poses` index *i* is manifest body *i*, so the client would have rendered
   the wrong geometry. Now loaded with `mj_loadXML` into the `Env`, which keeps `reset()` working.
 - **The client deleted the sky and the lights.** `SceneLoader` reparented the nodes named in the
   manifest and destroyed the import root — taking with it everything the manifest does not list,

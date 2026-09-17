@@ -25,7 +25,7 @@ namespace VrRos
         public VrConfig config;
 
         [Tooltip("Namespace the PC publishes the world into")]
-        public string outNs = "/vr";
+        public string outNs = "/vive_vr";
 
         public int Received { get; private set; }
 
@@ -53,7 +53,7 @@ namespace VrRos
         private void Start()
         {
             if (config != null && config.Active != null) outNs = config.Active.outNs;
-            bridge.Subscribe<Frame>($"{outNs}/body_poses", "vr/msg/BodyPoses", Decode, Apply);
+            bridge.Subscribe<Frame>($"{outNs}/body_poses", "vive_vr_ros2/msg/BodyPoses", Decode, Apply);
         }
 
         /// <summary>Socket task: walks the JSON and converts to Unity's frame. No Unity API here.</summary>

@@ -42,10 +42,10 @@ namespace VrRos
         [Tooltip("The camera offset; poses from InputDevices and XR Hands are relative to this")]
         public Transform trackingSpace;
 
-        public string rawNs = "/vr/raw";
+        public string rawNs = "/vive_vr/raw";
 
         [Tooltip("Namespace the PC publishes into; the held body is reported there")]
-        public string outNs = "/vr";
+        public string outNs = "/vive_vr";
 
         [Tooltip("How far the ray reaches, in metres")]
         public float maxDistance = 8f;

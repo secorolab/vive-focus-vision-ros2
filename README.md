@@ -12,8 +12,8 @@ sim clock is what makes recorded demonstrations line up.
 PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 ┌──────────────────────────────┐                   ┌──────────────────────────┐
 │ scene_export  MJCF -> .glb ──┼──── HTTP once ───▶│ glTFast runtime load     │
-│ vr::SceneNode  mj_step ──────┼──── 60 Hz ───────▶│ Body_<name> transforms   │
-│ vr::InputNode         ◀──────┼──── 90/60 Hz ─────┤ grip pose + 5 buttons    │
+│ vive_vr_ros2::SceneNode  mj_step ──────┼──── 60 Hz ───────▶│ Body_<name> transforms   │
+│ vive_vr_ros2::InputNode         ◀──────┼──── 90/60 Hz ─────┤ grip pose + 5 buttons    │
 │   calibrate, TF, activity    │                   │ hand joints, eye gaze    │
 │ rosbridge_websocket          │                   │ Unity 6 + VIVE OpenXR    │
 └──────────────────────────────┘                   └──────────────────────────┘
@@ -21,28 +21,39 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 
 ## Quick start
 
-```bash
-./tools/fetch_vive_plugin.sh                      # 361 MB, untracked on purpose
-cp -r ~/work/ms/src/mj_kdl_wrapper ~/work/ms/src/orocos_kinematics_dynamics src/
-source /opt/ros/jazzy/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+This repository is one ROS 2 package. It is cloned into a workspace, not built in place:
 
+```bash
+mkdir -p ~/work/p/vrws/src && cd ~/work/p/vrws
+git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+vcs import src < src/vive-vr-ros2/dependencies.repos
+./src/vive-vr-ros2/scripts/fetch_vive_plugin.sh     # 361 MB, untracked on purpose
+
+source /opt/ros/jazzy/setup.bash
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 source install/setup.bash
-ros2 run vr scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vr_robot
-ros2 launch vr sim.launch.py \
+```
+
+Then export a world and run it:
+
+```bash
+ros2 run vive_vr_ros2 scene_export \
+    ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vive_vr_scene
+ros2 launch vive_vr_ros2 sim.launch.py \
     model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vr_robot
+    scene_dir:=/tmp/vive_vr_scene
 ```
 
 For poses, buttons, hands and gaze without a simulation — no model, no world on the headset:
 
 ```bash
-ros2 launch vr tracking.launch.py
+ros2 launch vive_vr_ros2 tracking.launch.py
 ```
 
 And the headset half, on any machine with the Unity editor installed:
 
 ```bash
-./tools/build_apk.sh --setup --install --logcat    # build, install, launch, tail the log
+./scripts/build_apk.sh --setup --install --logcat    # build, install, launch, tail the log
 ```
 
 ## Documentation
@@ -50,7 +61,7 @@ And the headset half, on any machine with the Unity editor installed:
 - [Installation](docs/install.md) — workspace dependencies, ROS build, Unity editor and licence
 - [Running](docs/run.md) — export a world, launch the stack, what should appear
 - [Interfaces](docs/interfaces.md) — topics, TF frames, `Joy` layout, `vr/EyeGaze`, frame conventions
-- [Configuration](docs/configuration.md) — `vr.yaml`, the device config file, OpenXR features
+- [Configuration](docs/configuration.md) — `vive_vr.yaml`, the device config file, OpenXR features
 - [The Unity client](docs/unity.md) — project layout, scripts, scripted setup and APK build
 - [Embedding in a simulation](docs/embedding.md) — `BodyPosePublisher` in an existing application
 - [First run on the headset](docs/bringup.md) — the on-device checklist

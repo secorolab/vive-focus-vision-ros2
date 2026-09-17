@@ -29,7 +29,7 @@ namespace VrRos
 
         public int port = 9090;
 
-        [Tooltip("UDP port the PC's vr_discovery answers on; 0 makes the configured host final")]
+        [Tooltip("UDP port the PC's vive_vr_discovery answers on; 0 makes the configured host final")]
         public int discoveryPort = 9091;
 
         [Tooltip("Seconds between reconnect attempts")]

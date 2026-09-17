@@ -31,7 +31,7 @@ namespace VrRos
         public VrConfig config;
 
         [Tooltip("Namespace the PC publishes the world into")]
-        public string outNs = "/vr";
+        public string outNs = "/vive_vr";
 
         [Tooltip("Rotation reconciling glTFast's import flip with the live pose convention")]
         public Vector3 gltfCorrectionEuler = new Vector3(0f, 90f, 0f);

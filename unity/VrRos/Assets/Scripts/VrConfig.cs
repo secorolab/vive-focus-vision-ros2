@@ -18,7 +18,7 @@ namespace VrRos
     /// If it is missing, the inspector defaults below are used and written out, so the file to
     /// edit always exists after the first run.
     ///
-    /// Keep rawNs and outNs consistent with config/vr.yaml on the ROS side; they are the same
+    /// Keep rawNs and outNs consistent with config/vive_vr.yaml on the ROS side; they are the same
     /// contract seen from the two ends.
     /// </summary>
     public class VrConfig : MonoBehaviour
@@ -29,10 +29,10 @@ namespace VrRos
             public string host = "192.168.1.10";
             public int port = 9090;
 
-            // Where the PC's vr_discovery answers. 0 turns discovery off and makes host final.
+            // Where the PC's vive_vr_discovery answers. 0 turns discovery off and makes host final.
             public int discoveryPort = 9091;
-            public string rawNs = "/vr/raw";
-            public string outNs = "/vr";
+            public string rawNs = "/vive_vr/raw";
+            public string outNs = "/vive_vr";
             public float maxRateHz = 90f;
 
             // Hands are the heaviest stream: 26 joints x 2 hands. Gaze is small but constant.
@@ -58,8 +58,8 @@ namespace VrRos
 
             public string frameId = "world";
 
-            // Restores the scene; matches the SceneNode's service in config/vr.yaml.
-            public string resetService = "/vr_scene/reset";
+            // Restores the scene; matches the SceneNode's service in config/vive_vr.yaml.
+            public string resetService = "/vive_scene/reset";
 
             /* "controllers" or "hands". The runtime will not report hands while a controller is
              * awake, and publishing both would put two competing grab sources on one topic set. */

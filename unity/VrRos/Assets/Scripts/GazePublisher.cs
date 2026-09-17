@@ -19,7 +19,7 @@ using VIVE.OpenXR.EyeTracker;
 namespace VrRos
 {
     /// <summary>
-    /// Publishes eye gaze as vr/msg/EyeGaze: a ray per eye, each with its own validity, plus
+    /// Publishes eye gaze as vive_vr_ros2/msg/EyeGaze: a ray per eye, each with its own validity, plus
     /// pupil diameter in millimetres.
     ///
     /// Requires the VIVE XR Eye Tracker (Beta) OpenXR feature, and eye tracking enabled in the
@@ -40,7 +40,7 @@ namespace VrRos
         [Tooltip("Publish rate; the tracker itself runs at the display rate")]
         public float rateHz = 60f;
 
-        public string rawNs = "/vr/raw";
+        public string rawNs = "/vive_vr/raw";
         public string frameId = "world";
 
         [Tooltip("The XR rig, which maps tracking space into the world the scene is drawn in")]
@@ -71,7 +71,7 @@ namespace VrRos
                                  + "no gaze will be published");
                 return;
             }
-            bridge.Advertise($"{rawNs}/gaze", "vr/msg/EyeGaze");
+            bridge.Advertise($"{rawNs}/gaze", "vive_vr_ros2/msg/EyeGaze");
 #endif
         }
 

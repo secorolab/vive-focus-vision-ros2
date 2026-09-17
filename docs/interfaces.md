@@ -1,10 +1,10 @@
 # Interfaces {#page_interfaces}
 
 Everything here is configurable; the names below are the defaults from
-[`config/vr.yaml`](configuration.md).
+[`config/vive_vr.yaml`](configuration.md).
 
-The headset publishes into `raw_ns` (`/vr/raw`). `vr::InputNode` calibrates and republishes into
-`out_ns` (`/vr`). The two must differ, or the node would subscribe to its own output — it refuses
+The headset publishes into `raw_ns` (`/vive_vr/raw`). `vive_vr_ros2::InputNode` calibrates and republishes into
+`out_ns` (`/vive_vr`). The two must differ, or the node would subscribe to its own output — it refuses
 to start if they match.
 
 ## Topics
@@ -25,7 +25,7 @@ to start if they match.
 | `<out>/teleop/<arm>/clutch` | `std_msgs/Bool`, latched | PC | on change |
 | `<out>/teleop/<arm>/gripper` | `std_msgs/Float32`, 0–1 | PC | while clutched |
 
-Services: `/vr_scene/reset` (`std_srvs/Trigger`).
+Services: `/vive_scene/reset` (`std_srvs/Trigger`).
 
 ## Controller buttons
 
@@ -72,12 +72,12 @@ gets the current state on connect rather than waiting for the next change.
 
 **Do not gate teleop on it.** An earlier version of this page advised exactly that, and it is
 wrong: an operator holding a position looks identical to a controller on a table, so the clutch
-would drop mid-task for standing still. `vr::TeleopNode` treats the *absence of pose messages* as
+would drop mid-task for standing still. `vive_vr_ros2::TeleopNode` treats the *absence of pose messages* as
 the dropout instead — see [Teleoperation](teleop.md).
 
 ## Hand joints
 
-The client publishes 26 joint poses per hand in `XRHandJointID` order; `vr::InputNode` turns each
+The client publishes 26 joint poses per hand in `XRHandJointID` order; `vive_vr_ros2::InputNode` turns each
 array into TF frames, reparenting them into a real skeleton:
 
 ```
@@ -107,7 +107,7 @@ rather than 26 TF lookups.
 
 ## Grabbing
 
-`vr::Grabber`, owned by the scene component, lets the user pick up and push simulated bodies. It
+`vive_vr_ros2::Grabber`, owned by the scene component, lets the user pick up and push simulated bodies. It
 consumes topics that already exist rather than adding any: the grip pose, the `Joy` buttons and
 the hand joints.
 

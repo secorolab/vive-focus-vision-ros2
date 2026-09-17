@@ -7,25 +7,40 @@ produces the headset APK. Neither needs the other to build.
 
 ### Workspace dependencies
 
-`vr` depends on `mj_kdl_wrapper`, which needs the secorolab Orocos KDL fork built as its own
+This repository is a single ROS 2 package, cloned into a workspace's `src/` rather than built in
+place:
+
+```bash
+mkdir -p ~/work/p/vrws/src && cd ~/work/p/vrws
+git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+vcs import src < src/vive-vr-ros2/dependencies.repos    # apt install python3-vcstool
+```
+
+`vive_vr_ros2` depends on `mj_kdl_wrapper`, which needs the secorolab Orocos KDL fork built as its own
 workspace package. This is not optional and not a preference: the ROS distro ships
 `liborocos-kdl.so.1.5` and `python3-pykdl` with the **same SONAME and module name** as the fork,
 and a single process can hold only one — the loader keeps the first and silently drops the
 other's symbols. Building the fork as a workspace package is what makes every package consume one
 shared KDL.
 
-Neither dependency is committed here; both are their own git repositories:
-
-```bash
-cp -r ~/work/ms/src/mj_kdl_wrapper ~/work/ms/src/orocos_kinematics_dynamics src/
-```
-
-or clone them directly:
+Neither dependency is committed here; both are their own git repositories, listed in
+`dependencies.repos` so `vcs import` places them beside this one:
 
 | Repository | Branch |
 |---|---|
 | `github.com/vamsikalagaturu/mj_kdl_wrapper` | `dev` |
 | `github.com/secorolab/orocos_kinematics_dynamics` | `feature/achd_fixed_joint` |
+
+The resulting workspace:
+
+```
+~/work/p/vrws/
+├── colcon.meta                 # BUILD_EXAMPLES/BUILD_TESTS off for the wrapper
+└── src/
+    ├── vive-vr-ros2/           # this repository
+    ├── mj_kdl_wrapper/
+    └── orocos_kinematics_dynamics/
+```
 
 `mj_kdl_wrapper` ships no `package.xml`. colcon still builds it: the `colcon-cmake` extension
 discovers any directory with a `CMakeLists.txt` and names the package after its `project()` call,
@@ -46,15 +61,20 @@ source /opt/ros/jazzy/setup.bash
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 ```
 
-Two workspace files matter here. `colcon.meta` turns off the wrapper's examples and tests, which
-this workspace does not need. `unity/COLCON_IGNORE` stops colcon descending into the Unity
-project — without it, colcon discovers a package inside Unity's Android build temp and aborts the
-entire build.
+`colcon.meta` belongs to the workspace, not to this package, and turns off the wrapper's examples
+and tests. `unity/COLCON_IGNORE` is kept as a safety net for anyone who runs colcon from inside
+the repository: colcon otherwise discovers a package inside Unity's Android build temp and aborts
+the whole build.
 
-MuJoCo (3.9.0) is taken from `~/.cache/mj_kdl_wrapper/mujoco-3.9.0`, the same copy the wrapper
-fetches, so both link one MuJoCo. Override with `-DVR_MUJOCO_DIR=...`. **No system paths are
-searched on purpose:** a stray `/opt/mujoco-3.8.0` would otherwise be found and silently mismatch
-the wrapper's ABI.
+MuJoCo is not searched for here at all. `mj_kdl_wrapper` fetches it, validates its
+`mjVERSION_HEADER`, and exports it as `mujoco::mujoco`; this package links that target, so it
+cannot end up on a different copy than the wrapper did — a stray `/opt/mujoco-3.8.0` would
+otherwise be found and silently mismatch the wrapper's ABI. Point the wrapper elsewhere with
+`-DMJ_KDL_MUJOCO_DIR=...` and this package follows.
+
+`mujoco::mujoco` carries MuJoCo alone. Linking `mj_kdl_wrapper::mj_kdl_wrapper` would work too,
+but it also brings KDL, glfw and OpenGL, and `vive_vr_core` stays free of those so an
+application can embed `BodyPosePublisher` without them — see [Embedding](embedding.md).
 
 ## Unity side
 
@@ -65,7 +85,7 @@ release artefact, so it belongs in a setup step rather than in history. `manifes
 it by relative path, so Unity cannot open the project until it is fetched:
 
 ```bash
-./tools/fetch_vive_plugin.sh
+./scripts/fetch_vive_plugin.sh
 ```
 
 Idempotent and checksum-pinned; re-running it on a good file does nothing. `VIVE_OPENXR_VERSION`
@@ -130,26 +150,29 @@ mkdir -p ~/.local/opt && tar -xzf /tmp/doxygen.tar.gz -C ~/.local/opt
 export DOXYGEN=~/.local/opt/doxygen-1.16.1/bin/doxygen
 ```
 
-```bash
-colcon build --packages-select vr --cmake-args -DBUILD_DOCS=ON "-DDOXYGEN_EXECUTABLE=$DOXYGEN"
-cmake --build build/vr --target docs      # -> build/vr/docs/html/index.html
-```
-
-`BUILD_DOCS` stays in the CMake cache, so a later plain `colcon build` will fail the version
-check unless the newer doxygen is still reachable. Turn it back off with `-DBUILD_DOCS=OFF`.
-
-`BUILD_DOCS` is off by default. Doxygen takes `include/` for the API and these guides as pages;
-the relative links between them resolve in both GitHub and the generated site.
-
-Without configuring the ROS package at all — what CI uses, and faster locally:
+`docs/` is a CMake project in its own right, needing nothing but Doxygen — no ament, no rclcpp,
+no MuJoCo. That is what CI uses, and it is faster locally:
 
 ```bash
-./tools/build_docs.sh            # -> build/docs/docs/html/index.html
+cmake -S docs -B build/docs "-DDOXYGEN_EXECUTABLE=$DOXYGEN"
+cmake --build build/docs           # -> build/docs/docs/html/index.html
 ```
 
-It substitutes the same `Doxyfile.in`, so the two paths cannot drift, and **fails on any doxygen
-warning** — a broken reference or a page missing from `INPUT` is otherwise a silent hole in the
-published site.
+The ROS package pulls the same project in with `add_subdirectory` when asked, so there is one
+implementation and the two paths cannot drift:
+
+```bash
+colcon build --packages-select vive_vr_ros2 \
+    --cmake-args -DBUILD_DOCS=ON "-DDOXYGEN_EXECUTABLE=$DOXYGEN"
+```
+
+`BUILD_DOCS` is off by default and stays in the CMake cache, so a later plain `colcon build`
+fails the version check unless the newer doxygen is still reachable. Turn it back off with
+`-DBUILD_DOCS=OFF`.
+
+Doxygen takes `include/` for the API and these guides as pages; the relative links between them
+resolve in both GitHub and the generated site. `WARN_AS_ERROR` is on, because a broken reference
+or a page missing from `INPUT` is otherwise a silent hole in the published site.
 
 `.github/workflows/docs.yml` publishes to GitHub Pages on every push to `main` and `dev`, and
 builds (without publishing) on pull requests. Both branches publish to the same site, so

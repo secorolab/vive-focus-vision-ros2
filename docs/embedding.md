@@ -1,6 +1,6 @@
 # Embedding in an existing simulation {#page_embedding}
 
-`vr::SceneNode` exists for the case where you want to look at an MJCF file. It is not the way to
+`vive_vr_ros2::SceneNode` exists for the case where you want to look at an MJCF file. It is not the way to
 add VR output to an application that already owns a simulation — for that, use the class it is
 built on.
 
@@ -16,13 +16,13 @@ of a `mj_kdl_wrapper` application.
 ```cpp
 #include <vr/body_pose_publisher.hpp>
 
-vr::SceneConf conf;
-conf.manifest_path = "/tmp/vr_scene/manifest.json";   // written by scene_export
+vive_vr_ros2::SceneConf conf;
+conf.manifest_path = "/tmp/vive_vr_scene/manifest.json";   // written by scene_export
 conf.scene_url     = "http://192.168.2.118:8000/scene.glb";
 conf.frame_id      = "world";
 conf.rate_hz       = 60.0;
 
-vr::BodyPosePublisher vr_out(*node, model, conf);
+vive_vr_ros2::BodyPosePublisher vr_out(*node, model, conf);
 
 while (running) {
     mj_step(model, data);
@@ -42,18 +42,18 @@ discovering as an empty world.
 
 ```cmake
 find_package(vr REQUIRED)
-target_link_libraries(my_app PRIVATE vr::vr_scene)
+target_link_libraries(my_app PRIVATE vive_vr_ros2::vive_vr_core)
 ```
 
 ## What it does not do
 
 - It does not simulate. Stepping, pacing and reset stay with the application.
 - It does not read input. Controller poses, hands and gaze arrive on the topics published by
-  `vr::InputNode`, which runs independently and knows nothing about MuJoCo.
+  `vive_vr_ros2::InputNode`, which runs independently and knows nothing about MuJoCo.
 - It does not export geometry. Run `scene_export` once for the model; see [Running](run.md).
 
 ## When to use the scene component instead
 
 When there is no application yet — inspecting a model, checking an export, or bringing the
-headset up. It adds a simulation loop, `mj_kdl::Env` scene building and the `/vr_scene/reset`
+headset up. It adds a simulation loop, `mj_kdl::Env` scene building and the `/vive_scene/reset`
 service around the same class.

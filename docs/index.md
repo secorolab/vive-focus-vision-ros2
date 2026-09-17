@@ -12,8 +12,8 @@ sim clock is what makes recorded demonstrations line up.
 PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 ┌──────────────────────────────┐                   ┌──────────────────────────┐
 │ scene_export  MJCF -> .glb ──┼──── HTTP once ───▶│ glTFast runtime load     │
-│ vr::SceneNode  mj_step ──────┼──── 60 Hz ───────▶│ Body_<name> transforms   │
-│ vr::InputNode         ◀──────┼──── 90/60 Hz ─────┤ grip pose + 5 buttons    │
+│ vive_vr_ros2::SceneNode  mj_step ──────┼──── 60 Hz ───────▶│ Body_<name> transforms   │
+│ vive_vr_ros2::InputNode         ◀──────┼──── 90/60 Hz ─────┤ grip pose + 5 buttons    │
 │   calibrate, TF, activity    │                   │ hand joints, eye gaze    │
 │ rosbridge_websocket          │                   │ Unity 6 + VIVE OpenXR    │
 └──────────────────────────────┘                   └──────────────────────────┘
@@ -24,7 +24,7 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 - [Installation](install.md) — workspace dependencies, ROS build, Unity editor and licence
 - [Running](run.md) — export a world, launch the stack, what should appear
 - [Interfaces](interfaces.md) — topics, TF frames, the `Joy` layout, `vr/EyeGaze`, frame conventions
-- [Configuration](configuration.md) — `vr.yaml`, the device config file, OpenXR features
+- [Configuration](configuration.md) — `vive_vr.yaml`, the device config file, OpenXR features
 - [The Unity client](unity.md) — project layout, scripts, scripted setup and APK build
 - [Embedding in a simulation](embedding.md) — `BodyPosePublisher` in an existing application
 - [First run on the headset](bringup.md) — the on-device checklist
@@ -39,8 +39,8 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 | Part | State |
 |---|---|
 | `scene_export` MJCF → glTF | works; validated on primitives and mesh assets |
-| `vr::SceneNode` sim, world stream, reset | works; 60 Hz measured |
-| `vr::InputNode` calibration, TF, hands, gaze | works; verified through rosbridge |
+| `vive_vr_ros2::SceneNode` sim, world stream, reset | works; 60 Hz measured |
+| `vive_vr_ros2::InputNode` calibration, TF, hands, gaze | works; verified through rosbridge |
 | Unity project and APK | builds, 82 MB, zero errors |
 | On-device run | works; scene loads, poses stream, pointing and grabbing verified |
 | Hand tracking | untested end to end — the runtime only reports hands once the controllers idle |
@@ -55,18 +55,23 @@ suspended, and losing the boundary, which silently stops all input.
 ## Quick start
 
 ```bash
-./tools/fetch_vive_plugin.sh                      # 361 MB, untracked on purpose
-cp -r ~/work/ms/src/mj_kdl_wrapper ~/work/ms/src/orocos_kinematics_dynamics src/
-source /opt/ros/jazzy/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+mkdir -p ~/work/p/vrws/src && cd ~/work/p/vrws
+git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+vcs import src < src/vive-vr-ros2/dependencies.repos
+./src/vive-vr-ros2/scripts/fetch_vive_plugin.sh     # 361 MB, untracked on purpose
 
+source /opt/ros/jazzy/setup.bash
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 source install/setup.bash
-ros2 run vr scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vr_robot
-ros2 launch vr sim.launch.py \
+
+ros2 run vive_vr_ros2 scene_export \
+    ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vive_vr_scene
+ros2 launch vive_vr_ros2 sim.launch.py \
     model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vr_robot
+    scene_dir:=/tmp/vive_vr_scene
 ```
 
-`ros2 launch vr tracking.launch.py` is the same stack without the simulation: poses, buttons,
+`ros2 launch vive_vr_ros2 tracking.launch.py` is the same stack without the simulation: poses, buttons,
 hands and gaze only.
 
 Full detail in [Installation](install.md) and [Running](run.md).

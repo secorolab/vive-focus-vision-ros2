@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<package format="3">
+  <name>vive_vr_ros2</name>
+  <version>0.1.0</version>
+  <description>
+    MuJoCo worlds on a standalone OpenXR headset, and the headset's controller pose and buttons
+    back as ROS 2 topics. Composable nodes: SceneNode streams a world out, InputNode turns raw
+    headset input into calibrated poses, TeleopNode turns a clutched hand into a tool-frame delta.
+  </description>
+  <maintainer email="tools@vamsi.sh">Vamsi Kalagaturu</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+
+  <!-- Plain CMake package, no package.xml of its own: colcon still discovers it by name and
+       orders the build from this dependency. Copy it into src/ alongside the secorolab KDL
+       fork; see the README. -->
+  <depend>mj_kdl_wrapper</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rosbridge_server</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

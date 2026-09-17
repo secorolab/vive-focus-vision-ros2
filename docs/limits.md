@@ -13,12 +13,12 @@ completely for teleoperating a real robot, or for any dataset that claims the op
 the robot were in one metric frame.
 
 The fix is a calibration procedure — touch three known points, or align a tracked object — writing
-the result into `vr.yaml`. Not built.
+the result into `vive_vr.yaml`. Not built.
 
 ## No teleop
 
-Half of it exists. `vr::TeleopNode` publishes the clutch and the hand delta per arm in the tool
-frame ([Teleoperation](teleop.md)), verified against `tools/teleop_check.py` — but **nothing
+Half of it exists. `vive_vr_ros2::TeleopNode` publishes the clutch and the hand delta per arm in the tool
+frame ([Teleoperation](teleop.md)), verified against `scripts/teleop_check.py` — but **nothing
 consumes it**. There is no solver, no joint-limit handling, no arm. The delta stream is an offer,
 and until something takes it up, no robot moves.
 
@@ -27,19 +27,19 @@ has to be observed rather than derived.
 
 ## Clock offset is one-way, and a suspend poisons it
 
-The client estimates its offset from `/vr/pc_time` and keeps the sample with the smallest
+The client estimates its offset from `/vive_vr/pc_time` and keeps the sample with the smallest
 observed difference, which removes queueing jitter but not the constant one-way transit time.
 From a cold start this works: measured stamp lag is **20–30 ms, stable over 70 s**.
 
 Suspending the app breaks it. Take the headset off and the client stops running while its socket
-keeps receiving, so every `/vr/pc_time` sample it then processes is stale by the depth of the
+keeps receiving, so every `/vive_vr/pc_time` sample it then processes is stale by the depth of the
 backlog, and that staleness is baked into the offset. Measured after a few minutes off the head:
 stamps **158 s in the past**, recovering only as fast as the backlog drains — about 0.7 s per
 second. `tf2` rejects everything in the meantime with `TF_OLD_DATA`.
 
 The 30 s re-estimate does not save it, because it re-samples the same backlogged stream. The fix
-is to drop stale frames rather than process them — the newest message on `/vr/pc_time` and
-`/vr/body_poses` is the only one that matters. Not built.
+is to drop stale frames rather than process them — the newest message on `/vive_vr/pc_time` and
+`/vive_vr/body_poses` is the only one that matters. Not built.
 
 ## The floor is assumed, not measured
 
@@ -79,7 +79,7 @@ a grab held across one of those windows dies mid-lift. The symptom to recognise 
 
 ## Bandwidth
 
-`/vr/body_poses` is JSON over rosbridge: about 500 kB/s for 100 bodies at 60 Hz, which is fine.
+`/vive_vr/body_poses` is JSON over rosbridge: about 500 kB/s for 100 bodies at 60 Hz, which is fine.
 Scenes with hundreds of bodies should move that topic to rosbridge's CBOR compression before
 concluding the renderer is slow.
 
