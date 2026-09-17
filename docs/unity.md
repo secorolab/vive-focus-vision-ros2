@@ -23,7 +23,7 @@ $UNITY -batchmode -quit -nographics -projectPath ~/work/p/vr/unity/VrRos \
 Scene and Android Settings*, *Build APK*) for when the Editor is already open — that path does not
 read `VR_HOST`, so set the host in the inspector or in the device config instead.
 
-`SetupAll` sets IL2CPP, ARM64 only, min SDK 29, app id `sh.vamsi.vrros`, splash off;
+`SetupAll` sets IL2CPP, ARM64 only, min SDK 29, app id `de.uni_bremen.secoro.vrros`, splash off;
 builds the scene by invoking the same `GameObject/XR/XR Origin (VR)` menu command a human would;
 creates the `VrRos` object and its `VrScene` child; and wires every inspector reference.
 
@@ -184,7 +184,7 @@ ros2 launch vr tracking.launch.py &
 ```
 
 Unlike the renders above this is a real player, so it writes and reads its own
-`vr_config.json` — under `~/.config/unity3d/vamsi/VrRos/`, not on any device — and it will
+`vr_config.json` — under `~/.config/unity3d/secorolab/VrRos/`, not on any device — and it will
 discover and save the PC's address there like any other client.
 
 Standalone has no XR loader configured, which is what makes this work: XR never initialises, so

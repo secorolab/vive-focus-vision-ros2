@@ -136,9 +136,11 @@ public static class VrRosSetup
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel29;
         PlayerSettings.SetApiCompatibilityLevel(android, ApiCompatibilityLevel.NET_Unity_4_8);
 
-        PlayerSettings.companyName = "vamsi";
+        PlayerSettings.companyName = "secorolab";
         PlayerSettings.productName = "VrRos";
-        PlayerSettings.SetApplicationIdentifier(android, "sh.vamsi.vrros");
+        // secoro.uni-bremen.de reversed; the hyphen becomes an underscore because a package
+        // segment may not contain one. It also names the device config directory.
+        PlayerSettings.SetApplicationIdentifier(android, "de.uni_bremen.secoro.vrros");
 
         // A standalone headset app is landscape-only and must not show the Unity splash in VR.
         PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;

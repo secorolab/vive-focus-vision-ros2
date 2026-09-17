@@ -14,7 +14,7 @@ namespace VrRos
     ///
     /// The file lives at Application.persistentDataPath/vr_config.json, which on Android is
     /// /sdcard/Android/data/&lt;package&gt;/files/. Push a new one with:
-    ///   adb push vr_config.json /sdcard/Android/data/sh.vamsi.vrros/files/vr_config.json
+    ///   adb push vr_config.json /sdcard/Android/data/de.uni_bremen.secoro.vrros/files/vr_config.json
     /// If it is missing, the inspector defaults below are used and written out, so the file to
     /// edit always exists after the first run.
     ///

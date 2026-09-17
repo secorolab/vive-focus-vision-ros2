@@ -101,7 +101,7 @@ The three `publish_*` parameters drop the republish, not the stream: the headset
 and the publish rates change without rebuilding the APK:
 
 ```bash
-adb push vr_config.json /sdcard/Android/data/sh.vamsi.vrros/files/vr_config.json
+adb push vr_config.json /sdcard/Android/data/de.uni_bremen.secoro.vrros/files/vr_config.json
 ```
 
 ```json
