@@ -59,6 +59,12 @@ environment is constructed. `scripts/make_kitchen.py` does that, then adds six o
 freejoint each on the counter's near edge: every fixture in a RoboCasa kitchen is welded, so
 without them there is nothing to pick up.
 
+It then **copies every mesh and texture the world references** next to the MJCF and rewrites the
+paths. RoboCasa's assets live in `site-packages`, so without that the world breaks the moment
+the package is upgraded or removed. Afterwards `~/.cache/vive_vr_ros2/worlds/<world>/` stands on
+its own, and both Python packages and their download can go — they are needed to generate a
+world, never to run one.
+
 ## What the file contains
 
 Per body: its geometry in body-local coordinates, and its pose at the loaded state written into

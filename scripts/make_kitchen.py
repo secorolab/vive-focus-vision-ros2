@@ -16,6 +16,7 @@ Prints the MJCF path on the last line; build_scenes.py exports it.
 import argparse
 import os
 import pathlib
+import shutil
 import sys
 import xml.etree.ElementTree as ET
 
@@ -79,6 +80,48 @@ def add_objects(assets: pathlib.Path, kitchen: pathlib.Path, out: pathlib.Path) 
     return added
 
 
+def vendor_assets(mjcf: pathlib.Path, assets_dir: pathlib.Path) -> int:
+    """Copies every file an MJCF references next to it, and rewrites the paths to match.
+
+    RoboCasa's meshes live in site-packages, so a generated world stops loading the moment the
+    package is upgraded or removed. Copying them makes the world stand on its own.
+    """
+    tree = ET.parse(mjcf)
+    root = tree.getroot()
+
+    compiler = root.find("compiler")
+    search = [mjcf.parent]
+    for attr in ("meshdir", "texturedir", "assetdir"):
+        if compiler is not None and compiler.get(attr):
+            # Relative dirs are relative to the MJCF, not to wherever this is run from.
+            search.insert(0, (mjcf.parent / compiler.get(attr)).expanduser())
+            del compiler.attrib[attr]
+
+    copied = 0
+    for el in root.iter():
+        src_attr = el.get("file")
+        if not src_attr:
+            continue
+        candidates = [pathlib.Path(src_attr)] if pathlib.Path(src_attr).is_absolute() else [
+            d / src_attr for d in search
+        ]
+        src = next((c for c in candidates if c.is_file()), None)
+        if src is None:
+            print(f"  missing asset, left as-is: {src_attr}", file=sys.stderr)
+            continue
+
+        # The same basename appears under several object directories, so the parent is kept.
+        dest = assets_dir / src.parent.name / src.name
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            copied += 1
+        el.set("file", str(dest.relative_to(mjcf.parent)))
+
+    tree.write(mjcf, encoding="unicode")
+    return copied
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--env", default="NavigateKitchen", help="RoboCasa environment name")
@@ -103,14 +146,17 @@ def main() -> int:
               "--type tex fixtures_lw objs_lw", file=sys.stderr)
         return 1
 
-    args.worlds.mkdir(parents=True, exist_ok=True)
-    stem = f"kitchen_{args.env}_l{args.layout}_s{args.style}"
-    bare = args.worlds / f"{stem}.xml"
-    full = args.worlds / f"{stem}_objects.xml"
+    world = args.worlds / f"kitchen_{args.env}_l{args.layout}_s{args.style}"
+    bare = world / "kitchen.xml"
+    full = world / "scene.xml"
 
     if args.force or not full.exists():
+        world.mkdir(parents=True, exist_ok=True)
         dump_environment(args.env, args.layout, args.style, bare)
         print(f"  added {add_objects(assets, bare, full)} objects")
+        # Both halves: the fixtures come from the dump, the objects from add_objects.
+        copied = vendor_assets(bare, world / "assets") + vendor_assets(full, world / "assets")
+        print(f"  vendored {copied} asset files into {world / 'assets'}")
 
     print(full)
     return 0
