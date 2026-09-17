@@ -7,16 +7,26 @@ the Android settings. None of it is a list of things to click.
 ## Building
 
 ```bash
+./tools/build_apk.sh --setup --install     # everything below, on any machine
+```
+
+Or by hand:
+
+```bash
 UNITY=~/Unity/Hub/Editor/6000.0.83f1/Editor/Unity
 
 # scene, wiring and Android player settings
-VR_HOST=192.168.2.118 $UNITY -batchmode -quit -nographics \
+$UNITY -batchmode -quit -nographics \
   -projectPath ~/work/p/vr/unity/VrRos -buildTarget Android -executeMethod VrRosSetup.SetupAll
 
 # -> Build/VrRos.apk
 $UNITY -batchmode -quit -nographics -projectPath ~/work/p/vr/unity/VrRos \
   -buildTarget Android -executeMethod VrRosSetup.BuildApk
 ```
+
+`VR_HOST=<ip>` before `SetupAll` seeds the address baked into the APK. It is optional and
+largely obsolete: the client discovers the PC by itself when the configured address fails, so a
+wrong default costs one failed attempt. See [Configuration](configuration.md#finding-the-pc).
 
 **Close the Editor first.** Only one Unity instance may hold a project; otherwise these fail on
 `Temp/UnityLockfile`. The same script also adds a `VrRos` menu to the Editor menu bar (*Setup

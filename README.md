@@ -39,6 +39,12 @@ For poses, buttons, hands and gaze without a simulation — no model, no world o
 ros2 launch vr tracking.launch.py
 ```
 
+And the headset half, on any machine with the Unity editor installed:
+
+```bash
+./tools/build_apk.sh --setup --install --logcat    # build, install, launch, tail the log
+```
+
 ## Documentation
 
 - [Installation](docs/install.md) — workspace dependencies, ROS build, Unity editor and licence
@@ -50,6 +56,7 @@ ros2 launch vr tracking.launch.py
 - [First run on the headset](docs/bringup.md) — the on-device checklist
 - [Testing](docs/testing.md) — what is verified, how, and what is not
 - [Design notes](docs/design.md) — why the system is shaped this way, and what was rejected
+- [Teleoperation](docs/teleop.md) — the clutch, the delta stream, and why it needs no calibration
 - [Known limits](docs/limits.md) — what is missing or approximate
 
 ## Status

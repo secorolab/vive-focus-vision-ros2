@@ -8,13 +8,29 @@ Each step has a check that is not "it built".
 
 ## 1. Install
 
-Developer mode on, headset connected by USB:
+Developer mode on, headset connected by USB — the **right-side** USB-C port, since the rear one
+is charge-only and produces an empty `adb devices`:
+
+```bash
+./tools/build_apk.sh --setup --install --logcat
+```
+
+That builds, installs, launches and tails the log. By hand it is:
 
 ```bash
 adb devices                                   # accept the prompt inside the headset
 adb install -r unity/VrRos/Build/VrRos.apk
 adb logcat -s Unity                           # keep this open; the client logs here
 ```
+
+Over Wi-Fi instead of a cable: `adb tcpip 5555` once over USB, then
+`adb connect <headset-ip>:5555`, which is lost on reboot. Use `ANDROID_SERIAL` when both
+transports are attached.
+
+**An app installed before 2026-09-17 is not replaced by this build.** The application id changed
+to `de.uni_bremen.secoro.vrros`, and Android treats a different id as a different application, so
+the old one sits alongside it with its own config file. `adb uninstall sh.vamsi.vrros` clears it;
+`build_apk.sh` warns when it sees it.
 
 ## 2. Controller input
 
@@ -71,9 +87,19 @@ string exists anywhere in the VIVE plugin, but that is not proof.
 
 ## 6. Teleop
 
-Not built. This is where `mj_kdl_wrapper`'s IK/ACHD solvers and `Robot::jnt_pos_cmd` come in, and
-it needs the play-space calibration from [Known limits](limits.md#play-space-calibration) to be
-meaningful.
+Half built: `vr::TeleopNode` publishes the clutch, the hand delta and the gripper, and nothing
+consumes them yet. To see the stream, with `teleop_node` running:
+
+```bash
+ros2 topic echo /vr/teleop/right/clutch     # grip button, held
+ros2 topic echo /vr/teleop/right/delta      # motion since the press
+ros2 topic echo /vr/teleop/right/gripper    # trigger pull, 0 to 1
+```
+
+It does **not** need the play-space calibration, which an earlier version of this page said it
+did: a delta taken against a reference in the same frame cancels the unknown transform exactly.
+See [Teleoperation](teleop.md). What is still missing is the other end — `mj_kdl_wrapper`'s
+IK/ACHD solvers and `Robot::jnt_pos_cmd` — and a measured `tool_from_controller_rpy`.
 
 ## Most likely failures, in order
 
