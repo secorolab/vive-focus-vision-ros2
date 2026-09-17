@@ -61,7 +61,8 @@ if [ "$scenes" -eq 1 ]; then
     if ! python3 -c "import robocasa" 2>/dev/null; then
         echo "==> installing the scene tooling into $VIRTUAL_ENV"
         pip install -q "git+https://github.com/robocasa/robocasa.git"
-        # RoboCasa pins an older robosuite than its own code needs.
+        # RoboCasa does not depend on robosuite through pip; its README says to install master
+        # by hand. --no-deps so robosuite's own pins do not land on top of RoboCasa's.
         pip install -q --force-reinstall --no-deps \
             "git+https://github.com/ARISE-Initiative/robosuite.git@master"
     fi

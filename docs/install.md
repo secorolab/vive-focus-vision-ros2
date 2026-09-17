@@ -90,8 +90,10 @@ python3 -m venv --system-site-packages venv
 source venv/bin/activate
 ```
 
-Only the scene tooling needs anything beyond ROS. RoboCasa builds the kitchen; robosuite is
-reinstalled from master afterwards because RoboCasa pins an older one than its own code needs:
+Only the scene tooling needs anything beyond ROS, and only to *generate* a world — nothing at
+runtime imports either. RoboCasa is a robosuite application but does not depend on it through
+pip: its README says to install robosuite's master branch by hand, which is what the second
+line does.
 
 ```bash
 pip install "git+https://github.com/robocasa/robocasa.git"
