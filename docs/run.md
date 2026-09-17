@@ -6,7 +6,7 @@
 `manifest.json`.
 
 ```bash
-ros2 run vive_vr_ros2 scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vive_vr_scene
+ros2 run vive_vr_ros2 scene_export ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ```
 
 ```
@@ -109,14 +109,13 @@ turning one off saves ROS traffic and TF listeners' work, not Wi-Fi.
 
 ```bash
 ros2 launch vive_vr_ros2 sim.launch.py \
-    model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vive_vr_scene
+    model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ```
 
 | Argument | Default | Meaning |
 |---|---|---|
 | `model` | — | MJCF to simulate; required |
-| `scene_dir` | `/tmp/vive_vr_scene` | directory served over HTTP; where `scene_export` wrote |
+| `scene_dir` | `~/.cache/.../exports/<model>` | served over HTTP; where `scene_export` wrote |
 | `host_ip` | the default route's | the address **the headset can reach**; goes into the `.glb` URL |
 | `http_port` | `8000` | |
 | `env_glb`, `env_yaw_deg`, `env_scale` | — | scenery drawn but not simulated |

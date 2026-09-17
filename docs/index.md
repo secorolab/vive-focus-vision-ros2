@@ -65,10 +65,9 @@ colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 source install/setup.bash
 
 ros2 run vive_vr_ros2 scene_export \
-    ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vive_vr_scene
+    ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ros2 launch vive_vr_ros2 sim.launch.py \
-    model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vive_vr_scene
+    model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ```
 
 `ros2 launch vive_vr_ros2 tracking.launch.py` is the same stack without the simulation: poses, buttons,

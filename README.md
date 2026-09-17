@@ -38,10 +38,9 @@ Then export a world and run it:
 
 ```bash
 ros2 run vive_vr_ros2 scene_export \
-    ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml -o /tmp/vive_vr_scene
+    ~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ros2 launch vive_vr_ros2 sim.launch.py \
-    model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml \
-    scene_dir:=/tmp/vive_vr_scene
+    model:=$HOME/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/scene.xml
 ```
 
 For poses, buttons, hands and gaze without a simulation — no model, no world on the headset:

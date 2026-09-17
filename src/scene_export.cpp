@@ -35,7 +35,9 @@ namespace {
 struct Options
 {
     std::string              mjcf;
-    std::string              out_dir = ".";
+    // Empty means ~/.cache/vive_vr_ros2/exports/<model stem>: writing a 7 MB glb into whatever
+    // directory the command was run from is never what was wanted.
+    std::string              out_dir;
     std::vector<int>         groups  = { 0, 1, 2 };
     float                    sky_radius = 30.0f;
     bool                     export_ground = false;
@@ -54,7 +56,8 @@ void usage(const char *argv0)
                  "usage: %s <model.xml> [-o OUT_DIR] [--groups 0,1,2] [--segments N]\n"
                  "          [--rings N] [--plane-extent M] [--sky-radius M]\n"
                  "          [--export-ground] [--export-sky]\n\n"
-                 "Writes OUT_DIR/scene.glb and OUT_DIR/manifest.json.\n",
+                 "Writes OUT_DIR/scene.glb and OUT_DIR/manifest.json.\n"
+                 "OUT_DIR defaults to ~/.cache/vive_vr_ros2/exports/<model>.\n",
                  argv0);
 }
 
@@ -325,6 +328,20 @@ int main(int argc, char **argv)
     if (!parse_args(argc, argv, &opt)) {
         usage(argv[0]);
         return 2;
+    }
+
+    if (opt.out_dir.empty()) {
+        const char *home = std::getenv("HOME");
+        if (!home) {
+            std::fprintf(stderr, "no HOME for the default output directory; pass -o\n");
+            return 2;
+        }
+        // Menagerie names every world <robot>/scene.xml, so the stem alone collides.
+        const std::filesystem::path mjcf(opt.mjcf);
+        const std::string           stem = mjcf.stem().string();
+        const std::string name = stem == "scene" ? mjcf.parent_path().filename().string() : stem;
+        opt.out_dir = std::string(home) + "/.cache/vive_vr_ros2/exports/" + name;
+        std::fprintf(stderr, "writing to %s\n", opt.out_dir.c_str());
     }
 
     char     error[1024] = "";
@@ -607,8 +624,8 @@ int main(int argc, char **argv)
     manifest.close();
     mj_deleteData(pose_data);
 
-    std::printf("%s: %d bodies, %d geoms exported\n", opt.mjcf.c_str(), model->nbody,
-                exported_geoms);
+    std::printf("%s: %ld bodies, %ld geoms exported\n", opt.mjcf.c_str(),
+                static_cast<long>(model->nbody), static_cast<long>(exported_geoms));
     if (ground_planes) {
         std::printf("  skipped %d unbounded ground plane(s); the client draws the floor\n",
                     ground_planes);

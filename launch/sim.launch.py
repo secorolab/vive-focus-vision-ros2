@@ -46,9 +46,15 @@ def generate_launch_description():
 
     args = [
         DeclareLaunchArgument("model", description="MJCF file to simulate"),
+        # Derived from model, which is where scene_export writes by default, so the world that
+        # is drawn and the world that is simulated cannot silently be different ones.
         DeclareLaunchArgument(
             "scene_dir",
-            default_value="/tmp/vive_vr_scene",
+            default_value=PythonExpression(
+                ["__import__('os').path.expanduser('~/.cache/vive_vr_ros2/exports/') + "
+                 "(lambda p: p.parent.name if p.stem == 'scene' else p.stem)"
+                 "(__import__('pathlib').Path('", LaunchConfiguration("model"), "'))"]
+            ),
             description="directory holding scene.glb and manifest.json, served over HTTP",
         ),
         DeclareLaunchArgument(

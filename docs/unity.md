@@ -154,7 +154,7 @@ The WebSocket receive loop runs on a background task and pushes raw frames into 
 to open:
 
 ```bash
-DISPLAY=:0 VR_GLB=/tmp/vive_vr_scene/scene.glb VR_PNG=~/out.png \
+DISPLAY=:0 VR_GLB=~/.cache/vive_vr_ros2/exports/kinova_gen3/scene.glb VR_PNG=~/out.png \
   $UNITY -batchmode -quit -projectPath unity/VrRos -executeMethod VrScenePreview.Render
 ```
 
