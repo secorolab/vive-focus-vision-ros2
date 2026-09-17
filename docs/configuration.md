@@ -71,7 +71,7 @@ Read by the scene component, which owns the grabber.
 | Parameter | Default | Meaning |
 |---|---|---|
 | `enable_grab` | `true` | |
-| `grab_button` | `1` | index into `Joy` buttons; 1 is squeeze |
+| `grab_button` | `4` | index into `Joy` buttons; 4 is the thumbstick click |
 | `grab_reach_m` | `0.15` | fallback only: how close a hand must be when no pointer target exists |
 | `grab_kp`, `grab_kd` | `400`, `40` | translation response [1/s², 1/s] |
 | `grab_kp_rot`, `grab_kd_rot` | `100`, `20` | rotation response [1/s², 1/s] |
@@ -94,6 +94,27 @@ are 3120 transforms a second, which every `tf2` listener pays for; see
 
 The three `publish_*` parameters drop the republish, not the stream: the headset publishes into
 `raw_ns` regardless, so they save ROS traffic and listener work rather than Wi-Fi.
+
+### Teleoperation
+
+Read by `vr::TeleopNode`, one block per arm under `teleop.<arm>`. The arm names are whatever
+appears in the file; see [Teleoperation](teleop.md) for the whole design.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `teleop.pose_timeout_s` | `0.25` | no pose for this long opens the clutch |
+| `teleop.<arm>.hand` | the arm's name | which hand drives this arm |
+| `teleop.<arm>.clutch_button` | `1` | grip button; hold to engage |
+| `teleop.<arm>.gripper_axis` | `2` | trigger pull, 0 open to 1 closed; `-1` uses the button |
+| `teleop.<arm>.delta_topic` | `<out>/teleop/<arm>/delta` | |
+| `teleop.<arm>.clutch_topic` | `<out>/teleop/<arm>/clutch` | |
+| `teleop.<arm>.gripper_topic` | `<out>/teleop/<arm>/gripper` | |
+| `teleop.<arm>.ee_pose_topic` | `""` | subscribed and unused; empty skips it |
+| `teleop.<arm>.tool_from_controller_rpy` | `[0, 0, 0]` | controller axes onto tool axes, degrees |
+
+`tool_from_controller_rpy` is identity, which is wrong for any real gripper: OpenXR's grip pose
+puts `-Z` toward the thumb and a tool frame puts `+Z` along the approach. It is a constant of the
+controller-and-gripper pairing, and the right value is the one observed on a gripper that moved.
 
 ## Headset settings
 

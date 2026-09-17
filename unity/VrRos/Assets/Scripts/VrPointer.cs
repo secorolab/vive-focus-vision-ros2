@@ -63,12 +63,12 @@ namespace VrRos
         public float trackingHoldSeconds = 0.25f;
 
         /* Only publishes on change, so this is a cap on how late the PC learns what the ray moved
-         * onto, not a stream rate. Too low and a quick point-and-squeeze grabs the previous body. */
+         * onto, not a stream rate. Too low and a quick point-and-grab takes the previous body. */
         public float rateHz = 60f;
 
         public Color rayColour = new Color(0.35f, 0.7f, 1f, 0.9f);
 
-        [Tooltip("What the ray is on: this is what a squeeze would grab")]
+        [Tooltip("What the ray is on: this is what a grab would take")]
         public Color highlightColour = new Color(1f, 0.85f, 0.2f, 1f);
 
         [Tooltip("What the PC reports as actually held, which is not always what was pointed at")]
@@ -184,7 +184,7 @@ namespace VrRos
                 /* Show the grab the moment the button goes down rather than after the round trip
                  * to the PC and back. The PC is still the authority: if it refuses the body, the
                  * next /held says so and the colour drops back. */
-                if (held < 0 && hit > 0 && Squeezing(hand)) held = hit;
+                if (held < 0 && hit > 0 && GrabPressed(hand)) held = hit;
             }
 
             // Held wins: once something is in hand, that is the thing worth marking.
@@ -205,7 +205,9 @@ namespace VrRos
         }
 
         /// <summary>What counts as "grabbing now", matching what vr::Grabber acts on per mode.</summary>
-        private bool Squeezing(string hand)
+        /* Thumbstick click, matching grab_button on the PC. The grip button is the teleop
+         * clutch, and one press must not both grab a body and engage an arm. */
+        private bool GrabPressed(string hand)
         {
             if (HandMode)
             {
@@ -221,7 +223,8 @@ namespace VrRos
             InputDevice device = InputDevices.GetDeviceAtXRNode(
                 hand == "left" ? XRNode.LeftHand : XRNode.RightHand);
             return device.isValid
-                   && device.TryGetFeatureValue(CommonUsages.gripButton, out bool grip) && grip;
+                   && device.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out bool click)
+                   && click;
         }
 
         /// <summary>

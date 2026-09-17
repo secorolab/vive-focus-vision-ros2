@@ -29,7 +29,7 @@ struct GrabConf
      * their button is unambiguous, which matters for a long session. */
     bool   use_controllers  = true;
     bool   use_hands        = true;
-    int    grab_button      = 1;     // index into sensor_msgs/Joy buttons; 1 is squeeze
+    int    grab_button      = 4;     // index into sensor_msgs/Joy buttons; 4 is thumbstick click
     double pinch_close_m    = 0.025; // thumb-to-index distance that starts a pinch
     double pinch_open_m     = 0.040; // and the wider distance that ends it, so it cannot chatter
 

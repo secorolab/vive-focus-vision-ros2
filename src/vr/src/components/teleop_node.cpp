@@ -124,9 +124,8 @@ class TeleopNode : public rclcpp::Node
 
         const std::string prefix = "teleop." + name + ".";
         arm->hand = declare_parameter<std::string>(prefix + "hand", name);
-        /* Stick click, not squeeze: squeeze is grab_button, and one press must not both grab a
-         * simulated body and engage teleop. The trigger is the gripper. */
-        arm->clutch_button = static_cast<int>(declare_parameter<int>(prefix + "clutch_button", 4));
+        // The grip button: the hand holds the pose the way it holds the controller.
+        arm->clutch_button = static_cast<int>(declare_parameter<int>(prefix + "clutch_button", 1));
         arm->gripper_axis  = static_cast<int>(declare_parameter<int>(prefix + "gripper_axis", 2));
 
         const std::string delta_topic = declare_parameter<std::string>(

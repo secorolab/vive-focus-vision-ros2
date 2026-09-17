@@ -68,14 +68,18 @@ empty headset view always says which of the three possible failures it is.
 
 ### Controls
 
+Named as the Focus Vision manual names them.
+
 | Input | Action |
 |---|---|
-| Left stick | walk (push) and turn (tilt) |
+| Left thumbstick | walk (push) and turn (tilt) |
 | Left X | recentre: back to spawn, eyes at `eyeHeight` |
 | Left Y | reset the simulation |
 | Left menu | switch controllers ↔ hands |
 | Right A / B | up / down |
-| Grip, or a pinch in hand mode | grab whatever the ray is on |
+| Thumbstick click, or a pinch in hand mode | grab whatever the ray is on |
+| Grip button | hold to engage teleop (`vr::TeleopNode`) |
+| Trigger | the teleop gripper, 0 open to 1 closed |
 
 One stick does both walking and turning. Turning is continuous rather than snapped; snap turn is
 gentler on motion sickness, but it was not what this reads well as in practice.

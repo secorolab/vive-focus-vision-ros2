@@ -29,24 +29,34 @@ Services: `/vr_scene/reset` (`std_srvs/Trigger`).
 
 ## Controller buttons
 
-`sensor_msgs/Joy` carries no schema, so the layout is a contract:
+`sensor_msgs/Joy` carries no schema, so the layout is a contract. The names are the ones printed
+in the Focus Vision manual, so a binding can be discussed without translating between
+vocabularies:
 
 ```
-buttons = [trigger, squeeze, primary(X|A), secondary(Y|B), stick_click, menu]
-axes    = [stick_x, stick_y, trigger, squeeze]
+buttons = [trigger, grip, A|X, B|Y, thumbstick_click, menu]
+axes    = [thumbstick_x, thumbstick_y, trigger, grip]
 ```
 
-`menu` exists on the left controller only and reads 0 on the right. The **system button is
+Index 2 is **A** on the right controller and **X** on the left; index 3 is **B** and **Y**.
+`menu` exists on the left controller only and reads 0 on the right. The **VIVE button is
 reserved by the runtime** and never reaches the application, so it cannot be used for anything.
 
-Who owns what on the right controller, so that nothing is bound twice:
+Who owns what, so that nothing is bound twice:
 
 | Control | Index | Owner |
 |---|---|---|
-| trigger | `axes[2]` | teleop gripper, 0 open to 1 closed |
-| squeeze | `buttons[1]` | the simulated grabber, `grab_button` |
-| primary A, secondary B | `buttons[2,3]` | locomotion up and down |
-| stick click | `buttons[4]` | teleop clutch, `clutch_button` |
+| Trigger | `axes[2]`, `buttons[0]` | teleop gripper, 0 open to 1 closed |
+| Grip button | `buttons[1]`, `axes[3]` | teleop clutch, `clutch_button` |
+| Thumbstick click | `buttons[4]` | the simulated grabber, `grab_button` |
+| A, B (right) | `buttons[2,3]` | locomotion up and down |
+| X, Y (left) | `buttons[2,3]` | recentre, reset the simulation |
+| Thumbstick | `axes[0,1]` | walk and turn (left controller) |
+| Menu (left) | `buttons[5]` | switch controllers ↔ hands, held 1 s |
+
+The two hand-held actions sit on the two fingers that do them: the index finger works the
+gripper, and the whole hand grips to hold the pose. The simulated grabber moved off the grip
+button to make room, and in hand mode it is still a pinch.
 
 The pose published is the **grip** pose — the hand/handle pose, the one to retarget to an
 end-effector. The aim pose (the pointing ray, for UI) is not published yet.
@@ -102,7 +112,7 @@ consumes topics that already exist rather than adding any: the grip pose, the `J
 the hand joints.
 
 A grab starts on either **a pinch** (thumb tip to index tip closer than `pinch_close_m`, released
-past `pinch_open_m` so it cannot chatter) or **the squeeze button**.
+past `pinch_open_m` so it cannot chatter) or **the thumbstick click**.
 
 **What is caught is what the client's ray is on**, published as a manifest index on
 `<out>/<hand>/target`. `reach_m` is only the fallback for a hand with no pointer. The body keeps

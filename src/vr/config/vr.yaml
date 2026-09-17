@@ -69,11 +69,11 @@ vr_teleop:
     teleop:
       right:
         hand: right
-        # Stick click. Not squeeze: that is grab_button, and one press must not both grab a
-        # simulated body and engage teleop. Not the trigger either, which is the gripper.
-        clutch_button: 4
-        # The index finger's analog pull, axes[2], published as 0 open to 1 closed while the
-        # clutch is held. Set to -1 to fall back to the trigger's button.
+        # The grip button: the hand holds the pose the way it holds the controller. The
+        # simulated grabber moved to the thumbstick click to make room for it.
+        clutch_button: 1
+        # The trigger's analog pull, axes[2], published as 0 open to 1 closed while the clutch
+        # is held. Set to -1 to fall back to the trigger's button.
         gripper_axis: 2
         ee_pose_topic: ""
         # Controller axes onto tool axes, degrees. Identity is wrong for any real gripper -

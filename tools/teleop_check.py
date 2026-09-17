@@ -69,10 +69,10 @@ class Driver(Node):
         self.pose_pub.publish(msg)
 
     def button(self, down, trigger=0.0):
-        """Clutch is stick_click (index 4); the trigger axis drives the gripper."""
+        """Clutch is the grip button (index 1); the trigger axis drives the gripper."""
         msg = Joy()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.buttons = [0, 0, 0, 0, 1 if down else 0, 0]
+        msg.buttons = [0, 1 if down else 0, 0, 0, 0, 0]
         msg.axes = [0.0, 0.0, trigger, 0.0]
         self.joy_pub.publish(msg)
 
@@ -147,6 +147,9 @@ def main():
     check("clutch closes again", d.clutch[-1] is True, f"saw {d.clutch}")
 
     d.streaming = False
+    # Let a pose already in flight arrive before counting, but stay inside pose_timeout_s so
+    # the clutch is still closed: the claim is about what follows the dropout, not precedes it.
+    d.spin(0.15)
     before = len(d.deltas)
     d.spin(1.2)
     check("dropout opens the clutch", d.clutch[-1] is False, f"saw {d.clutch}")

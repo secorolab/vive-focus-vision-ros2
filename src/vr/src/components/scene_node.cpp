@@ -79,7 +79,7 @@ class SceneNode : public rclcpp::Node
         if (declare_parameter<bool>("enable_grab", true)) {
             GrabConf grab;
             grab.topic_ns   = declare_parameter<std::string>("out_ns_grab", conf.topic_ns);
-            grab.grab_button = declare_parameter<int>("grab_button", 1);
+            grab.grab_button = declare_parameter<int>("grab_button", 4);
             grab.reach_m    = declare_parameter<double>("grab_reach_m", 0.15);
             grab.kp            = declare_parameter<double>("grab_kp", 400.0);
             grab.kd            = declare_parameter<double>("grab_kd", 40.0);

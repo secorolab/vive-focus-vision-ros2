@@ -97,7 +97,8 @@ Subscribed, per arm:
 | `<arm>/ee_pose` | `geometry_msgs/PoseStamped` | nothing yet; see [Later](#later) |
 
 The EE pose is taken in from the start so the topic contract does not change when the extensions
-below arrive. The first version reads it and logs staleness, nothing more.
+below arrive. The first version subscribes and discards; leaving `ee_pose_topic` empty skips the
+subscription entirely.
 
 ## Configuration
 
@@ -108,7 +109,7 @@ vr_teleop:
     teleop:
       right:
         hand: right
-        clutch_button: 4
+        clutch_button: 1
         gripper_axis: 2
         ee_pose_topic: ""
         tool_from_controller_rpy: [0.0, 0.0, 0.0]
@@ -127,9 +128,10 @@ to keep in step with the blocks.
 `clutch_button` indexes `Joy` buttons the way `grab_button` already does, so the two share a
 convention rather than inventing a second one.
 
-It defaults to `4`, stick click, and not to squeeze: squeeze is `grab_button`, and one press
-must not both grab a simulated body and engage teleop. The trigger is the gripper. The full
-allocation is in [Interfaces](interfaces.md#controller-buttons).
+It defaults to `1`, the **grip button**: the hand holds the pose the way it holds the controller,
+and the index finger works the gripper on the **trigger**. The simulated grabber moved to the
+thumbstick click to make room, since one press must not both grab a body and engage an arm. The
+full allocation is in [Interfaces](interfaces.md#controller-buttons).
 
 ## What happens when things fail
 
@@ -160,8 +162,13 @@ A third component, `vr::TeleopNode`, loaded into the same container as `vr::Scen
 [one package, composable nodes](design.md#one-package-composable-nodes) decision.
 
 It runs entirely on the PC and consumes what `InputNode` already publishes — calibrated poses and
-`Joy`. **The client does not change and the APK does not need rebuilding**, which also means the
-headset cannot be the reason teleop misbehaves.
+`Joy` — so no teleop logic lives on the headset and the client cannot be the reason teleop
+misbehaves.
+
+Freeing the grip button did cost one client change, contrary to what this page first claimed:
+`VrPointer` tinted a body green the moment the grip button went down, and that optimistic
+highlight had to follow the grabber onto the thumbstick click. An APK built before 2026-09-17
+will highlight on the wrong control.
 
 ## Later {#later}
 

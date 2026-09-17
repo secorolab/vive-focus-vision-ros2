@@ -16,10 +16,12 @@ namespace VrRos
     /// SDK: the VIVE OpenXR plugin maps /interaction_profiles/htc/vive_focus3_controller onto
     /// exactly these usages, so the same code runs unchanged on other OpenXR headsets.
     ///
-    /// Joy layout (sensor_msgs/Joy carries no schema, so this is the contract):
-    ///   buttons = [trigger, squeeze, primary(X|A), secondary(Y|B), stick_click, menu]
-    ///   axes    = [stick_x, stick_y, trigger, squeeze]
-    /// menu exists on the left controller only and reads 0 on the right; the system button is
+    /// Joy layout (sensor_msgs/Joy carries no schema, so this is the contract). The names are
+    /// the ones printed in the Focus Vision manual, so that a binding can be discussed without
+    /// translating:
+    ///   buttons = [trigger, grip, A|X, B|Y, thumbstick_click, menu]
+    ///   axes    = [thumbstick_x, thumbstick_y, trigger, grip]
+    /// menu exists on the left controller only and reads 0 on the right; the VIVE button is
     /// reserved by the runtime and is not available to the application.
     /// </summary>
     public class VrInputPublisher : MonoBehaviour
@@ -117,23 +119,23 @@ namespace VrRos
         private void PublishJoy(string topic, InputDevice device)
         {
             device.TryGetFeatureValue(CommonUsages.triggerButton, out bool trigger);
-            device.TryGetFeatureValue(CommonUsages.gripButton, out bool squeeze);
-            device.TryGetFeatureValue(CommonUsages.primaryButton, out bool primary);
-            device.TryGetFeatureValue(CommonUsages.secondaryButton, out bool secondary);
-            device.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out bool stickClick);
+            device.TryGetFeatureValue(CommonUsages.gripButton, out bool grip);
+            device.TryGetFeatureValue(CommonUsages.primaryButton, out bool aOrX);
+            device.TryGetFeatureValue(CommonUsages.secondaryButton, out bool bOrY);
+            device.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out bool thumbstickClick);
             device.TryGetFeatureValue(CommonUsages.menuButton, out bool menu);
-            device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick);
+            device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 thumbstick);
             device.TryGetFeatureValue(CommonUsages.trigger, out float triggerValue);
-            device.TryGetFeatureValue(CommonUsages.grip, out float squeezeValue);
+            device.TryGetFeatureValue(CommonUsages.grip, out float gripValue);
 
             _sb.Clear();
             _sb.Append("{\"op\":\"publish\",\"topic\":\"").Append(topic).Append("\",\"msg\":{");
             AppendHeader(_sb);
-            _sb.Append(",\"axes\":[").Append(F(stick.x)).Append(',').Append(F(stick.y)).Append(',')
-               .Append(F(triggerValue)).Append(',').Append(F(squeezeValue)).Append(']');
-            _sb.Append(",\"buttons\":[").Append(B(trigger)).Append(',').Append(B(squeeze))
-               .Append(',').Append(B(primary)).Append(',').Append(B(secondary)).Append(',')
-               .Append(B(stickClick)).Append(',').Append(B(menu)).Append("]}}");
+            _sb.Append(",\"axes\":[").Append(F(thumbstick.x)).Append(',').Append(F(thumbstick.y))
+               .Append(',').Append(F(triggerValue)).Append(',').Append(F(gripValue)).Append(']');
+            _sb.Append(",\"buttons\":[").Append(B(trigger)).Append(',').Append(B(grip))
+               .Append(',').Append(B(aOrX)).Append(',').Append(B(bOrY)).Append(',')
+               .Append(B(thumbstickClick)).Append(',').Append(B(menu)).Append("]}}");
             bridge.Publish(_sb.ToString());
         }
 

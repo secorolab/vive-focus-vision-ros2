@@ -41,7 +41,7 @@ Measured by running the system, not inferred from a successful build:
 | `ClientWebSocket` works under IL2CPP/ARM64 | it connected and carried the whole session |
 | The glTF correction sign is right | the Kinova arm stands upright in the headset |
 | Poses agree with what is rendered | head at `(-1.23, -0.32, 1.13)`, pitch +32°, yaw −43° — matching a capture showing the arm 57° to the left and the horizon high |
-| Pointing selects, and grabbing lifts | `target → 10`, `grip → 1`, `HELD → 10`, cube from z=0.730 to 0.984 |
+| Pointing selects, and grabbing lifts | `target → 10`, `grip → 1`, `HELD → 10`, cube from z=0.730 to 0.984 (grab was on the grip button then; it is the thumbstick click now) |
 | Reset restores loose bodies | cube and ball back at their MJCF poses on the table |
 
 The pose test uses three distinct translation components and a non-identity rotation
