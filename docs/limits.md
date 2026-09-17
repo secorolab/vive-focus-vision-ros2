@@ -17,9 +17,13 @@ the result into `vr.yaml`. Not built.
 
 ## No teleop
 
-`InputNode` publishes calibrated poses, TF and activity, and the grabber uses them to move
-simulated bodies directly — but nothing drives a *robot*. That component is deliberately last,
-because retargeting a hand onto an arm is where the clutch and the solvers come in.
+Half of it exists. `vr::TeleopNode` publishes the clutch and the hand delta per arm in the tool
+frame ([Teleoperation](teleop.md)), verified against `tools/teleop_check.py` — but **nothing
+consumes it**. There is no solver, no joint-limit handling, no arm. The delta stream is an offer,
+and until something takes it up, no robot moves.
+
+`tool_from_controller_rpy` is also still identity, which is wrong for any real gripper; the value
+has to be observed rather than derived.
 
 ## Clock offset is one-way, and a suspend poisons it
 

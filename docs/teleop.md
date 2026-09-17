@@ -1,7 +1,7 @@
 # Teleoperation {#page_teleop}
 
-> **Proposed, not built.** This page is the design to review before any code exists. [Known
-> limits](limits.md#no-teleop) still lists teleop as missing, and will until this is implemented.
+> **Built as `vr::TeleopNode`.** Nothing consumes the delta stream yet: no solver, no arm. See
+> [Known limits](limits.md#no-teleop).
 
 ## What this component is responsible for
 
@@ -94,19 +94,26 @@ below arrive. The first version reads it and logs staleness, nothing more.
 ## Configuration
 
 ```yaml
-teleop:
-  left:
-    hand: left
-    delta_topic: /vr/teleop/left/delta
-    ee_pose_topic: /left_arm/ee_pose
-    clutch_button: 1
-    tool_from_controller_rpy: [0.0, 0.0, 0.0]
-  right:
-    hand: right
-    ...
+vr_teleop:
+  ros__parameters:
+    teleop.pose_timeout_s: 0.25
+    teleop:
+      right:
+        hand: right
+        clutch_button: 1
+        ee_pose_topic: ""
+        tool_from_controller_rpy: [0.0, 0.0, 0.0]
+      left:
+        hand: left
+        ...
 ```
 
-Dual-arm is two blocks. One arm is one block. Nothing in the component counts arms.
+Dual-arm is two blocks. One arm is one block. Nothing in the component counts arms — the arm
+names are discovered from whichever `teleop.<arm>.*` parameters were passed, so there is no list
+to keep in step with the blocks.
+
+`delta_topic` and `clutch_topic` may be set per arm and default to
+`<out_ns>/teleop/<arm>/{delta,clutch}`, so the block above leaves them out.
 
 `clutch_button` indexes `Joy` buttons the way `grab_button` already does, so the two share a
 convention rather than inventing a second one. `1` is squeeze.
@@ -115,9 +122,13 @@ convention rather than inventing a second one. `1` is squeeze.
 
 Silence must never be mistaken for "keep going".
 
-- **Controller tracking drops** — the hand is already reported inactive after `stale_after_s`.
-  The clutch force-opens, `clutch = false` goes out, and deltas stop. The last delta is never
-  republished to fill the gap.
+- **Controller tracking drops** — measured as poses no longer arriving, after
+  `teleop.pose_timeout_s`. The clutch force-opens, `clutch = false` goes out, and deltas stop.
+  The last delta is never republished to fill the gap.
+
+  This is deliberately *not* `<out>/<hand>/active`, which an earlier draft of this page proposed.
+  That flag means "has not moved `motion_eps_m` within `stale_after_s`", which is exactly what an
+  operator holding a position looks like — it would drop the clutch mid-task for standing still.
 - **rosbridge drops** — the stream simply ends. The consumer must treat absence of deltas as
   hold, not as continue; that requirement belongs in the consumer and is stated here because
   this component cannot enforce it.
@@ -149,14 +160,23 @@ Both extensions need the EE pose that is already subscribed, and neither is in t
 - **Drift detection.** Compare commanded against actual and force a re-clutch when the arm has
   fallen far enough behind that the operator's hand no longer corresponds to the tool.
 
-## How it will be verified
+## How it is verified
 
-Not by a passing build.
+`tools/teleop_check.py` drives `<raw>/right/{pose,joy}` the way the headset does — poses
+streaming on a timer, because a clutch held still must stay closed — and asserts what comes out
+the other end. With the stack and `teleop_node` running:
 
-- `tools/fake_headset.py` extended to press, hold, move and release: the delta must be identity
-  at the press, `dz` must match a commanded 10 cm move to the millimetre, and a 90° wrist
-  rotation must appear as the right quaternion in the tool frame.
-- A dropout test: stop publishing poses mid-clutch and confirm `clutch = false` is published and
-  deltas cease, rather than the last value repeating.
-- In simulation, drive a body with the delta stream and confirm the direction of motion matches
-  the hand, which is also how `tool_from_controller_rpy` gets its real value.
+```bash
+ros2 launch vr tracking.launch.py &
+ros2 run vr teleop_node --ros-args --params-file install/vr/share/vr/config/vr.yaml &
+python3 tools/teleop_check.py
+```
+
+Nine checks, all passing as of 2026-09-17: the clutch closes on press and opens on release; the
+delta is exactly identity at the press; a 10 cm move gives `dz = 0.100000`; a 90° yaw gives
+`qz = 0.707107`; no deltas are published while the clutch is open; and when the poses stop, the
+clutch opens and the last delta is *not* repeated.
+
+Still unverified: anything with an arm on the end of it. `tool_from_controller_rpy` stays
+identity until a gripper has been watched moving, because the observed value is the only honest
+one.

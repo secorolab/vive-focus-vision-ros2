@@ -56,3 +56,23 @@ vr_input:
     # this off if the TF tree matters more than the hands do: at 60 Hz it is 3120 transforms a
     # second, which every tf2 listener in the system pays for.
     publish_hand_tf: true
+
+vr_teleop:
+  ros__parameters:
+    # A clutch held perfectly still must stay closed, so a dropout is measured as the absence of
+    # pose messages. <hand>/active means "has not moved" and would open the clutch on anyone
+    # holding a position.
+    teleop.pose_timeout_s: 0.25
+
+    # One block per arm; the arm names are whatever appears here. Nothing counts arms, so a
+    # second block is all a dual-arm setup needs.
+    teleop:
+      right:
+        hand: right
+        # Matches grab_button's convention: an index into the Joy buttons, 1 is squeeze.
+        clutch_button: 1
+        ee_pose_topic: ""
+        # Controller axes onto tool axes, degrees. Identity is wrong for any real gripper -
+        # OpenXR's grip pose puts -Z toward the thumb and a tool frame puts +Z along the
+        # approach - but the right value is the one observed, not the one the conventions imply.
+        tool_from_controller_rpy: [0.0, 0.0, 0.0]

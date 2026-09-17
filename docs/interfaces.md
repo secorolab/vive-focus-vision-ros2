@@ -21,6 +21,8 @@ to start if they match.
 | `<out>/scene` | `std_msgs/String`, transient local | PC → headset | once |
 | `<out>/body_poses` | `geometry_msgs/PoseArray` | PC → headset | 60 Hz |
 | `<out>/pc_time` | `builtin_interfaces/Time` | PC → headset | 10 Hz |
+| `<out>/teleop/<arm>/delta` | `geometry_msgs/TransformStamped` | PC | while clutched |
+| `<out>/teleop/<arm>/clutch` | `std_msgs/Bool`, latched | PC | on change |
 
 Services: `/vr_scene/reset` (`std_srvs/Trigger`).
 

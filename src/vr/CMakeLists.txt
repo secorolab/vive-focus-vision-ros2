@@ -77,6 +77,7 @@ target_link_libraries(vr_scene PUBLIC
 add_library(vr_components SHARED
   src/components/scene_node.cpp
   src/components/input_node.cpp
+  src/components/teleop_node.cpp
 )
 # Only the components depend on mj_kdl_wrapper; vr_scene stays MuJoCo-only so an application
 # can link BodyPosePublisher without pulling in KDL.
@@ -101,6 +102,8 @@ rclcpp_components_register_node(vr_components
   PLUGIN "vr::SceneNode" EXECUTABLE scene_node)
 rclcpp_components_register_node(vr_components
   PLUGIN "vr::InputNode" EXECUTABLE input_node)
+rclcpp_components_register_node(vr_components
+  PLUGIN "vr::TeleopNode" EXECUTABLE teleop_node)
 
 # --- offline tool --------------------------------------------------------------------------
 add_executable(scene_export src/scene_export.cpp)
