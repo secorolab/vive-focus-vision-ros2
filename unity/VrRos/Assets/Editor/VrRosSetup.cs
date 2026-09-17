@@ -379,4 +379,34 @@ public static class VrRosSetup
             throw new Exception($"APK build failed: {report.summary.result}");
         }
     }
+
+    /// <summary>
+    /// The same scene as a desktop player, for watching the app start up without a headset.
+    ///
+    /// Standalone has no XR loader configured, so this runs flat in a window: the welcome panel,
+    /// the rosbridge connection and discovery all behave as they do on the device. What it
+    /// cannot show is anything head-tracked.
+    /// </summary>
+    [MenuItem("VrRos/Build Linux player")]
+    public static void BuildLinux()
+    {
+        string output = "Build/Linux/VrRos";
+        Directory.CreateDirectory(Path.GetDirectoryName(output));
+        var options = new BuildPlayerOptions
+        {
+            scenes = new[] { ScenePath },
+            locationPathName = output,
+            target = BuildTarget.StandaloneLinux64,
+            targetGroup = BuildTargetGroup.Standalone,
+            options = BuildOptions.None,
+        };
+
+        var report = BuildPipeline.BuildPlayer(options);
+        Debug.Log($"VrRosSetup: build {report.summary.result}, {report.summary.totalSize} bytes, "
+                  + $"{report.summary.totalErrors} error(s) -> {output}");
+        if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+        {
+            throw new Exception($"Linux build failed: {report.summary.result}");
+        }
+    }
 }

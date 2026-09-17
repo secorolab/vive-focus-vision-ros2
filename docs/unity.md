@@ -23,9 +23,9 @@ $UNITY -batchmode -quit -nographics -projectPath ~/work/p/vr/unity/VrRos \
 Scene and Android Settings*, *Build APK*) for when the Editor is already open — that path does not
 read `VR_HOST`, so set the host in the inspector or in the device config instead.
 
-`SetupAll` sets IL2CPP, ARM64 only, min SDK 29, app id `sh.vamsi.vrros`, splash off; builds the
-scene by invoking the same `GameObject/XR/XR Origin (VR)` menu command a human would; creates the
-`VrRos` object and its `VrScene` child; and wires every inspector reference.
+`SetupAll` sets IL2CPP, ARM64 only, min SDK 29, app id `sh.vamsi.vrros`, splash off;
+builds the scene by invoking the same `GameObject/XR/XR Origin (VR)` menu command a human would;
+creates the `VrRos` object and its `VrScene` child; and wires every inspector reference.
 
 ```
 XR Origin (VR)          camera, camera offset, tracked pose driver,
@@ -51,6 +51,7 @@ empty headset view always says which of the three possible failures it is.
 |---|---|
 | `VrConfig` | reads `vr_config.json` from the device; see [Configuration](configuration.md) |
 | `RosBridge` | rosbridge v2 over one WebSocket: advertise, publish, subscribe, reconnect |
+| `VrDiscovery` | a UDP broadcast asking the PC for its address, when the configured one fails |
 | `FrameConv` | the only place handedness is converted |
 | `ClockSync` | estimates the offset between the headset clock and the PC's ROS clock |
 | `VrInputPublisher` | head and controller grip poses, buttons and axes |
@@ -167,6 +168,30 @@ Editor that has focused at least once since. Capture paths must be inside the pr
 
 Bear in mind the Editor scene is not the headset: it has its own lighting environment, so
 brightness there says little about what VR will look like.
+
+## Running the app on the PC
+
+The same scene builds as a desktop player, which is the quickest way to watch the app actually
+start: the welcome panel, the rosbridge connection and discovery all behave as they do on the
+device, in a window.
+
+```bash
+$UNITY -batchmode -quit -nographics -projectPath unity/VrRos \
+  -buildTarget Linux64 -executeMethod VrRosSetup.BuildLinux   # -> Build/Linux/VrRos
+
+ros2 launch vr tracking.launch.py &
+./unity/VrRos/Build/Linux/VrRos -screen-width 1600 -screen-height 900 -screen-fullscreen 0
+```
+
+Unlike the renders above this is a real player, so it writes and reads its own
+`vr_config.json` — under `~/.config/unity3d/vamsi/VrRos/`, not on any device — and it will
+discover and save the PC's address there like any other client.
+
+Standalone has no XR loader configured, which is what makes this work: XR never initialises, so
+the camera renders flat instead of waiting for an OpenXR runtime that a PC does not have. The
+cost is that nothing is head-tracked and no controller exists, so this shows startup, networking
+and anything on the panel — not interaction. Eye gaze is compiled out entirely: VIVE's assembly
+does not cover Linux, so `GazePublisher` logs that it has no tracker and publishes nothing.
 
 ## Deploying
 

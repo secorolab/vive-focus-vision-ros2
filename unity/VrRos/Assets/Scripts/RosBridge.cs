@@ -29,10 +29,16 @@ namespace VrRos
 
         public int port = 9090;
 
+        [Tooltip("UDP port the PC's vr_discovery answers on; 0 makes the configured host final")]
+        public int discoveryPort = 9091;
+
         [Tooltip("Seconds between reconnect attempts")]
         public float reconnectInterval = 2f;
 
         public bool IsConnected => _ws != null && _ws.State == WebSocketState.Open;
+
+        /// <summary>True while a discovery probe is out; the welcome panel says so.</summary>
+        public bool IsSearching => _probing;
 
         [Tooltip("Most handler calls per frame; the rest wait, so a backlog cannot stall a frame")]
         public int maxHandlersPerFrame = 24;
@@ -47,6 +53,9 @@ namespace VrRos
         private readonly List<(string topic, string type)> _subscribed =
             new List<(string, string)>();
         private float _nextConnectAttempt;
+        private bool _probing;
+        private volatile VrDiscovery.Reply _found;
+        private int _failures;
 
         private void Start()
         {
@@ -54,15 +63,26 @@ namespace VrRos
             {
                 host = config.Active.host;
                 port = config.Active.port;
+                discoveryPort = config.Active.discoveryPort;
             }
         }
 
         private void Update()
         {
+            if (_found != null) AdoptDiscovered();
+
             if (!IsConnected && Time.unscaledTime >= _nextConnectAttempt)
             {
                 _nextConnectAttempt = Time.unscaledTime + reconnectInterval;
                 _ = ConnectAsync();
+
+                /* Only once the configured address has actually failed. Asking first would let
+                 * whatever answers the broadcast outrank a deliberate setting. */
+                if (_failures > 0 && discoveryPort > 0 && !_probing)
+                {
+                    _probing = true;
+                    _ = Task.Run(ProbeAsync);
+                }
             }
 
             /* Parsing and decoding already happened on the socket task. What is left here is only
@@ -204,6 +224,36 @@ namespace VrRos
         public void CallService(string service) =>
             SendRaw($"{{\"op\":\"call_service\",\"service\":\"{service}\",\"args\":{{}}}}");
 
+        /// <summary>Runs off the main thread; the answer is picked up by the next Update.</summary>
+        private async Task ProbeAsync()
+        {
+            try
+            {
+                _found = await VrDiscovery.ProbeAsync(discoveryPort, 500).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"discovery: probe failed: {e.Message}");
+            }
+            finally
+            {
+                _probing = false;
+            }
+        }
+
+        private void AdoptDiscovered()
+        {
+            VrDiscovery.Reply found = _found;
+            _found = null;
+            if (found.host == host && found.port == port) return;
+
+            Debug.Log($"discovery: {host}:{port} -> {found.host}:{found.port}");
+            host = found.host;
+            port = found.port;
+            if (config != null) config.SaveHost(host, port);
+            _nextConnectAttempt = 0f; // this frame, not two seconds from now
+        }
+
         private async Task ConnectAsync()
         {
             try
@@ -214,6 +264,7 @@ namespace VrRos
                 _cancel = new CancellationTokenSource();
                 await _ws.ConnectAsync(new Uri($"ws://{host}:{port}"), _cancel.Token);
                 Debug.Log($"rosbridge: connected to ws://{host}:{port}");
+                _failures = 0;
 
                 // A reconnect has to restate everything; the server keeps no client state.
                 foreach (var (topic, type) in _advertised)
@@ -234,6 +285,7 @@ namespace VrRos
             }
             catch (Exception e)
             {
+                _failures++;
                 Debug.LogWarning($"rosbridge: connect failed: {e.Message}");
             }
         }

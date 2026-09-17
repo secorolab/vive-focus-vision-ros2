@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Vamsi Kalagaturu
+# See LICENSE for details.
+
+"""Answers the headset's "where is rosbridge?" probe, so the PC's address stops being a setting.
+
+The client broadcasts a probe and this replies unicast with the address to connect to. That
+direction is deliberate: Android needs a WifiManager.MulticastLock to receive broadcast or
+multicast traffic, but not to receive a reply addressed to the socket it just sent from. ALVR
+discovers its server the same way; mDNS is the standards-based alternative and needs Avahi
+reachable from the headset, which a campus network usually does not allow.
+
+Run it alongside rosbridge (tracking.launch.py does) or on its own:
+    ros2 run vr vr_discovery --port 9091 --rosbridge-port 9090
+"""
+
+import argparse
+import json
+import socket
+import sys
+
+# Both ends check it, so the client ignores whatever else broadcasts on this port, and a
+# protocol change is a version bump rather than a silent misparse.
+MAGIC = b"vrros-discover-1"
+
+
+def address_facing(peer: str) -> str:
+    """This machine's address on the route to peer, which is the one that peer can reach.
+
+    Binding to 0.0.0.0 means the receiving socket cannot say which interface a probe arrived
+    on, and a laptop with Wi-Fi, Ethernet and docker0 has several answers to choose from.
+    Connecting a UDP socket assigns a source address without sending anything.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect((peer, 1))
+        return probe.getsockname()[0]
+    finally:
+        probe.close()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", type=int, default=9091, help="UDP port to listen on")
+    parser.add_argument("--rosbridge-port", type=int, default=9090,
+                        help="port to advertise; must match the rosbridge_websocket port")
+    # Tolerates --ros-args so the script can be launched like any other node.
+    args, _ = parser.parse_known_args()
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("", args.port))
+    print(f"discovery: listening on udp/{args.port}, advertising rosbridge on "
+          f"{args.rosbridge_port}", flush=True)
+
+    while True:
+        try:
+            data, sender = sock.recvfrom(256)
+        except OSError as exc:
+            print(f"discovery: {exc}", file=sys.stderr, flush=True)
+            return 1
+        if not data.startswith(MAGIC):
+            continue
+        reply = {"host": address_facing(sender[0]), "port": args.rosbridge_port}
+        sock.sendto(MAGIC + b" " + json.dumps(reply).encode(), sender)
+        print(f"discovery: {sender[0]} -> {reply['host']}:{reply['port']}", flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        pass

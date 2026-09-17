@@ -2,11 +2,19 @@
 // Copyright (c) 2026 Vamsi Kalagaturu
 // See LICENSE for details.
 
+// VIVE.OpenXR's asmdef lists exactly these platforms, so a Linux player cannot reference the
+// eye tracker at all; see VrRosSetup.BuildLinux.
+#if UNITY_ANDROID || UNITY_EDITOR || UNITY_STANDALONE_WIN
+#define VR_EYE_TRACKER
+#endif
+
 using System.Globalization;
 using System.Text;
 using UnityEngine;
+#if VR_EYE_TRACKER
 using UnityEngine.XR.OpenXR;
 using VIVE.OpenXR.EyeTracker;
+#endif
 
 namespace VrRos
 {
@@ -39,7 +47,6 @@ namespace VrRos
         public Transform rig;
 
         private readonly StringBuilder _sb = new StringBuilder(1024);
-        private ViveEyeTracker _feature;
         private float _nextPublish;
         private bool _warned;
 
@@ -52,6 +59,9 @@ namespace VrRos
                 rateHz = config.Active.gazeRateHz;
             }
 
+#if !VR_EYE_TRACKER
+            Debug.LogWarning("gaze: no eye tracker on this platform; no gaze will be published");
+#else
             _feature = OpenXRSettings.Instance != null
                 ? OpenXRSettings.Instance.GetFeature<ViveEyeTracker>()
                 : null;
@@ -62,7 +72,11 @@ namespace VrRos
                 return;
             }
             bridge.Advertise($"{rawNs}/gaze", "vr/msg/EyeGaze");
+#endif
         }
+
+#if VR_EYE_TRACKER
+        private ViveEyeTracker _feature;
 
         private void Update()
         {
@@ -132,6 +146,7 @@ namespace VrRos
                .Append("},\"orientation\":{\"x\":").Append(F(q.x)).Append(",\"y\":").Append(F(q.y))
                .Append(",\"z\":").Append(F(q.z)).Append(",\"w\":").Append(F(q.w)).Append("}}");
         }
+#endif
 
         private static string F(float v) => v.ToString("G7", CultureInfo.InvariantCulture);
 

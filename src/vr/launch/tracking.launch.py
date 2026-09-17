@@ -14,7 +14,8 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 from launch_ros.parameter_descriptions import ParameterValue
@@ -30,6 +31,11 @@ def generate_launch_description():
             description="topics, frames, rates and calibration",
         ),
         DeclareLaunchArgument("rosbridge_port", default_value="9090"),
+        DeclareLaunchArgument(
+            "discovery_port",
+            default_value="9091",
+            description="UDP port the headset probes to find this machine; 0 disables it",
+        ),
         DeclareLaunchArgument(
             "container_name",
             default_value="vr_container",
@@ -87,6 +93,21 @@ def generate_launch_description():
                         )
                     }
                 ],
+            ),
+            # Answers the headset's broadcast with this machine's address, so the client finds
+            # rosbridge without anyone editing vr_config.json.
+            Node(
+                package="vr",
+                executable="vr_discovery",
+                name="vr_discovery",
+                output="screen",
+                arguments=[
+                    "--port", LaunchConfiguration("discovery_port"),
+                    "--rosbridge-port", LaunchConfiguration("rosbridge_port"),
+                ],
+                condition=IfCondition(
+                    PythonExpression([LaunchConfiguration("discovery_port"), " != 0"])
+                ),
             ),
             container,
         ]

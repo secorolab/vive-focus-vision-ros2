@@ -145,6 +145,7 @@ install(TARGETS vr_scene vr_components
   RUNTIME DESTINATION bin
 )
 install(TARGETS scene_export DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/vr_discovery DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_vr HAS_LIBRARY_TARGET)

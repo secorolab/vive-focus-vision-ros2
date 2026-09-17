@@ -108,6 +108,7 @@ adb push vr_config.json /sdcard/Android/data/sh.vamsi.vrros/files/vr_config.json
 {
   "host": "192.168.2.118",
   "port": 9090,
+  "discoveryPort": 9091,
   "rawNs": "/vr/raw",
   "outNs": "/vr",
   "maxRateHz": 90.0,
@@ -144,6 +145,32 @@ fields: anything added since is filled from the defaults, not from the file.
 
 `VR_HOST` at build time only seeds the default that ships inside the APK. The file wins at
 runtime.
+
+## Finding the PC
+
+The address in that file goes stale whenever the PC changes network, so the client does not
+depend on it being right. When a connection attempt fails it broadcasts a probe on UDP
+`discoveryPort`, the `vr_discovery` process next to rosbridge answers with the address it is
+reachable at, and the client connects there and writes it back to `vr_config.json` — so it is
+wrong once, and only until the first retry.
+
+```bash
+ros2 launch vr tracking.launch.py discovery_port:=9091   # the default; 0 turns it off
+ros2 run vr vr_discovery --port 9091 --rosbridge-port 9090   # on its own
+```
+
+The order matters: the file is tried first and discovery only runs after it fails, so a
+deliberate address is never overruled by whatever else answers the broadcast. Setting
+`discoveryPort` to `0` on the device disables probing and makes the file final.
+
+Broadcast does not cross a router and access points with client isolation drop it, so this is a
+convenience and not a guarantee — when it cannot work, `adb push` of `vr_config.json` still does.
+It is the client that broadcasts and the PC that replies, because Android needs a
+`WifiManager.MulticastLock` to receive traffic not addressed to the device but nothing at all to
+receive the answer to its own packet. mDNS is the standards-based alternative
+([RFC 6763](https://www.rfc-editor.org/rfc/rfc6763)) and is what WiVRn uses; it needs Avahi
+reachable from the headset, which is one more thing to be blocked. ALVR discovers its server
+with the same broadcast-and-reply shape used here.
 
 ## OpenXR features
 

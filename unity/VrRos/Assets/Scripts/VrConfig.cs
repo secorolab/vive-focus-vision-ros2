@@ -28,6 +28,9 @@ namespace VrRos
         {
             public string host = "192.168.1.10";
             public int port = 9090;
+
+            // Where the PC's vr_discovery answers. 0 turns discovery off and makes host final.
+            public int discoveryPort = 9091;
             public string rawNs = "/vr/raw";
             public string outNs = "/vr";
             public float maxRateHz = 90f;
@@ -88,6 +91,23 @@ namespace VrRos
             HandMode = Active.inputMode.Equals("hands", StringComparison.OrdinalIgnoreCase);
             Debug.Log($"config: {Active.host}:{Active.port} raw={Active.rawNs} out={Active.outNs}"
                       + $" mode={Active.inputMode} ({Path})");
+        }
+
+        /// <summary>Writes a discovered address back, so the next start connects without probing.</summary>
+        public void SaveHost(string host, int port)
+        {
+            if (Active == null) return;
+            Active.host = host;
+            Active.port = port;
+            try
+            {
+                File.WriteAllText(Path, JsonUtility.ToJson(Active, true));
+                Debug.Log($"config: saved {host}:{port} to {Path}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"config: could not write {Path}: {e.Message}");
+            }
         }
 
         private Settings Load()
