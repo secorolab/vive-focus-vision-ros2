@@ -149,7 +149,9 @@ adb push vr_config.json /sdcard/Android/data/de.uni_bremen.secoro.vrros/files/vr
 
 `spawnPosition` is in ROS coordinates and decides where the user stands when the app starts.
 Everything is simulated, so this is a free choice — put it clear of the scene rather than inside
-a table.
+a table. It is the fallback: a scene that declares `spawn` in its yaml carries that point in
+its manifest, and the client moves there when the world loads, because one position in the
+device config cannot be right for two worlds.
 
 `inputMode` is `controllers` or `hands`, and is either/or rather than a preference: the runtime
 stops reporting tracked hands while a controller is awake, so running both would leave one set

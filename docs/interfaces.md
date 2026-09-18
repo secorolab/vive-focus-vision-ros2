@@ -186,8 +186,9 @@ This is where most of the subtle bugs in a system like this live, so all of it i
   rotated 180°, negate it. The derivation: with `U` the ROS→Unity map, `R` the export rotation and
   `G` glTFast's flip, the correction is `C = U·R⁻¹·G⁻¹`, whose determinant is +1 — a pure
   rotation — regardless of which axis glTFast chooses to negate.
-- **Frames.** Everything is simulated, so the client is told where it stands: `spawnPosition` in
-  the device config places the rig in the world, and every published pose is transformed by the
+- **Frames.** Everything is simulated, so the client is told where it stands: the `spawn` in the
+  scene's manifest, or failing that `spawnPosition` in the device config, places the rig in the
+  world, and every published pose is transformed by the
   rig before it is sent. Walk five metres and the published hand moves five metres, which is what
   makes reaching for an object work at all. `InputNode`'s `vr_origin → world` calibration is
   therefore identity, and only becomes meaningful if a real robot has to share the frame — see

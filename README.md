@@ -72,7 +72,8 @@ adb push vr_config.json /storage/emulated/0/Android/data/de.uni_bremen.secoro.vr
 adb shell am force-stop de.uni_bremen.secoro.vrros
 ```
 
-Worth knowing: `spawnPosition` and `spawnYawDegrees` put you somewhere else in the world,
+Worth knowing: `spawnPosition` and `spawnYawDegrees` put you somewhere else in a world that
+declares no spawn point of its own,
 `eyeHeight` makes the table the right height, `inputMode` picks controllers or hands, and the
 `*RateHz` fields throttle the uplink. `host` is a cache the app maintains itself — discovery
 overwrites it whenever the configured address fails, so pin it only to choose between PCs that

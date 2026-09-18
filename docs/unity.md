@@ -69,7 +69,7 @@ empty headset view always says which of the three possible failures it is.
 | `GazePublisher` | per-eye gaze and pupil via `ViveEyeTracker` |
 | `SceneLoader` | `<out>/scene` → HTTP fetch → glTFast → one holder per body, plus the ground |
 | `BodyPoseApplier` | `<out>/body_poses` → transforms |
-| `VrLocomotion` | stick locomotion, the spawn point and recentring |
+| `VrLocomotion` | stick locomotion, the spawn point and recentring; keyboard and mouse when no headset is active |
 | `VrPointer` | the selection ray, the highlight, and `<raw>/<hand>/target` |
 | `VrBodyTag` | a body's manifest index, so a raycast hit can be named |
 | `VrDeviceVisuals` | VIVE's own controller and hand models, one set or the other |

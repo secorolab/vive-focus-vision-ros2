@@ -52,7 +52,10 @@ python3 scripts/build_scenes.py --only kitchen --force
 Each lands in `~/.cache/vive_vr_ros2/scenes/<name>/` as `scene.glb` and `manifest.json`, and is
 skipped when already built. A scene is either a `model`, an MJCF to export, or a `generator`
 that produces one and prints its path — `build_scenes.py` does the exporting either way, so
-there is one place that decides where a scene lands.
+there is one place that decides where a scene lands. Two more keys are optional: `groups`
+picks the geom groups to export, which the kitchen needs because RoboCasa keeps its collision
+boxes opaque in group 0, and `spawn` (`xyz` in ROS coordinates, `yaw_deg`) is written into the
+manifest so the client starts the user somewhere sensible in that world.
 
 The kitchen is generated because RoboCasa assembles fixtures into an arena only when an
 environment is constructed. `scripts/make_kitchen.py` does that, then adds objects with a
