@@ -3,9 +3,27 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace vive_vr_ros2 {
+namespace {
+
+/* Past this the tool is not on its target yet, which a large hand movement legitimately is. */
+constexpr double kOutOfReachPosition = 0.05; // [m]
+constexpr double kOutOfReachRotation = 0.20; // [rad]
+
+/* Only once the gap has stopped closing for this long has the arm actually run out of reach. */
+constexpr double kProgressWindow = 0.5;      // [s]
+constexpr double kProgressPosition = 1e-3;   // [m]
+constexpr double kProgressRotation = 1e-2;   // [rad]
+
+} // namespace
+
+double OpenArmTeleop::age(Clock::time_point since)
+{
+    return std::chrono::duration<double>(Clock::now() - since).count();
+}
 
 OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
     : node_(node), model_(model), data_(data), ik_(model)
@@ -13,12 +31,18 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
     scale_ = node.declare_parameter<double>("openarm.translation_scale", 0.25);
     radius_ = node.declare_parameter<double>("openarm.max_translation_m", 0.15);
     timeout_ = node.declare_parameter<double>("openarm.timeout_s", 0.25);
-    speed_ = node.declare_parameter<double>("openarm.joint_speed_rad_s", 0.35);
     finger_speed_ = node.declare_parameter<double>("openarm.finger_speed_m_s", 0.02);
     rotation_limit_ = node.declare_parameter<double>("openarm.max_rotation_rad", 1.75);
     alignment_tolerance_ = node.declare_parameter<double>("openarm.alignment_tolerance_rad", 0.20);
+    position_tolerance_ = node.declare_parameter<double>("openarm.alignment_tolerance_m", 0.15);
     alignment_configured_ = node.declare_parameter<bool>("openarm.alignment_configured", false);
     require_alignment_ = node.declare_parameter<bool>("openarm.require_alignment", true);
+    gains_.joint_speed = node.declare_parameter<double>("openarm.joint_speed_rad_s", 1.5);
+    gains_.max_linear = node.declare_parameter<double>("openarm.max_linear_speed_m_s", 0.5);
+    gains_.max_angular = node.declare_parameter<double>("openarm.max_angular_speed_rad_s", 2.0);
+    gains_.tracking_tau = node.declare_parameter<double>("openarm.tracking_time_constant_s", 0.12);
+    gains_.damping = node.declare_parameter<double>("openarm.damping", 0.05);
+    gains_.posture_gain = node.declare_parameter<double>("openarm.posture_gain_hz", 0.5);
     const auto pairing = node.declare_parameter<std::vector<double>>(
       "openarm.controller_to_tool_xyzw", {0.0, 0.0, 0.0, 1.0});
     if (pairing.size() != 4) throw std::runtime_error("Invalid controller/tool pairing");
@@ -27,8 +51,14 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
     for (double v : pairing_q_) if (!std::isfinite(v)) throw std::runtime_error("Invalid pairing");
     if (std::abs(mju_norm(pairing_q_, 4) - 1.0) > 0.01) throw std::runtime_error("Invalid pairing norm");
     mju_normalize4(pairing_q_);
-    for (double value : { scale_, radius_, timeout_, speed_, finger_speed_, rotation_limit_, alignment_tolerance_ }) {
+    for (double value : { scale_, radius_, timeout_, finger_speed_, rotation_limit_,
+                          alignment_tolerance_, position_tolerance_,
+                          gains_.joint_speed, gains_.max_linear,
+                          gains_.max_angular, gains_.tracking_tau, gains_.damping }) {
         if (!std::isfinite(value) || value <= 0) throw std::runtime_error("Invalid OpenArm limits");
+    }
+    if (!std::isfinite(gains_.posture_gain) || gains_.posture_gain < 0) {
+        throw std::runtime_error("Invalid OpenArm posture gain");
     }
     for (int i = 0; i < 2; ++i) {
         const auto name = "openarm_right_finger_joint" + std::to_string(i + 1);
@@ -51,7 +81,7 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
       [this](std_msgs::msg::Float32::SharedPtr msg) { gripper(msg->data); });
     ee_pub_ = node.create_publisher<geometry_msgs::msg::PoseStamped>(
       node.get_parameter("out_ns").as_string() + "/sim/right/ee_pose", rclcpp::SensorDataQoS());
-    status_pub_ = node.create_publisher<std_msgs::msg::String>(ns + "/status", 1);
+    status_pub_ = node.create_publisher<vive_vr_ros2::msg::TeleopStatus>(ns + "/status", 1);
     controller_sub_ = node.create_subscription<geometry_msgs::msg::PoseStamped>(
       node.get_parameter("out_ns").as_string() + "/right/pose", rclcpp::SensorDataQoS().keep_last(1),
       [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) { controller(*msg); });
@@ -61,47 +91,65 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
 
 void OpenArmTeleop::controller(const geometry_msgs::msg::PoseStamped &msg)
 {
-    const int64_t stamp = rclcpp::Time(msg.header.stamp).nanoseconds();
-    const double age = (node_.now().nanoseconds() - stamp) * 1e-9;
-    have_controller_ = false;
-    if (msg.header.frame_id != "world" || stamp <= controller_stamp_ || age < -0.05 || age > timeout_) return;
+    if (msg.header.frame_id != "world") {
+        RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000,
+                             "Right controller pose is in frame '%s', not 'world'; ignored",
+                             msg.header.frame_id.c_str());
+        return;
+    }
     const auto &q = msg.pose.orientation;
+    const auto &p = msg.pose.position;
     mjtNum quat[4] = {q.w, q.x, q.y, q.z};
+    mjtNum point[3] = {p.x, p.y, p.z};
     for (double v : quat) if (!std::isfinite(v)) return;
+    for (double v : point) if (!std::isfinite(v)) return;
     if (std::abs(mju_norm(quat, 4) - 1.0) > 0.1) return;
     mju_normalize4(quat);
     mju_copy4(controller_q_, quat);
-    controller_stamp_ = stamp;
+    mju_copy3(controller_p_, point);
     controller_received_ = Clock::now();
     have_controller_ = true;
 }
 
-bool OpenArmTeleop::aligned()
+OpenArmTeleop::Match OpenArmTeleop::match()
 {
-    if (!alignment_configured_ || !have_controller_ ||
-        std::chrono::duration<double>(Clock::now() - controller_received_).count() > timeout_) return false;
+    Match out;
+    if (!have_controller_ || age(controller_received_) > timeout_) return out;
     mj_kinematics(model_, data_);
-    mjtNum mapped[4];
+    mjtNum mapped[4], gap[3];
     mju_mulQuat(mapped, controller_q_, pairing_q_);
     const double dot = mju_dot(mapped, data_->xquat + 4 * ik_.tcp, 4);
-    return 2 * std::acos(std::clamp(std::abs(dot), 0.0, 1.0)) <= alignment_tolerance_;
+    mju_sub3(gap, controller_p_, data_->xpos + 3 * ik_.tcp);
+    out.rotation = 2 * std::acos(std::clamp(std::abs(dot), 0.0, 1.0));
+    out.position = mju_norm3(gap);
+    out.live = true;
+    return out;
+}
+
+bool OpenArmTeleop::aligned()
+{
+    if (!alignment_configured_) return false;
+    const Match m = match();
+    return m.live && m.rotation <= alignment_tolerance_ && m.position <= position_tolerance_;
 }
 
 void OpenArmTeleop::hold()
 {
+    ik_.sync(data_);
     for (int i = 0; i < 7; ++i) data_->ctrl[ik_.motors[i]] = data_->qpos[ik_.qpos[i]];
     for (int i = 0; i < 2; ++i) data_->ctrl[finger_motors_[i]] = data_->qpos[fingers_[i]];
     finger_target_ = data_->qpos[fingers_[0]];
     active_ = false;
     have_target_ = false;
     have_trigger_ = false;
+    tracking_ = {};
+    stalled_ = false;
 }
 
 void OpenArmTeleop::reset()
 {
     hold();
     released_ = false;
-    last_stamp_ = 0;
 }
 
 void OpenArmTeleop::clutch(bool down)
@@ -114,22 +162,23 @@ void OpenArmTeleop::clutch(bool down)
     if (active_ || !released_) return;
     released_ = false;
     if (require_alignment_ && !aligned()) return;
-    ik_reachable_ = true;
     mj_forward(model_, data_);
+    ik_.sync(data_);
     mju_copy3(anchor_p_, data_->xpos + 3 * ik_.tcp);
     mju_copy4(anchor_q_, data_->xquat + 4 * ik_.tcp);
-    press_stamp_ = node_.now().nanoseconds();
-    last_stamp_ = 0;
     last_delta_ = Clock::now();
     active_ = true;
     have_target_ = false;
     have_trigger_ = false;
+    tracking_ = {};
+    stalled_ = false;
+    progress_at_ = Clock::now();
+    best_position_ = best_rotation_ = std::numeric_limits<double>::max();
 }
 
 void OpenArmTeleop::gripper(float value)
 {
-    if (!active_ || !have_target_ || !std::isfinite(value) ||
-        std::chrono::duration<double>(Clock::now() - last_delta_).count() > timeout_) return;
+    if (!active_ || !have_target_ || !std::isfinite(value) || age(last_delta_) > timeout_) return;
     const double trigger = std::clamp(double(value), 0.0, 1.0);
     // Re-engaging the clutch must not apply the resting trigger value and open a held object.
     // Capture the first sample, then follow actual trigger changes (not grip-button events).
@@ -146,11 +195,12 @@ void OpenArmTeleop::gripper(float value)
 void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
 {
     if (!active_) return;
-    const int64_t stamp = rclcpp::Time(msg.header.stamp).nanoseconds();
-    const double age = (node_.now().nanoseconds() - stamp) * 1e-9;
-    if (msg.header.frame_id != "right_tool_ref" || msg.child_frame_id != "right_tool_cmd" ||
-        stamp <= last_stamp_ || stamp < press_stamp_ - int64_t(timeout_ * 1e9) ||
-        age < -0.05 || age > timeout_) return;
+    if (msg.header.frame_id != "right_tool_ref" || msg.child_frame_id != "right_tool_cmd") {
+        RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000,
+                             "Right delta names frames '%s'->'%s'; ignored",
+                             msg.header.frame_id.c_str(), msg.child_frame_id.c_str());
+        return;
+    }
     const auto &t = msg.transform.translation;
     const auto &q = msg.transform.rotation;
     mjtNum p[3] = { t.x * scale_, t.y * scale_, t.z * scale_ };
@@ -161,6 +211,8 @@ void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
     if (norm < 0.9 || norm > 1.1) { hold(); return; }
     mju_normalize4(quat);
     const double angle = 2 * std::acos(std::clamp(std::abs(quat[0]), 0.0, 1.0));
+    /* The first delta of a press is against a reference captured at it: anything but a
+     * near-identity one belongs to the previous press. */
     if (mju_norm3(p) > radius_ || angle > rotation_limit_ ||
         (!have_target_ && (mju_norm3(p) > 0.025 || angle > 0.15))) {
         hold();
@@ -171,35 +223,38 @@ void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
     mju_addTo3(target_p_, anchor_p_);
     mju_mulQuat(target_q_, anchor_q_, quat);
     last_delta_ = Clock::now();
-    last_stamp_ = stamp;
     have_target_ = true;
 }
 
 void OpenArmTeleop::tick(double dt)
 {
-    if (active_ && std::chrono::duration<double>(Clock::now() - last_delta_).count() > timeout_) {
+    if (active_ && age(last_delta_) > timeout_) {
         hold();
         RCLCPP_WARN(node_.get_logger(), "Right tracking timeout: holding; release and re-grip");
     }
     if (active_ && have_target_) {
-        std::array<double, 7> solution;
-        ik_reachable_ = ik_.solve(data_, target_p_, target_q_, solution);
-        if (ik_reachable_) {
-            for (int i = 0; i < 7; ++i) {
-                auto &command = data_->ctrl[ik_.motors[i]];
-                const double position = data_->qpos[ik_.qpos[i]];
-                const double goal = std::clamp(solution[i], position - 0.10, position + 0.10);
-                command += std::clamp(goal - command, -speed_ * dt, speed_ * dt);
-            }
-        } else {
-            for (int i = 0; i < 7; ++i) data_->ctrl[ik_.motors[i]] = data_->qpos[ik_.qpos[i]];
-            RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000,
-                                "Right IK target unreachable: holding arm; move closer or re-grip");
-        }
-        // Gripper motion is independent of whether the arm's target is reachable.
+        tracking_ = ik_.step(target_p_, target_q_, dt, gains_);
+        const auto &command = ik_.command();
+        for (int i = 0; i < 7; ++i) data_->ctrl[ik_.motors[i]] = command[i];
         for (int i = 0; i < 2; ++i) {
-            auto &command = data_->ctrl[finger_motors_[i]];
-            command += std::clamp(finger_target_ - command, -finger_speed_ * dt, finger_speed_ * dt);
+            auto &finger = data_->ctrl[finger_motors_[i]];
+            finger += std::clamp(finger_target_ - finger, -finger_speed_ * dt, finger_speed_ * dt);
+        }
+        if (tracking_.position_error <= kOutOfReachPosition &&
+            tracking_.rotation_error <= kOutOfReachRotation) {
+            stalled_ = false;
+        } else if (tracking_.position_error < best_position_ - kProgressPosition ||
+                   tracking_.rotation_error < best_rotation_ - kProgressRotation) {
+            best_position_ = tracking_.position_error;
+            best_rotation_ = tracking_.rotation_error;
+            progress_at_ = Clock::now();
+            stalled_ = false;
+        } else if (age(progress_at_) > kProgressWindow && !stalled_) {
+            stalled_ = true;
+            RCLCPP_WARN(node_.get_logger(),
+                        "Right tool has stopped closing on its target, %.0f mm and %.0f deg away; "
+                        "the arm is as close as it can reach",
+                        tracking_.position_error * 1e3, tracking_.rotation_error * 180.0 / mjPI);
         }
     }
     mj_kinematics(model_, data_);
@@ -216,13 +271,22 @@ void OpenArmTeleop::tick(double dt)
     pose.pose.orientation.y = q[2];
     pose.pose.orientation.z = q[3];
     ee_pub_->publish(pose);
-    std_msgs::msg::String status;
-    if (active_) status.data = !have_target_ ? "waiting_delta" : ik_reachable_ ? "engaged" : "unreachable";
-    else if (!released_) status.data = "release_grip";
-    else if (!alignment_configured_) status.data = "calibration_required";
-    else if (!have_controller_ || std::chrono::duration<double>(Clock::now()-controller_received_).count() > timeout_)
-        status.data = "tracking_lost";
-    else status.data = aligned() ? "ready" : "align_orientation";
+    const Match m = match();
+    vive_vr_ros2::msg::TeleopStatus status;
+    status.header.stamp = pose.header.stamp;
+    status.header.frame_id = "world";
+    status.position_error_m = m.position;
+    status.rotation_error_rad = m.rotation;
+    status.position_tolerance_m = position_tolerance_;
+    status.rotation_tolerance_rad = alignment_tolerance_;
+    if (active_) status.state = !have_target_ ? "waiting_delta"
+                              : stalled_      ? "unreachable"
+                                              : "engaged";
+    else if (!released_) status.state = "release_grip";
+    else if (!alignment_configured_) status.state = "calibration_required";
+    else if (!m.live) status.state = "tracking_lost";
+    else status.state = aligned() ? "ready" : "align_pose";
+    status.ready = status.state == "ready";
     status_pub_->publish(status);
 }
 

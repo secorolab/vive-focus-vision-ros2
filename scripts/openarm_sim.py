@@ -73,11 +73,15 @@ def fix_mesh_references(urdf, model):
     assets = model.find('asset')
     meshes = {m.get('name'): m for m in assets.findall('mesh')}
     geoms = {g.get('name'): g for g in model.iter('geom')}
-    for collision in urdf.findall('link/collision'):
+    # Visuals as well as collisions: a bimanual description mirrors one arm from the other's
+    # meshes, so a reused asset puts the wrong handedness on the arm the operator is driving.
+    for collision in [*urdf.findall('link/collision'), *urdf.findall('link/visual')]:
         source = collision.find('geometry/mesh')
-        if source is None:
+        if source is None or collision.get('name') not in geoms:
             continue
         geom = geoms[collision.get('name')]
+        if geom.get('mesh') not in meshes:
+            continue
         current = meshes[geom.get('mesh')]
         scale = source.get('scale', '1 1 1')
         expected = tuple(map(float, scale.split()))
@@ -119,9 +123,6 @@ def prepare(args):
         'ros2_control:=false', '-o', source)
 
     urdf = ET.parse(source).getroot()
-    for link in urdf.findall('link'):
-        for visual in link.findall('visual'):
-            link.remove(visual)
     for mesh in urdf.iter('mesh'):
         name = mesh.get('filename', '')
         prefix = 'package://openarm_description/'
@@ -132,8 +133,9 @@ def prepare(args):
             raise FileNotFoundError(path)
         mesh.set('filename', str(path))
     extension = ET.SubElement(urdf, 'mujoco')
+    # Visuals carry the materials and textures; discarding them drew the arm as collision hulls.
     ET.SubElement(extension, 'compiler', strippath='false', fusestatic='false',
-                  discardvisual='true', balanceinertia='true')
+                  discardvisual='false', balanceinertia='true')
     prepared = folder / 'openarm_v1_mujoco.urdf'
     write_xml(urdf, prepared)
     converted = folder / 'openarm_v1.xml'
@@ -223,8 +225,11 @@ def prepare(args):
 
 
 def export(args):
+    # Group 1 only: the URDF importer puts visuals there and collision hulls in group 0, and
+    # exporting both would draw the hulls over the meshes.
     run('ros2', 'run', 'vive_vr_ros2', 'scene_export',
-        args.output / 'openarm_v1_controlled.xml', '-o', args.output / 'vr_scene_controlled')
+        args.output / 'openarm_v1_controlled.xml', '-o', args.output / 'vr_scene_controlled',
+        '--groups', '1')
 
 
 def launch(args):

@@ -60,9 +60,9 @@ python3 scripts/fetch_vive_plugin.py
 
 ## OpenArm V1 teleoperation
 
-The OpenArm application drives the **right arm in MuJoCo** from the right controller.
-Orocos KDL solves all seven arm joints for the gripper position and orientation; the left arm
-holds its home pose. This is a motion-test simulation with gravity and contacts disabled,
+The OpenArm application drives the **right arm in MuJoCo** from the right controller. A
+resolved-rate servo over the Orocos KDL Jacobian moves all seven arm joints to follow the
+gripper position and orientation; the left arm holds its home pose. This is a motion-test simulation with gravity and contacts disabled,
 not physical robot control or a grasping simulation. Your elbow is not tracked, so the robot
 can use a different elbow posture to reach the same gripper pose.
 
@@ -72,7 +72,8 @@ The commands below use **Zsh**, `~/vive_vr_ws` for the ROS workspace, and
 For Bash, use `setup.bash` instead of `setup.zsh`. Install the base dependencies using
 [Installation](docs/install.md) first. The helper expects the OpenArm V1 description at
 `~/openarm_ws/src/openarm_description`; see [OpenArm setup](docs/openarm_sim.md) for path overrides.
-An existing compatible headset app works without an APK rebuild for these PC-side changes.
+An existing headset app still runs the PC-side changes; rebuild the APK to also pick up the
+clock fix in [Known limits](docs/limits.md), which recorded data needs but the arm no longer does.
 
 ### Build and prepare once
 
@@ -113,12 +114,11 @@ python3 scripts/openarm_sim.py launch --teleop --align --delay 10
    robot gripper, with your chosen controller tip direction pointing down.
 3. Hold still for at least one second. The script captures alignment and automatically restarts
    the stack. Wait for the headset to reconnect and the robot to reappear.
-4. Match the gripper orientation, then press and hold the right side grip. Start with a small
-   hand movement and wrist rotation. Release the grip to hold position.
+4. Bring your hand to the gripper until it turns green, then press and hold the right side grip.
+   Start with a small hand movement and wrist rotation. Release the grip to hold position.
 
 Keep the terminal open while using VR. This one launch runs the robot simulation, ROS bridge,
-discovery server and scene server. **Ctrl+C stops them all.** There is no green indicator or
-additional headset plugin required for this workflow.
+discovery server and scene server. **Ctrl+C stops them all.**
 
 For later sessions with the same controller grip and orientation pairing, reuse the saved
 alignment instead of capturing again:
@@ -135,11 +135,12 @@ python3 scripts/openarm_sim.py launch --teleop
 | Release the side grip | Hold the arm; re-grip starts a new relative movement. |
 
 Robot reach, joint limits and speed limits still apply. The generated configuration bounds
-translation to 1 m per press. Engagement requires a saved alignment and fresh controller
-orientation within about 11 degrees of the robot gripper. If it does not engage, release the
-side grip, match the gripper orientation and press again. Unreachable targets hold the arm;
-move closer or release and re-grip. Position is relative to each grip press, not an absolute
-hand-to-robot position calibration.
+translation to 1 m per press. Engagement requires a saved alignment and a fresh controller pose
+within about 11 degrees and 15 cm of the robot gripper. If it does not engage, release the
+side grip, bring your hand to the gripper and press again: the gripper tints red, then amber as
+you close in, then green when a press will take. Past its reach the arm holds the closest pose
+it can and keeps following; move back towards it and it picks you up again. Motion is relative
+to each grip press, not an absolute hand-to-robot calibration.
 
 ### Connection and diagnostics
 

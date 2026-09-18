@@ -6,24 +6,33 @@
 #include <stdexcept>
 #include <string>
 
+#include <Eigen/Dense>
 #include <kdl/chainfksolverpos_recursive.hpp>
-#include <kdl/chainiksolverpos_lma.hpp>
-#include <kdl/chainiksolverpos_nr_jl.hpp>
-#include <kdl/chainiksolvervel_pinv.hpp>
+#include <kdl/chainjnttojacsolver.hpp>
+#include <kdl/frames.hpp>
+#include <kdl/jacobian.hpp>
 #include <mj_kdl_wrapper/mj_kdl_wrapper.hpp>
 
 namespace vive_vr_ros2 {
+namespace {
+
+/* Smallest singular value at which damping starts being phased in; a length, in m/rad. */
+constexpr double kSingularThreshold = 0.05;
+
+/* Short of the mechanical stop, so the position servo cannot wind up against one. */
+constexpr double kLimitMargin = 0.01;
+
+} // namespace
 
 struct OpenArmIk::Impl
 {
     mjModel *model;
     std::unique_ptr<mjData, decltype(&mj_deleteData)> scratch;
     mj_kdl::Robot robot;
-    KDL::JntArray lower{7}, upper{7};
     std::unique_ptr<KDL::ChainFkSolverPos_recursive> fk;
-    std::unique_ptr<KDL::ChainIkSolverVel_pinv> velocity;
-    std::unique_ptr<KDL::ChainIkSolverPos_NR_JL> bounded;
-    std::unique_ptr<KDL::ChainIkSolverPos_LMA> lma;
+    std::unique_ptr<KDL::ChainJntToJacSolver> jacobian;
+    std::array<double, 7> lower{}, upper{}, middle{}, half_range{};
+    std::array<double, 7> command{};
 
     explicit Impl(mjModel *m) : model(m), scratch(mj_makeData(m), mj_deleteData) {}
 };
@@ -50,64 +59,125 @@ OpenArmIk::OpenArmIk(mjModel *model) : impl_(std::make_unique<Impl>(model))
             model->jnt_type[joints[i]] != mjJNT_HINGE || !model->jnt_limited[joints[i]]) {
             throw std::runtime_error("Unexpected OpenArm joint/actuator: " + name);
         }
-        state.lower(i) = model->jnt_range[2 * joints[i]];
-        state.upper(i) = model->jnt_range[2 * joints[i] + 1];
+        state.lower[i] = model->jnt_range[2 * joints[i]] + kLimitMargin;
+        state.upper[i] = model->jnt_range[2 * joints[i] + 1] - kLimitMargin;
+        if (state.lower[i] >= state.upper[i]) {
+            throw std::runtime_error("OpenArm joint range is too narrow to command: " + name);
+        }
+        state.middle[i] = 0.5 * (state.lower[i] + state.upper[i]);
+        state.half_range[i] = 0.5 * (state.upper[i] - state.lower[i]);
     }
     state.fk = std::make_unique<KDL::ChainFkSolverPos_recursive>(state.robot.chain);
-    state.velocity = std::make_unique<KDL::ChainIkSolverVel_pinv>(state.robot.chain);
-    state.bounded = std::make_unique<KDL::ChainIkSolverPos_NR_JL>(
-      state.robot.chain, state.lower, state.upper, *state.fk, *state.velocity, 200, 1e-5);
-    state.lma = std::make_unique<KDL::ChainIkSolverPos_LMA>(state.robot.chain, 1e-5, 200);
+    state.jacobian = std::make_unique<KDL::ChainJntToJacSolver>(state.robot.chain);
 }
 
 OpenArmIk::~OpenArmIk() = default;
 
-bool OpenArmIk::solve(const mjData *live, const mjtNum *target_p, const mjtNum *target_q,
-                     std::array<double, 7> &solution)
+const std::array<double, 7> &OpenArmIk::command() const { return impl_->command; }
+
+void OpenArmIk::sync(const mjData *live)
 {
-    for (int i = 0; i < 3; ++i) if (!std::isfinite(target_p[i])) return false;
-    for (int i = 0; i < 4; ++i) if (!std::isfinite(target_q[i])) return false;
     auto &state = *impl_;
+    for (int i = 0; i < 7; ++i) {
+        state.command[i] = std::clamp(live->qpos[qpos[i]], state.lower[i], state.upper[i]);
+    }
+}
+
+OpenArmIk::Result OpenArmIk::step(const mjtNum *target_p, const mjtNum *target_q, double dt,
+                                  const Gains &gains)
+{
+    auto &state = *impl_;
+    Result out;
+    for (int i = 0; i < 3; ++i) if (!std::isfinite(target_p[i])) return out;
+    for (int i = 0; i < 4; ++i) if (!std::isfinite(target_q[i])) return out;
+    if (!std::isfinite(dt) || dt <= 0) return out;
+
+    KDL::JntArray q(7);
+    for (int i = 0; i < 7; ++i) q(i) = state.command[i];
+
+    KDL::Frame current;
+    if (state.fk->JntToCart(q, current) < 0) return out;
+
     const KDL::Frame target(
       KDL::Rotation::Quaternion(target_q[1], target_q[2], target_q[3], target_q[0]),
       KDL::Vector(target_p[0], target_p[1], target_p[2]));
-    KDL::JntArray seed(7), result(7);
 
-    // The current state is preferred. A bent seed handles the straight-down singularity;
-    // both attempts are only numerical seeds, never changes to the simulated robot pose.
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        for (int i = 0; i < 7; ++i) seed(i) = live->qpos[qpos[i]];
-        if (attempt == 1) {
-            seed(3) = std::max(0.3, seed(3));
-            seed(6) = std::clamp(seed(6) - 0.3, state.lower(6), state.upper(6));
-        }
-        for (int solver = 0; solver < 2; ++solver) {
-            const int status = solver == 0 ? state.bounded->CartToJnt(seed, target, result)
-                                           : state.lma->CartToJnt(seed, target, result);
-            if (status < 0) continue;
-            bool within_limits = true;
-            for (int i = 0; i < 7; ++i) {
-                within_limits &= std::isfinite(result(i)) && result(i) >= state.lower(i) &&
-                                 result(i) <= state.upper(i);
-            }
-            if (!within_limits) continue;
+    /* Pose error as one twist: translation, and the rotation vector taking current to target. */
+    const KDL::Twist error = KDL::diff(current, target);
 
-            // Validate against MuJoCo, independently of the KDL chain conversion and solver.
-            mj_copyData(state.scratch.get(), state.model, live);
-            for (int i = 0; i < 7; ++i) state.scratch->qpos[qpos[i]] = result(i);
-            mj_kinematics(state.model, state.scratch.get());
-            mjtNum position_error[3], inverse[4], rotation[4], rotation_error[3];
-            mju_sub3(position_error, target_p, state.scratch->xpos + 3 * tcp);
-            mju_negQuat(inverse, state.scratch->xquat + 4 * tcp);
-            mju_mulQuat(rotation, target_q, inverse);
-            if (rotation[0] < 0) for (auto &value : rotation) value = -value;
-            mju_quat2Vel(rotation_error, rotation, 1.0);
-            if (mju_norm3(position_error) > 0.003 || mju_norm3(rotation_error) > 0.04) continue;
-            for (int i = 0; i < 7; ++i) solution[i] = result(i);
-            return true;
-        }
+    Eigen::Matrix<double, 6, 1> twist;
+    for (int i = 0; i < 3; ++i) {
+        twist(i) = error.vel[i] / gains.tracking_tau;
+        twist(i + 3) = error.rot[i] / gains.tracking_tau;
     }
-    return false;
+
+    /* Each half of the twist is scaled as a whole, so bounding the speed never bends the path. */
+    const double linear = twist.head<3>().norm();
+    const double angular = twist.tail<3>().norm();
+    if (linear > gains.max_linear) {
+        twist.head<3>() *= gains.max_linear / linear;
+        out.limited = true;
+    }
+    if (angular > gains.max_angular) {
+        twist.tail<3>() *= gains.max_angular / angular;
+        out.limited = true;
+    }
+
+    KDL::Jacobian jac(7);
+    if (state.jacobian->JntToJac(q, jac) < 0) return out;
+    const Eigen::Matrix<double, 6, 7> J = jac.data;
+
+    /* Damped least squares, damping raised only as a singularity is approached, so tracking
+     * stays exact elsewhere (Nakamura and Hanafusa 1986; Chiaverini, Oriolo and Walker 1994). */
+    const Eigen::JacobiSVD<Eigen::Matrix<double, 6, 7>> svd(
+      J, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    const auto &sigma = svd.singularValues();
+    const double smallest = sigma(sigma.size() - 1);
+    double lambda = 0.0;
+    if (smallest < kSingularThreshold) {
+        const double ratio = smallest / kSingularThreshold;
+        lambda = gains.damping * std::sqrt(1.0 - ratio * ratio);
+        out.limited = true;
+    }
+
+    Eigen::Matrix<double, 7, 6> pseudo = Eigen::Matrix<double, 7, 6>::Zero();
+    for (Eigen::Index i = 0; i < sigma.size(); ++i) {
+        const double s = sigma(i);
+        const double factor = s / (s * s + lambda * lambda);
+        pseudo += factor * svd.matrixV().col(i) * svd.matrixU().col(i).transpose();
+    }
+    Eigen::Matrix<double, 7, 1> qdot = pseudo * twist;
+
+    /* The seventh joint is free once the tool pose is fixed: spend it drifting towards mid-range,
+     * which is the classic joint-limit criterion projected into the null space (Liegeois 1977). */
+    Eigen::Matrix<double, 7, 1> posture;
+    for (int i = 0; i < 7; ++i) {
+        posture(i) = gains.posture_gain * (state.middle[i] - q(i)) / state.half_range[i];
+    }
+    qdot += (Eigen::Matrix<double, 7, 7>::Identity() - pseudo * J) * posture;
+
+    if (!qdot.allFinite()) return out;
+
+    /* One scale for all seven, because per-joint clipping would change the tool's direction. */
+    const double fastest = qdot.cwiseAbs().maxCoeff();
+    if (fastest > gains.joint_speed) {
+        qdot *= gains.joint_speed / fastest;
+        out.limited = true;
+    }
+
+    for (int i = 0; i < 7; ++i) {
+        state.command[i] =
+          std::clamp(state.command[i] + qdot(i) * dt, state.lower[i], state.upper[i]);
+        q(i) = state.command[i];
+    }
+
+    KDL::Frame reached;
+    if (state.fk->JntToCart(q, reached) >= 0) {
+        const KDL::Twist remaining = KDL::diff(reached, target);
+        out.position_error = remaining.vel.Norm();
+        out.rotation_error = remaining.rot.Norm();
+    }
+    return out;
 }
 
 } // namespace vive_vr_ros2

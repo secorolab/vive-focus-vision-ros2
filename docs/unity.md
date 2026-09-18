@@ -72,6 +72,7 @@ empty headset view always says which of the three possible failures it is.
 | `VrLocomotion` | stick locomotion, the spawn point and recentring; keyboard and mouse when no headset is active |
 | `VrPointer` | the selection ray, the highlight, and `<raw>/<hand>/target` |
 | `VrBodyTag` | a body's manifest index, so a raycast hit can be named |
+| `VrTeleopIndicator` | `<out>/teleop/<arm>/status` → tints the gripper red to green while lining up |
 | `VrDeviceVisuals` | VIVE's own controller and hand models, one set or the other |
 | `VrSimControls` | buttons that act on the simulation rather than the rig |
 | `VrWelcomePanel` | connection, input mode and what to run on the PC, until a world arrives |

@@ -19,8 +19,8 @@ the result into `vive_vr.yaml`. Not built.
 
 `vive_vr_ros2::TeleopNode` publishes clutch state and hand deltas per arm in the tool frame
 ([Teleoperation](teleop.md)). The separate [OpenArm simulation](openarm_sim.md) consumes the
-right-arm stream with joint-limited KDL IK and MuJoCo forward-kinematics validation. The generic
-scene viewer still has no arm controller, and physical robot control is not implemented.
+right-arm stream with a resolved-rate servo over the KDL Jacobian. The generic scene viewer
+still has no arm controller, and physical robot control is not implemented.
 
 The OpenArm bridge follows end-effector position and orientation; it does not measure or
 replicate human elbow posture. Its motion-test model disables gravity and contacts, so grasping
@@ -39,9 +39,15 @@ backlog, and that staleness is baked into the offset. Measured after a few minut
 stamps **158 s in the past**, recovering only as fast as the backlog drains — about 0.7 s per
 second. `tf2` rejects everything in the meantime with `TF_OLD_DATA`.
 
-The 30 s re-estimate does not save it, because it re-samples the same backlogged stream. The fix
-is to drop stale frames rather than process them — the newest message on `/vive_vr/pc_time` and
+Re-estimating does not save it, because it re-samples the same backlogged stream. The fix is to
+drop stale frames rather than process them — the newest message on `/vive_vr/pc_time` and
 `/vive_vr/body_poses` is the only one that matters. Not built.
+
+What is built is that the offset no longer **steps**. The window used to be discarded every 30 s
+and re-estimated from one sample, carrying every stamp backwards by that sample's jitter and
+freezing arm teleoperation. It is now a true sliding-window minimum, slewed at
+`maxOffsetSlewPerSecond` (5 ms/s). Corrections over a second still snap, so recovery from the
+suspend case above is unchanged.
 
 ## The floor is assumed, not measured
 

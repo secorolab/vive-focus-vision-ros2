@@ -3,22 +3,28 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <string>
 
 void check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 
+/* The speed bound the test pins, so the checks below do not track the shipped default. */
+constexpr double kJointSpeed = 0.35;
+
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
+    const std::string path =
+      argc >= 2 ? argv[1] : std::string(TEST_SOURCE_DIR) + "/openarm_test_arm.xml";
     char error[2048]={};
-    auto* m=mj_loadXML(argv[1],nullptr,error,sizeof(error));
+    auto* m=mj_loadXML(path.c_str(),nullptr,error,sizeof(error));
     if(!m){std::cerr<<error;return 1;}
     auto*d=mj_makeData(m);mj_resetDataKeyframe(m,d,0);mj_forward(m,d);
     rclcpp::init(argc,argv);
     int result=0;
     try {
         rclcpp::NodeOptions options;
-        options.parameter_overrides({rclcpp::Parameter("openarm.require_alignment", false)});
+        options.parameter_overrides({rclcpp::Parameter("openarm.require_alignment", false),
+                                     rclcpp::Parameter("openarm.joint_speed_rad_s", kJointSpeed)});
         auto node=std::make_shared<rclcpp::Node>("openarm_bridge_test", options);
         node->declare_parameter<std::string>("out_ns","/openarm_test");
         vive_vr_ros2::OpenArmTeleop bridge(*node,m,d);
@@ -28,6 +34,10 @@ int main(int argc, char** argv) {
             "/openarm_test/teleop/right/delta",rclcpp::SensorDataQoS());
         auto gripper=node->create_publisher<std_msgs::msg::Float32>(
             "/openarm_test/teleop/right/gripper",rclcpp::SensorDataQoS());
+        std::string reported;
+        auto reports=node->create_subscription<vive_vr_ros2::msg::TeleopStatus>(
+            "/openarm_test/teleop/right/status",10,
+            [&](vive_vr_ros2::msg::TeleopStatus::SharedPtr msg){reported=msg->state;});
         auto spin=[&]{for(int i=0;i<5;++i){rclcpp::spin_some(node);std::this_thread::sleep_for(std::chrono::milliseconds(2));}};
         auto press=[&](bool value){std_msgs::msg::Bool msg;msg.data=value;clutch->publish(msg);spin();};
         auto send=[&](double z, double age=0){
@@ -60,7 +70,7 @@ int main(int argc, char** argv) {
             for(int a=0;a<m->nu;++a){
                 std::string name=mj_id2name(m,mjOBJ_ACTUATOR,a);
                 if(name.find("openarm_right_joint")==0)
-                    check(std::abs(d->ctrl[a]-previous[a])<=0.35/60+1e-9,"target speed exceeded");
+                    check(std::abs(d->ctrl[a]-previous[a])<=kJointSpeed/60+1e-9,"target speed exceeded");
             }
             for(int step=0;step<8;++step)mj_step(m,d);
         }
@@ -81,8 +91,15 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));bridge.tick(1./60);
         held.assign(d->ctrl,d->ctrl+m->nu);send(-0.02);bridge.tick(1./60);
         for(int i=0;i<m->nu;++i)check(d->ctrl[i]==held[i],"timeout reengaged without release");
-        press(false);press(true);send(0,2);bridge.tick(1./60);
-        for(int i=0;i<m->nu;++i)check(d->ctrl[i]==held[i],"stale delta accepted");
+        /* Regression: freshness is arrival, so a stamp may read however it likes. */
+        press(false);press(true);send(0);bridge.tick(1./60);spin();
+        check(reported=="engaged"||reported=="unreachable","fresh delta was not engaged");
+        press(false);press(true);send(0);bridge.tick(1./60);spin();
+        send(-0.02,5);bridge.tick(1./60);spin();
+        check(reported=="engaged"||reported=="unreachable","delta dropped for an old stamp");
+        send(-0.03,9);bridge.tick(1./60);spin();
+        send(-0.04,3);bridge.tick(1./60);spin();
+        check(reported=="engaged"||reported=="unreachable","delta dropped for a backwards stamp");
         send(std::numeric_limits<double>::quiet_NaN());bridge.tick(1./60);
         held.assign(d->ctrl,d->ctrl+m->nu);send(-0.02);bridge.tick(1./60);
         for(int i=0;i<m->nu;++i)check(d->ctrl[i]==held[i],"invalid delta failed to disengage");
@@ -101,28 +118,38 @@ int main(int argc, char** argv) {
         auto gp=aligned_node->create_publisher<std_msgs::msg::Bool>("/alignment_test/teleop/right/clutch",rclcpp::QoS(1).transient_local());
         auto dp=aligned_node->create_publisher<geometry_msgs::msg::TransformStamped>("/alignment_test/teleop/right/delta",rclcpp::SensorDataQoS());
         std::string status;
-        auto sub=aligned_node->create_subscription<std_msgs::msg::String>("/alignment_test/teleop/right/status",10,
-            [&](std_msgs::msg::String::SharedPtr msg){status=msg->data;});
+        vive_vr_ros2::msg::TeleopStatus report;
+        auto sub=aligned_node->create_subscription<vive_vr_ros2::msg::TeleopStatus>("/alignment_test/teleop/right/status",10,
+            [&](vive_vr_ros2::msg::TeleopStatus::SharedPtr msg){status=msg->state;report=*msg;});
         auto pump=[&]{for(int i=0;i<8;++i){rclcpp::spin_some(aligned_node);std::this_thread::sleep_for(std::chrono::milliseconds(2));}};
         for(int i=0;i<100 && (cp->get_subscription_count()==0 || gp->get_subscription_count()==0 || dp->get_subscription_count()==0);++i)pump();
         auto button=[&](bool down){std_msgs::msg::Bool msg;msg.data=down;gp->publish(msg);pump();};
         auto state=[&]{gated.tick(1./60);pump();return status;};
-        auto pose=[&](bool match){
+        const int tcp=mj_name2id(m,mjOBJ_BODY,"openarm_right_hand_tcp");
+        auto pose=[&](bool turned, bool displaced){
             mj_kinematics(m,d);
             geometry_msgs::msg::PoseStamped msg;msg.header.frame_id="world";msg.header.stamp=aligned_node->now();
-            const auto*q=d->xquat+4*mj_name2id(m,mjOBJ_BODY,"openarm_right_hand_tcp");
+            const auto*q=d->xquat+4*tcp;
             mjtNum wrong[4], turn[4]={0,1,0,0};mju_mulQuat(wrong,q,turn);
-            if(!match)q=wrong;
+            if(turned)q=wrong;
             msg.pose.orientation.w=q[0];msg.pose.orientation.x=q[1];msg.pose.orientation.y=q[2];msg.pose.orientation.z=q[3];
+            const auto*p=d->xpos+3*tcp;
+            msg.pose.position.x=p[0]+(displaced?0.5:0.0);msg.pose.position.y=p[1];msg.pose.position.z=p[2];
             cp->publish(msg);pump();
         };
         button(false);check(state()=="tracking_lost","missing tracking displayed ready");
-        pose(false);check(state()=="align_orientation","mismatched orientation displayed ready");
+        pose(true,false);check(state()=="align_pose","mismatched orientation displayed ready");
         button(true);check(state()=="release_grip","misaligned grip engaged");
-        button(false);pose(true);check(state()=="ready","aligned controller not ready");
+        // The pose gate is on position too: right orientation, half a metre away, is not ready.
+        button(false);pose(false,true);check(state()=="align_pose","displaced controller displayed ready");
+        check(report.position_error_m>0.4,"status did not report the position error");
+        check(report.position_tolerance_m>0,"status did not carry its tolerances");
+        button(true);check(state()=="release_grip","displaced grip engaged");
+        button(false);pose(false,false);check(state()=="ready","aligned controller not ready");
+        check(report.ready,"ready state did not set the ready flag");
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         check(state()=="tracking_lost","stale controller displayed ready");
-        pose(true);button(true);check(state()=="waiting_delta","aligned grip did not engage");
+        pose(false,false);button(true);check(state()=="waiting_delta","aligned grip did not engage");
         auto rotation=[&](double angle){
             geometry_msgs::msg::TransformStamped msg;msg.header.stamp=aligned_node->now();
             msg.header.frame_id="right_tool_ref";msg.child_frame_id="right_tool_cmd";
@@ -130,7 +157,8 @@ int main(int argc, char** argv) {
             dp->publish(msg);pump();
         };
         rotation(0);state();rotation(1.57079632679);
-        auto rotated=state();check(rotated=="engaged" || rotated=="unreachable","90 degree target tripped rotation bound");
+        // Slewing towards a legal target is engaged, not unreachable: the gap is still closing.
+        check(state()=="engaged","90 degree target reported as unreachable while slewing");
         rotation(1.9);check(state()=="release_grip","excessive rotation accepted");
         std::cout<<"PASS: alignment readiness, grip gating, stale tracking, 90-degree rotation and rotation bound\n";
         std::cout<<"PASS: release gating, delta motion, gripper, left hold, release, reclutch, timeout, stale and NaN rejection, reset\n";

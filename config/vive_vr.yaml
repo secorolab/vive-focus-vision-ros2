@@ -27,6 +27,21 @@ vive_scene:
     frame_id: world
     rate_hz: 60.0
 
+    # How the OpenArm right arm follows the controller; retune in the generated teleop.yaml.
+    openarm.joint_speed_rad_s: 1.5
+    openarm.max_linear_speed_m_s: 0.5
+    openarm.max_angular_speed_rad_s: 2.0
+    # Time constant with which the tool closes its pose error; smaller is tighter and twitchier.
+    openarm.tracking_time_constant_s: 0.12
+    # Least-squares damping, applied only as a singularity is approached.
+    openarm.damping: 0.05
+    # How hard the unused seventh degree of freedom drifts the elbow back towards mid-range.
+    openarm.posture_gain_hz: 0.5
+    # How near the controller must be to the gripper before a grip press engages. The position
+    # one is only as good as the play space, which nothing measures; keep it generous.
+    openarm.alignment_tolerance_rad: 0.20
+    openarm.alignment_tolerance_m: 0.15
+
 vive_input:
   ros__parameters:
     world_frame: world

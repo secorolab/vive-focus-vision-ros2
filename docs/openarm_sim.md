@@ -19,8 +19,8 @@ The upstream SceneNode, generic simulation launch, TeleopNode and VR core are un
 `BUILD_OPENARM_SIM`; it can be disabled without changing the core VR package.
 
 Orocos KDL is already a dependency through `mj_kdl_wrapper`, and the OpenArm V1 MoveIt
-configuration also selects KDL. The adapter uses those existing solvers instead of a custom
-Jacobian implementation. This controls the gripper pose, not a unique human-like elbow posture:
+configuration also selects KDL. The adapter takes the chain and the Jacobian from KDL rather
+than reimplementing them. This controls the gripper pose, not a unique human-like elbow posture:
 a 7-joint arm can reach one gripper pose in multiple configurations.
 
 Other upstream options exist: [OpenArm MuJoCo](https://github.com/enactic/openarm_mujoco)
@@ -164,9 +164,18 @@ Defaults under `vive_scene.ros__parameters` (override in `teleop.yaml`):
 |---|---:|---|
 | `openarm.translation_scale` | 0.25 | Robot displacement per metre of controller displacement. |
 | `openarm.max_translation_m` | 0.15 | Maximum target displacement per grip press. |
-| `openarm.joint_speed_rad_s` | 0.35 | Maximum rate of arm motor-target changes, not a certified physical velocity limit. |
+| `openarm.joint_speed_rad_s` | 1.5 | Maximum commanded joint velocity, not a certified physical velocity limit. |
+| `openarm.max_linear_speed_m_s` | 0.5 | Maximum commanded tool linear speed. |
+| `openarm.max_angular_speed_rad_s` | 2.0 | Maximum commanded tool angular speed. |
+| `openarm.tracking_time_constant_s` | 0.12 | Time constant with which the tool closes its pose error; smaller is tighter and twitchier. |
+| `openarm.damping` | 0.05 | Least-squares damping, phased in only as a singularity is approached. |
+| `openarm.posture_gain_hz` | 0.5 | How hard the spare degree of freedom drifts the elbow back towards mid-range. |
+| `openarm.alignment_tolerance_m` | 0.15 | How near the controller must be to the tool before a press engages. |
 | `openarm.finger_speed_m_s` | 0.02 | Maximum rate of finger-target changes. |
-| `openarm.timeout_s` | 0.25 | Maximum time without valid deltas before holding and requiring re-grip. |
+| `openarm.timeout_s` | 0.25 | Maximum time without a delta arriving before holding and requiring re-grip. |
+
+The control values ship in `config/vive_vr.yaml`, so `prepare` copies them into the generated
+`teleop.yaml` and a run is retuned there without rebuilding.
 
 Rotation is configurable with `openarm.max_rotation_rad`, default 1.75 radians (100 degrees),
 so a 90-degree forward turn no longer trips the former 34-degree cutoff. The generated
@@ -175,29 +184,45 @@ class defaults in the table remain conservative for custom configurations. Robot
 joint limits still apply: a long human arm movement can request an unreachable TCP pose.
 All seven right-arm joints participate in end-effector IK; human elbow posture is not measured.
 
-Side-grip engagement requires **orientation** alignment within 0.20 radians (about 11 degrees),
-using the saved pairing and fresh controller data. This is not absolute hand-position or
-whole-body calibration. Release and press again if alignment was not ready.
-`openarm.require_alignment=false` disables the gate for automated delta-only tests.
-For diagnostics, the bridge publishes `/vive_vr/teleop/right/status` (`std_msgs/String`):
-`ready`, `align_orientation`, `calibration_required`, `tracking_lost`, `release_grip`,
-`waiting_delta`, `engaged`, or `unreachable`. The existing headset app does not display these.
+Side-grip engagement requires the controller to **match the tool pose**: orientation within
+`openarm.alignment_tolerance_rad` (0.20 rad, about 11 degrees) using the saved pairing, and
+position within `openarm.alignment_tolerance_m` (0.15 m), against fresh controller data. Bring
+the controller to the gripper, then press. This is not whole-body calibration: the position
+comparison is only as good as the play space, which nothing measures, so the operator closes the
+loop by eye on the gripper they can see. `openarm.require_alignment=false` disables the gate for
+automated delta-only tests.
+
+The bridge publishes `/vive_vr/teleop/right/status` (`vive_vr_ros2/TeleopStatus`): a `state` of
+`ready`, `align_pose`, `calibration_required`, `tracking_lost`, `release_grip`, `waiting_delta`,
+`engaged` or `unreachable`, a `ready` flag, and both errors with the tolerances they are judged
+against. `VrTeleopIndicator` in the client tints the gripper from red through amber to green
+from that message. Green is the PC's `ready` flag rather than a threshold held on the headset,
+so green always means the press will take; only the shade between is computed on the client.
 Re-run `prepare` and restart teleop after upgrading, preserving your saved alignment;
 `align` also writes the pairing to the simulation configuration. The combined
 `launch --teleop --align` workflow blocks robot engagement during calibration.
 
 The first delta must be
 near identity (within 2.5 cm of scaled translation and 0.15 radians). Oversized or invalid
-targets disengage the bridge. Old/out-of-order timestamps are ignored; continuous stale input
-eventually times out. Release and re-grip after a timeout or bound violation. An unreachable
-IK target holds the arm and logs a warning; move closer or re-grip. Holding captures current
-joint positions; physical inertia can still cause a small settling movement.
+targets disengage the bridge. Release and re-grip after a timeout or bound violation. Holding
+captures current joint positions; physical inertia can still cause a small settling movement.
 
-The bridge uses the existing Orocos KDL `ChainIkSolverPos_NR_JL` (joint-limited Newton-Raphson)
-and `ChainIkSolverPos_LMA` fallback, as already demonstrated by `mj_kdl_wrapper`. The chain
-comes from `init_robot_from_mjcf`, from world to `openarm_right_hand_tcp`. The adapter rejects
-out-of-limit results and independently checks each solution with MuJoCo forward kinematics.
-It limits target speed and target lead, and never applies an unconverged solution.
+Freshness is when a message **arrived**, never the stamp it carries: those come from the
+headset's clock estimate, which steps when re-fitted, and gating on them silently dropped every
+delta until the next step ([Known limits](limits.md)). A gap in arrivals longer than
+`openarm.timeout_s` still holds the arm.
+
+The bridge is a resolved-rate servo, not a per-tick pose solve. It owns the commanded
+configuration, seeded from the measured joints at grip press, and each tick moves it down the
+pose error: the Jacobian from KDL's `ChainJntToJacSolver` over the chain `init_robot_from_mjcf`
+builds to `openarm_right_hand_tcp`, and the joint velocity from a damped least-squares inverse
+damped only near a singularity (Nakamura and Hanafusa 1986; Chiaverini, Oriolo and Walker 1994),
+with the spare seventh joint pulling the arm to mid-range through the null space (Liégeois 1977).
+
+Integrating rather than re-solving keeps one IK branch per press and respects the velocity and
+joint bounds by construction. Beyond its reach the arm tracks the closest pose it can hold;
+`unreachable` appears only once the gap stops closing for half a second, so slewing towards a
+distant but legal target still reads `engaged`.
 Feedback is `/vive_vr/sim/right/ee_pose` (`geometry_msgs/PoseStamped`, MuJoCo world frame).
 The scene's reset service resets home and requires release/re-grip before motion resumes.
 
@@ -270,13 +295,20 @@ geometries exported. A headless simulation stayed exactly at rest for five simul
 the right elbow then reached a 0.15-radian position target without simulation warnings.
 This is a basic check, not validation across all poses or gains.
 
-`tests/openarm_ik_check.cpp` checks reachable full-pose IK, motor tracking, joint limits,
-isolation of the left arm and live physics state, lifting from the straight-down home pose,
-a reachable 90-degree shoulder sweep, and unreachable-target rejection. `tests/openarm_alignment_check.py` checks the measured
+`tests/openarm_ik_check.cpp` checks convergence on a reachable pose, MuJoCo and KDL agreeing on
+it, actuator tracking, the per-tick velocity and limit bounds, null-space centring without
+disturbing the tool, the home singularity, and out-of-reach settling.
+
+Both C++ checks run against `tests/openarm_test_arm.xml`, a seven-joint arm with the OpenArm
+right-arm names, so `colcon test` needs no OpenArm description; set `OPENARM_TEST_MODEL` to a
+generated model to run them against the real robot too.
+`tests/openarm_alignment_check.py` checks the measured
 frame rotation, translation and rotation direction preservation, and RPY conversion.
 `tests/openarm_bridge_check.cpp` sends ROS messages through the bridge and checks grip gating,
 motor target rate limits, right motion, gripper opening, left hold, release, re-clutch, timeout,
-stale/invalid/oversized input, alignment readiness, 90-degree rotation bounds and reset behavior.
+invalid and oversized input, alignment readiness, 90-degree rotation bounds and reset behavior.
+It also covers the freeze directly: deltas carrying stamps that are seconds old, and stamps that
+step backwards, must still be followed.
 `tests/openarm_alignment_capture_check.py` checks calibration with ROS pose streams;
 `tests/openarm_launch_check.py` checks calibration-process cleanup on success, failure,
 cancellation and shutdown timeout. To reproduce on an isolated local ROS domain:

@@ -27,6 +27,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   msg/EyeGaze.msg
   msg/BodyPoses.msg
+  msg/TeleopStatus.msg
   DEPENDENCIES std_msgs geometry_msgs
 )
 
@@ -159,12 +160,15 @@ if(BUILD_TESTING AND BUILD_OPENARM_SIM)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_check.py)
   add_test(NAME openarm_alignment_capture_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_capture_check.py)
+  # These run against tests/openarm_test_arm.xml; OPENARM_TEST_MODEL adds a run on the real robot.
   set(OPENARM_TEST_MODEL "" CACHE FILEPATH "Generated OpenArm controlled MJCF for integration tests")
   foreach(check openarm_ik_check openarm_bridge_check)
     add_executable(${check} tests/${check}.cpp)
     target_link_libraries(${check} PRIVATE openarm_sim_support)
+    target_compile_definitions(${check} PRIVATE TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_test(NAME ${check} COMMAND ${check})
     if(OPENARM_TEST_MODEL)
-      add_test(NAME ${check} COMMAND ${check} "${OPENARM_TEST_MODEL}")
+      add_test(NAME ${check}_openarm COMMAND ${check} "${OPENARM_TEST_MODEL}")
     endif()
   endforeach()
 endif()
