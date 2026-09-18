@@ -30,6 +30,9 @@ namespace VrRos
         [Tooltip("Optional: when set, the topic namespace comes from its config file")]
         public VrConfig config;
 
+        [Tooltip("Optional: moved to the spawn the loaded world declares, if it declares one")]
+        public VrLocomotion locomotion;
+
         [Tooltip("Namespace the PC publishes the world into")]
         public string outNs = "/vive_vr";
 
@@ -136,6 +139,25 @@ namespace VrRos
             return texture;
         }
 
+        /* Where to stand belongs to the world, not to the headset: one spawn in the client's own
+         * config cannot be right for two worlds, and a wrong one puts the user inside a counter. */
+        private void ApplySceneSpawn(JObject manifest)
+        {
+            JObject spawn = manifest?["spawn"] as JObject;
+            if (spawn == null || locomotion == null) return;
+
+            var xyz = spawn["xyz"] as JArray;
+            if (xyz == null || xyz.Count < 3)
+            {
+                Debug.LogWarning("scene: spawn has no xyz; keeping the configured one");
+                return;
+            }
+
+            locomotion.SetSceneSpawn(
+                new Vector3((float)xyz[0], (float)xyz[1], (float)xyz[2]),
+                spawn["yaw_deg"] != null ? (float)spawn["yaw_deg"] : 0f);
+        }
+
         private void OnScene(JObject msg)
         {
             if (msg == null) return;
@@ -168,6 +190,8 @@ namespace VrRos
             string key = $"{url}|{(string)env?["url"]}";
             if (key == _loadedUrl) return;
             _loadedUrl = key;
+
+            ApplySceneSpawn(manifest);
 
             /* Fire and forget, but not silently: an unobserved Task swallows its exception, and
              * a scene that simply never appears is the least debuggable failure there is. */

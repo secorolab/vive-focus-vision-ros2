@@ -197,6 +197,9 @@ ros2 launch vive_vr_ros2 tracking.launch.py &
 ./unity/VrRos/Build/Linux/VrRos -screen-width 1600 -screen-height 900 -screen-fullscreen 0
 ```
 
+With no headset there is no stick, so the desktop player walks on WASD, changes height on Q and
+E, and looks around while the right mouse button is held.
+
 Unlike the renders above this is a real player, so it writes and reads its own
 `vr_config.json` — under `~/.config/unity3d/secorolab/VrRos/`, not on any device — and it will
 discover and save the PC's address there like any other client.

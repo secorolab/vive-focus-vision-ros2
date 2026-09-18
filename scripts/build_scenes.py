@@ -10,6 +10,7 @@ that produces and exports its own world. Adding one is a new yaml file and nothi
 """
 
 import argparse
+import json
 import os
 import pathlib
 import subprocess
@@ -57,8 +58,33 @@ def build(scene: dict, scene_export: str, force: bool) -> bool:
         print(f"{name}: no model to export", file=sys.stderr)
         return False
 
-    return subprocess.run([scene_export, str(model), "-o", str(out)],
-                          check=False).returncode == 0
+    cmd = [scene_export, str(model), "-o", str(out)]
+    if scene.get("groups"):
+        cmd += ["--groups", str(scene["groups"])]
+    if subprocess.run(cmd, check=False).returncode != 0:
+        return False
+
+    write_spawn(scene, out)
+    return True
+
+
+def write_spawn(scene: dict, out: pathlib.Path) -> None:
+    """Puts the scene's spawn point into its manifest, which the scene message carries verbatim.
+
+    Where to stand is a property of the world, not of the headset: the client's own
+    spawnPosition cannot be right for two worlds at once, and is the fallback when a scene
+    declares none.
+    """
+    spawn = scene.get("spawn")
+    if not spawn:
+        return
+
+    manifest = out / "manifest.json"
+    data = json.loads(manifest.read_text())
+    data["spawn"] = {"xyz": [float(v) for v in spawn["xyz"]],
+                     "yaw_deg": float(spawn.get("yaw_deg", 0.0))}
+    manifest.write_text(json.dumps(data, indent=2))
+    print(f"  spawn {data['spawn']['xyz']} yaw {data['spawn']['yaw_deg']} written to manifest")
 
 
 def main() -> int:

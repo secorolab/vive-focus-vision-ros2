@@ -68,18 +68,30 @@ run_unity() {
     grep -E "VrRosSetup: |error CS" "$log" || true
 }
 
+# Before the build rather than after it: the build is minutes long, and finding out at the end
+# that there is nothing to install to throws all of it away.
+require_device() {
+    command -v adb >/dev/null || {
+        echo "adb not found; apt install android-tools-adb" >&2
+        exit 1
+    }
+    if [ -z "$(adb devices | awk 'NR>1 && $2=="device"')" ]; then
+        echo "no device: plug into the headset's RIGHT-side USB-C port and accept the prompt" >&2
+        echo "wireless: adb tcpip 5555 over USB once, then adb connect <headset-ip>:5555" >&2
+        exit 1
+    fi
+}
+
+[ "$install" -eq 1 ] && require_device
+
 [ "$setup" -eq 1 ] && run_unity VrRosSetup.SetupAll
 run_unity VrRosSetup.BuildApk
 ls -lh "$apk"
 
 [ "$install" -eq 1 ] || exit 0
 
-command -v adb >/dev/null || { echo "adb not found; apt install android-tools-adb" >&2; exit 1; }
-if [ -z "$(adb devices | awk 'NR>1 && $2=="device"')" ]; then
-    echo "no device: plug into the headset's RIGHT-side USB-C port and accept the prompt" >&2
-    echo "wireless: adb tcpip 5555 over USB once, then adb connect <headset-ip>:5555" >&2
-    exit 1
-fi
+# The transport can drop during a build that takes minutes, so confirm it is still there.
+require_device
 
 # A different application id is a different application: the old one is joined, not replaced.
 if adb shell pm list packages | tr -d '\r' | grep -qx "package:$old_package"; then

@@ -245,7 +245,7 @@ public static class VrRosSetup
          * set, and high enough to stand in for the bounce light a real room has: the exported
          * lights are MuJoCo's own and are usually a single weak directional. */
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.62f, 0.63f, 0.66f);
+        RenderSettings.ambientLight = new Color(0.90f, 0.91f, 0.94f);
 
         if (!EditorApplication.ExecuteMenuItem("GameObject/XR/XR Origin (VR)"))
         {
@@ -294,6 +294,7 @@ public static class VrRosSetup
             locomotion.rig = xrOrigin.transform;
             locomotion.head = xrOrigin.GetComponentInChildren<Camera>();
             locomotion.config = cfg;
+            loader.locomotion = locomotion;
 
             /* Every publisher needs the rig: tracking-space poses alone would not say where the
              * user has walked to. It is the camera offset rather than the origin root, because

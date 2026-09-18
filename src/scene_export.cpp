@@ -361,6 +361,8 @@ int main(int argc, char **argv)
     int                   invisible_geoms = 0;
     int                   ground_planes   = 0;
     std::set<int>         textured;       // MuJoCo texture ids that made it into the file
+    std::set<int>         not_2d;         // referenced, but a cube or skybox: not a surface map
+    std::set<int>         no_uvs;         // referenced by geometry that carries no coordinates
     std::map<int, int>    skipped_types; // geom type -> count
 
     int excluded_bodies = 0;
@@ -430,6 +432,11 @@ int main(int argc, char **argv)
              * because without coordinates there is nowhere to put the image. */
             int   tex_index   = -1;
             float uv_scale[2] = { 1.0f, 1.0f };
+            if (tex >= 0 && model->tex_type[tex] != mjTEXTURE_2D) {
+                not_2d.insert(tex);
+            } else if (tex >= 0 && tri.uvs.empty()) {
+                no_uvs.insert(tex);
+            }
             if (!tri.uvs.empty() && tex >= 0 && model->tex_type[tex] == mjTEXTURE_2D) {
                 tex_index = add_mj_texture(model, tex, opt.max_texture, &builder);
                 if (tex_index >= 0) {
@@ -637,11 +644,20 @@ int main(int argc, char **argv)
         std::printf("  skipped %d geom(s) of type %d (no static triangle form)\n", count, type);
     }
     if (model->ntex > 0) {
-        /* A texture only survives on a mesh that carries coordinates for it; the rest fall back
-         * to the material's flat colour, so say which happened rather than claiming either. */
-        std::printf("  %d of %ld texture(s) exported; the rest have no mesh texture coordinates "
-                    "and fall back to flat colour\n",
-                    static_cast<int>(textured.size()), static_cast<long>(model->ntex));
+        /* Against what the exported geometry actually asked for. Counting against every texture
+         * in the model reported a shortfall made of skyboxes and textures nothing here draws,
+         * which reads as missing texture on a visible surface when none is. */
+        const size_t wanted = textured.size() + not_2d.size() + no_uvs.size();
+        std::printf("  %d of %ld texture(s) the exported geometry uses\n",
+                    static_cast<int>(textured.size()), static_cast<long>(wanted));
+        if (!no_uvs.empty()) {
+            std::printf("  %d fell back to flat colour: no texture coordinates on the geometry\n",
+                        static_cast<int>(no_uvs.size()));
+        }
+        if (!not_2d.empty()) {
+            std::printf("  %d skipped: a cube or skybox texture is not a surface map\n",
+                        static_cast<int>(not_2d.size()));
+        }
     }
     std::printf("wrote %s and %s\n", glb_path.c_str(), manifest_path.c_str());
 

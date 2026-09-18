@@ -36,6 +36,9 @@ namespace VrRos
         public float verticalSpeed = 1.0f;
 
         private bool _recenterPressed;
+        private Vector3? _sceneSpawn;
+        private float _sceneSpawnYaw;
+        private float _pitch;
 
         private void Start()
         {
@@ -54,13 +57,22 @@ namespace VrRos
             }
         }
 
+        /// <summary>Where the loaded world says to stand, which outranks the client's own default.</summary>
+        public void SetSceneSpawn(Vector3 posRos, float yawDegrees)
+        {
+            _sceneSpawn = posRos;
+            _sceneSpawnYaw = yawDegrees;
+            MoveToSpawn();
+        }
+
         private void MoveToSpawn()
         {
             /* The spawn point is given in ROS coordinates, because that is the frame the scene
              * and every published pose are in. */
-            Vector3 p = config.Active.spawnPosition;
+            Vector3 p = _sceneSpawn ?? config.Active.spawnPosition;
+            float yaw = _sceneSpawn.HasValue ? _sceneSpawnYaw : config.Active.spawnYawDegrees;
             rig.SetPositionAndRotation(FrameConv.RosToUnity(p.x, p.y, p.z),
-                                       Quaternion.Euler(0f, -config.Active.spawnYawDegrees, 0f));
+                                       Quaternion.Euler(0f, -yaw, 0f));
         }
 
         /// <summary>
@@ -89,6 +101,13 @@ namespace VrRos
         {
             if (head == null) return;
 
+            // No headset means the desktop player, where there is no stick to read.
+            if (!XRSettings.isDeviceActive)
+            {
+                Desktop();
+                return;
+            }
+
             InputDevice move = InputDevices.GetDeviceAtXRNode(
                 moveWithLeftHand ? XRNode.LeftHand : XRNode.RightHand);
 
@@ -101,6 +120,25 @@ namespace VrRos
             DriveAndTurn(move);
             Elevate(other);
             PollRecenter(move);
+        }
+
+        /// <summary>WASD walks, Q and E change height, the right mouse button held looks around.</summary>
+        private void Desktop()
+        {
+            Vector3 forward = Vector3.ProjectOnPlane(head.transform.forward, Vector3.up).normalized;
+            Vector3 right = Vector3.Cross(Vector3.up, forward);
+            float ahead = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
+            float side = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
+            float up = (Input.GetKey(KeyCode.E) ? 1f : 0f) - (Input.GetKey(KeyCode.Q) ? 1f : 0f);
+            rig.position += (forward * ahead + right * side) * speed * Time.deltaTime
+                            + Vector3.up * up * verticalSpeed * Time.deltaTime;
+
+            if (!Input.GetMouseButton(1)) return;
+            const float degreesPerUnit = 2.0f;
+            rig.RotateAround(head.transform.position, Vector3.up,
+                             Input.GetAxisRaw("Mouse X") * degreesPerUnit);
+            _pitch = Mathf.Clamp(_pitch - Input.GetAxisRaw("Mouse Y") * degreesPerUnit, -89f, 89f);
+            head.transform.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
 
         /* X on the movement hand. Edge-triggered, or holding it would fight the stick. */

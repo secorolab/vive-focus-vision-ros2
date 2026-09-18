@@ -29,12 +29,13 @@ namespace VrRos
         public Transform rig;
 
         [Tooltip("Metres in front of the rig, and metres below eye height")]
-        public Vector2 offset = new Vector2(3.0f, 0.1f);
+        public Vector2 offset = new Vector2(8.0f, 0.1f);
 
-        /* Width tracks distance: 3.6 m at 3.0 m holds the 34-unit text at ~2.3 degrees of em
-         * height, and below about 1.3 degrees text stops being comfortably readable in a headset. */
+        /* Width over distance fixes the angular size of both panel and text, and the 1000x520-unit
+         * rect fixes how much text fits: 5.0 m at 8.0 m spans 35 degrees with 34-unit text at
+         * ~1.2 degrees em. A larger font overflows the rect rather than filling the panel. */
         [Tooltip("Panel width in metres")]
-        public float width = 3.6f;
+        public float width = 5.0f;
 
         [Tooltip("Seconds between refreshes; the contents change at human speed")]
         public float refreshSeconds = 0.25f;

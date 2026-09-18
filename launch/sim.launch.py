@@ -9,6 +9,7 @@ fetches the .glb from and loads SceneNode into the container tracking.launch.py 
 so the pose stream and the controller stream cross between them inside one process.
 """
 
+import json
 import os
 import pathlib
 import socket
@@ -86,6 +87,19 @@ def launch_setup(context, *unused_args, **unused_kwargs):
     """Everything that needs argument values rather than substitutions."""
     share = get_package_share_directory("vive_vr_ros2")
 
+    def scene_dir_for_model(model_path):
+        """The export whose manifest records this model, whatever the directory is called."""
+        wanted = os.path.realpath(os.path.expanduser(model_path))
+        root = pathlib.Path(os.path.expanduser("~/.cache/vive_vr_ros2/scenes"))
+        for manifest in sorted(root.glob("*/manifest.json")):
+            try:
+                recorded = json.loads(manifest.read_text()).get("model", "")
+            except (OSError, ValueError):
+                continue
+            if recorded and os.path.realpath(os.path.expanduser(recorded)) == wanted:
+                return str(manifest.parent)
+        return None
+
     def arg(name):
         return LaunchConfiguration(name).perform(context)
 
@@ -99,6 +113,11 @@ def launch_setup(context, *unused_args, **unused_kwargs):
         stem = pathlib.Path(model).stem
         name = pathlib.Path(model).parent.name if stem == "scene" else stem
         scene_dir = os.path.expanduser(f"~/.cache/vive_vr_ros2/scenes/{name}")
+
+        # A generated world is exported under the name its yaml gives it, which is not the name
+        # the path carries, so ask the manifests which one was built from this model.
+        if not os.path.exists(os.path.join(scene_dir, "manifest.json")):
+            scene_dir = scene_dir_for_model(model) or scene_dir
 
     env_glb = arg("env_glb")
     base = f"http://{host_ip}:{http_port}"

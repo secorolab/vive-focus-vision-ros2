@@ -55,9 +55,10 @@ that produces one and prints its path — `build_scenes.py` does the exporting e
 there is one place that decides where a scene lands.
 
 The kitchen is generated because RoboCasa assembles fixtures into an arena only when an
-environment is constructed. `scripts/make_kitchen.py` does that, then adds six objects with a
-freejoint each on the counter's near edge: every fixture in a RoboCasa kitchen is welded, so
-without them there is nothing to pick up.
+environment is constructed. `scripts/make_kitchen.py` does that, then adds objects with a
+freejoint each wherever a counter has room clear of the appliances RoboCasa stood on it: every
+fixture in a RoboCasa kitchen is welded, so without them there is nothing to pick up. An object
+that fits nowhere is skipped and named in the output.
 
 It then **copies every mesh and texture the world references** next to the MJCF and rewrites the
 paths. RoboCasa's assets live in `site-packages`, so without that the world breaks the moment
