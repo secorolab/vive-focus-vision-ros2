@@ -1,4 +1,4 @@
-# vr
+# vive_vr_ros2
 
 MuJoCo worlds on a standalone VIVE Focus Vision, and what the headset sees of the user back as
 ROS 2 topics.
@@ -54,6 +54,30 @@ And the headset half, on any machine with the Unity editor installed:
 ```bash
 ./scripts/build_apk.sh --setup --install --logcat    # build, install, launch, tail the log
 ```
+
+### Headset settings
+
+Everything the client can be told without rebuilding the APK lives in one file, on the headset:
+
+```
+/storage/emulated/0/Android/data/de.uni_bremen.secoro.vrros/files/vr_config.json
+```
+
+It does not exist until the app has run once, and it is read in `VrConfig.Awake()`, so edits
+apply on the next start:
+
+```bash
+adb pull /storage/emulated/0/Android/data/de.uni_bremen.secoro.vrros/files/vr_config.json
+adb push vr_config.json /storage/emulated/0/Android/data/de.uni_bremen.secoro.vrros/files/
+adb shell am force-stop de.uni_bremen.secoro.vrros
+```
+
+Worth knowing: `spawnPosition` and `spawnYawDegrees` put you somewhere else in the world,
+`eyeHeight` makes the table the right height, `inputMode` picks controllers or hands, and the
+`*RateHz` fields throttle the uplink. `host` is a cache the app maintains itself — discovery
+overwrites it whenever the configured address fails, so pin it only to choose between PCs that
+could both answer, or set `discoveryPort` to `0` to forbid discovery entirely. Full field table
+in [Configuration](docs/configuration.md#headset-settings).
 
 ## Documentation
 

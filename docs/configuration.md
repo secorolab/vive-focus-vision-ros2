@@ -131,7 +131,7 @@ adb push vr_config.json /sdcard/Android/data/de.uni_bremen.secoro.vrros/files/vr
   "port": 9090,
   "discoveryPort": 9091,
   "rawNs": "/vive_vr/raw",
-  "outNs": "/vr",
+  "outNs": "/vive_vr",
   "maxRateHz": 90.0,
   "handRateHz": 60.0,
   "gazeRateHz": 60.0,

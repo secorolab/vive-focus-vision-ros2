@@ -88,7 +88,7 @@ second, and every `tf2` listener in the graph pays for it. `publish_hand_tf: fal
 
 ## Missing interfaces
 
-- **No haptics.** `/vr/{left,right}/haptic` does not exist; the controllers can only send.
+- **No haptics.** `/vive_vr/{left,right}/haptic` does not exist; the controllers can only send.
 - **Grip pose only.** The aim pose — the pointing ray, for UI — is not published.
 - **No wrist trackers.** The Focus Vision supports them; nothing here reads them.
 - **Eye data is partial.** Gaze and pupil diameter are published; the runtime's geometric data

@@ -12,10 +12,10 @@ using UnityEngine.Networking;
 namespace VrRos
 {
     /// <summary>
-    /// Loads the world published on /vr/scene: fetches the .glb over HTTP once, then reparents
+    /// Loads the world published on /vive_vr/scene: fetches the .glb over HTTP once, then reparents
     /// each exported body mesh under its own holder so the pose stream can drive it.
     ///
-    /// Hierarchy per body:  Body_&lt;name&gt; (driven by /vr/body_poses) -> imported mesh node.
+    /// Hierarchy per body:  Body_&lt;name&gt; (driven by /vive_vr/body_poses) -> imported mesh node.
     ///
     /// The holder's child carries one fixed rotation, gltfCorrectionEuler. scene_export writes
     /// the .glb in glTF's Y-up convention; glTFast then applies its own right-to-left-handed

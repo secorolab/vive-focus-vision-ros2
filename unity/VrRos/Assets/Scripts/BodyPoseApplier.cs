@@ -9,7 +9,7 @@ using UnityEngine;
 namespace VrRos
 {
     /// <summary>
-    /// Drives the loaded body holders from /vr/body_poses, which carries only the bodies that
+    /// Drives the loaded body holders from /vive_vr/body_poses, which carries only the bodies that
     /// moved: poses[i] belongs to body ids[i].
     ///
     /// The JSON walk and the frame conversion both happen on the socket task; the main thread

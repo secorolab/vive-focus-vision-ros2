@@ -12,7 +12,7 @@ namespace VrRos
     /// Estimates the offset between the headset's clock and the PC's ROS clock so recorded
     /// controller stamps line up with sim state in a rosbag.
     ///
-    /// This is a one-way estimate from /vr/pc_time: it keeps the sample with the smallest
+    /// This is a one-way estimate from /vive_vr/pc_time: it keeps the sample with the smallest
     /// (local - remote) difference seen in a sliding window, which removes queueing jitter but
     /// not the constant one-way transit time, so stamps are biased late by roughly half the RTT
     /// (single-digit milliseconds on 5/6 GHz Wi-Fi). If demonstration data ever needs better

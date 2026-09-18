@@ -29,13 +29,12 @@ namespace VrRos
         public Transform rig;
 
         [Tooltip("Metres in front of the rig, and metres below eye height")]
-        public Vector2 offset = new Vector2(1.5f, 0.1f);
+        public Vector2 offset = new Vector2(3.0f, 0.1f);
 
-        /* At 1.5 m this puts the 34-unit text at ~2.3 degrees of em height. Below about 1.3
-         * degrees text stops being comfortably readable in a headset, and font size is em, not
-         * cap height, so the glyphs are smaller again than the number suggests. */
+        /* Width tracks distance: 3.6 m at 3.0 m holds the 34-unit text at ~2.3 degrees of em
+         * height, and below about 1.3 degrees text stops being comfortably readable in a headset. */
         [Tooltip("Panel width in metres")]
-        public float width = 1.8f;
+        public float width = 3.6f;
 
         [Tooltip("Seconds between refreshes; the contents change at human speed")]
         public float refreshSeconds = 0.25f;
@@ -72,6 +71,7 @@ namespace VrRos
                         : settings != null ? $"{settings.host}:{settings.port}"
                         : "not configured";
             string mode = config != null && config.HandMode ? "hands" : "controllers";
+            string sceneTopic = (settings != null ? settings.outNs : "/vive_vr") + "/scene";
             string state = connected ? "connected"
                          : bridge != null && bridge.IsSearching ? "searching for the PC…"
                          : "connecting…";
@@ -80,18 +80,18 @@ namespace VrRos
                 "<size=190%><b>VrRos</b></size>\n\n"
                 + Row("rosbridge", host, state, connected ? Good : Waiting)
                 + Row("input", mode, "hold the left menu button to switch", Neutral)
-                + Row("world", loaded ? "loaded" : "none", loaded ? "" : "waiting for /vr/scene",
+                + Row("world", loaded ? "loaded" : "none", loaded ? "" : $"waiting for {sceneTopic}",
                       loaded ? Good : Waiting)
                 + "\n<size=72%><alpha=#99>On the PC:\n"
-                + "  ros2 launch vr tracking.launch.py    poses only\n"
-                + "  ros2 launch vr sim.launch.py model:=…    poses and a world\n\n"
-                + $"config: {(config != null ? config.Path : "unknown")}</size>";
+                + $"  ros2 launch vive_vr_ros2 tracking.launch.py    <color={Hint}>(poses only)</color>\n"
+                + $"  ros2 launch vive_vr_ros2 sim.launch.py model:=…    <color={Hint}>(poses and a world)</color></size>";
         }
 
         // Green is "this is working", amber "still waiting"; a setting is neither.
         private const string Good = "#7FD48A";
         private const string Waiting = "#E8C46A";
         private const string Neutral = "#DCE0E6";
+        private const string Hint = "#8FB8D8";
 
         /// <summary>One status line: dim label, coloured value, dim note. pos aligns the columns.</summary>
         private static string Row(string label, string value, string note, string colour)
