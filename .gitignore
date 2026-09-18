@@ -17,7 +17,7 @@ unity/VrRos/.utmp/
 unity/VrRos/*_BurstDebugInformation_DoNotShip/
 
 # VIVE OpenXR UPM tarball, 361 MB: a redistributable release artefact, so it is a setup step.
-# Run tools/fetch_vive_plugin.sh to get it.
+# Run python3 scripts/fetch_vive_plugin.py to get it.
 unity/VrRos/vendor/
 
 # TMP's own .unitypackage, unpacked by VrRosSetup.ImportTmpResources. It keeps its GUIDs across
@@ -39,3 +39,7 @@ unity/VrRos/Assets/Resources.meta
 # Python bytecode from running the scripts in place
 __pycache__/
 *.pyc
+
+# Local headset configuration and generated OpenArm output (if kept in this checkout).
+/vr_config.json
+/models/openarm_v1/

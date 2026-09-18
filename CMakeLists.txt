@@ -136,5 +136,37 @@ install(PROGRAMS scripts/vive_vr_discovery DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_vive_vr_ros2 HAS_LIBRARY_TARGET)
+
+# Robot-specific simulation stays outside the reusable, MuJoCo-only VR core.
+option(BUILD_OPENARM_SIM "Build the OpenArm simulation application" ON)
+if(BUILD_OPENARM_SIM)
+  add_library(openarm_sim_support SHARED src/openarm_ik.cpp src/openarm_teleop.cpp)
+  target_link_libraries(openarm_sim_support PUBLIC vive_vr_core mj_kdl_wrapper::mj_kdl_wrapper)
+  add_executable(openarm_sim_node src/openarm_sim_node.cpp)
+  target_link_libraries(openarm_sim_node PRIVATE openarm_sim_support ${std_srvs_TARGETS})
+  set_target_properties(openarm_sim_support openarm_sim_node PROPERTIES
+    BUILD_RPATH "${MUJOCO_LIB_DIR}" INSTALL_RPATH "${MUJOCO_LIB_DIR}")
+  install(TARGETS openarm_sim_support LIBRARY DESTINATION lib)
+  install(TARGETS openarm_sim_node DESTINATION lib/${PROJECT_NAME})
+endif()
+
+if(BUILD_TESTING AND BUILD_OPENARM_SIM)
+  enable_testing()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME openarm_launch_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_launch_check.py)
+  add_test(NAME openarm_alignment_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_check.py)
+  add_test(NAME openarm_alignment_capture_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_capture_check.py)
+  set(OPENARM_TEST_MODEL "" CACHE FILEPATH "Generated OpenArm controlled MJCF for integration tests")
+  foreach(check openarm_ik_check openarm_bridge_check)
+    add_executable(${check} tests/${check}.cpp)
+    target_link_libraries(${check} PRIVATE openarm_sim_support)
+    if(OPENARM_TEST_MODEL)
+      add_test(NAME ${check} COMMAND ${check} "${OPENARM_TEST_MODEL}")
+    endif()
+  endforeach()
+endif()
 ament_export_dependencies(rclcpp geometry_msgs std_msgs)
 ament_package()

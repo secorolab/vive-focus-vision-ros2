@@ -1,7 +1,8 @@
 # Teleoperation {#page_teleop}
 
-> **Built as `vive_vr_ros2::TeleopNode`.** Nothing consumes the delta stream yet: no solver, no arm. See
-> [Known limits](limits.md#no-teleop).
+> **Built as `vive_vr_ros2::TeleopNode`.** This component publishes controller deltas.
+> The separate [OpenArm simulation](openarm_sim.md) consumes them with right-arm IK;
+> the generic scene viewer does not. See [Known limits](limits.md#no-teleop).
 
 ## What this component is responsible for
 

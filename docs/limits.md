@@ -15,15 +15,17 @@ the robot were in one metric frame.
 The fix is a calibration procedure — touch three known points, or align a tracked object — writing
 the result into `vive_vr.yaml`. Not built.
 
-## No teleop
+## Teleoperation scope {#no-teleop}
 
-Half of it exists. `vive_vr_ros2::TeleopNode` publishes the clutch and the hand delta per arm in the tool
-frame ([Teleoperation](teleop.md)), verified against `scripts/teleop_check.py` — but **nothing
-consumes it**. There is no solver, no joint-limit handling, no arm. The delta stream is an offer,
-and until something takes it up, no robot moves.
+`vive_vr_ros2::TeleopNode` publishes clutch state and hand deltas per arm in the tool frame
+([Teleoperation](teleop.md)). The separate [OpenArm simulation](openarm_sim.md) consumes the
+right-arm stream with joint-limited KDL IK and MuJoCo forward-kinematics validation. The generic
+scene viewer still has no arm controller, and physical robot control is not implemented.
 
-`tool_from_controller_rpy` is also still identity, which is wrong for any real gripper; the value
-has to be observed rather than derived.
+The OpenArm bridge follows end-effector position and orientation; it does not measure or
+replicate human elbow posture. Its motion-test model disables gravity and contacts, so grasping
+and collision behavior remain unvalidated. Controller/tool orientation must be paired using
+`openarm_sim.py align` or `launch --teleop --align`; this does not calibrate absolute position.
 
 ## Clock offset is one-way, and a suspend poisons it
 
