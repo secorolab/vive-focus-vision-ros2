@@ -1,4 +1,4 @@
-# OpenArm V1 motion-test setup
+# OpenArm V1 motion-test setup {#page_openarm_sim}
 
 `scripts/openarm_sim.py` replaces the manual Python blocks used to prepare the dual-arm
 OpenArm V1 model. It generates files, exports the headset geometry, and provides a short
@@ -216,7 +216,9 @@ after a forced stop or when the target is out of reach, naming the affected hand
 how to continue. It guides you through releasing grip, matching the hand outline and re-gripping,
 then disappears once movement resumes. Each hand has
 a white outline for its current controller orientation and a cyan outline for the required
-orientation; the target turns green when ready. Rotate white into cyan, then press that grip.
+orientation; the target turns green when ready. The target uses a single crisp, rounded outline without a translucent shadow.
+A separate ring above each hand gently pulses and fills as alignment improves; it becomes
+steady and completes only when the PC reports ready. Rotate white into cyan, then press that grip.
 The target is computed from that arm's current TCP and saved controller/tool pairing and is
 published on `/vive_vr/teleop/{left,right}/alignment_pose` as `geometry_msgs/PoseStamped`.
 Guides appear automatically in existing scenes. Neither hand needs to reach the robot.

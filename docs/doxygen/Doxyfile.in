@@ -26,6 +26,7 @@ INPUT                  = @VIVE_VR_ROOT@/include \
                          @VIVE_VR_ROOT@/docs/embedding.md \
                          @VIVE_VR_ROOT@/docs/bringup.md \
                          @VIVE_VR_ROOT@/docs/teleop.md \
+                         @VIVE_VR_ROOT@/docs/openarm_sim.md \
                          @VIVE_VR_ROOT@/docs/testing.md \
                          @VIVE_VR_ROOT@/docs/design.md \
                          @VIVE_VR_ROOT@/docs/limits.md

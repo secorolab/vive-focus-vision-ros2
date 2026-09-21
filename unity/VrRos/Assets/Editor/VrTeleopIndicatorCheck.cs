@@ -53,17 +53,30 @@ public static class VrTeleopIndicatorCheck
                 var current = (LineRenderer)Get(indicator, "_currentOutline");
                 var wanted = (LineRenderer)Get(indicator, "_wantedOutline");
                 Check(current.enabled && wanted.enabled, "Orientation outlines missing");
+                foreach (var line in indicator.GetComponentsInChildren<LineRenderer>(true))
+                    Check(line.name != "DesiredControllerGlow", "Flickering shadow layer recreated");
+                var track = (LineRenderer)Get(indicator, "_alignmentTrack");
+                Check(current.sortingOrder < wanted.sortingOrder,
+                      "Overlapping outlines have ambiguous draw order");
+                Check(track.sortingOrder < ((LineRenderer)Get(indicator, "_alignmentProgress")).sortingOrder,
+                      "Progress ring has ambiguous draw order");
                 Check(wanted.startColor == Color.cyan, "Nonready guide is not cyan");
                 Check(Vector3.Distance(current.GetPosition(10), wanted.GetPosition(10)) > 0.1f,
                       "Target orientation not rotated");
+                var progress = (LineRenderer)Get(indicator, "_alignmentProgress");
+                Check(Vector3.Distance(progress.GetPosition(0), progress.GetPosition(progress.positionCount - 1)) > 0.001f,
+                      "Progress ring claims full readiness before the PC does");
                 Call(indicator, "OnStatus", Status(true));
                 Call(indicator, "DrawOrientation", true);
+                Check(Vector3.Distance(progress.GetPosition(0), progress.GetPosition(progress.positionCount - 1)) < 0.0001f,
+                      "Ready ring did not complete");
                 Check(Vector4.Distance((Vector4)wanted.startColor, (Vector4)indicator.ready) < 0.01f, "PC readiness not shown green");
                 Call(indicator, "DrawGuide", true, Color.green);
                 Check(!((LineRenderer)Get(indicator, "_guide")).enabled, "Relative mode still points to floor");
                 Set(indicator, "_wantedAt", Time.unscaledTime - 1f);
                 Call(indicator, "DrawOrientation", true);
                 Check(!wanted.enabled && !current.enabled, "Stale guide visible");
+                Check(!progress.enabled, "Stale decorative guidance visible");
                 var stopped = Status(false);
                 stopped["state"] = "release_grip";
                 stopped["stop_reason"] = "rotation_limit";

@@ -60,6 +60,8 @@ namespace VrRos
         private Quaternion _controllerRotation, _wantedRotation;
         private float _wantedAt = -100f;
         private LineRenderer _currentOutline, _wantedOutline;
+        private LineRenderer _alignmentTrack, _alignmentProgress;
+        private const int RingPoints = 49;
         // Asymmetric controller silhouette in Unity grip coordinates: handle, top, forward arrow.
         private static readonly Vector3[] ControllerOutline = {
             new Vector3(-0.018f, -0.08f, 0), new Vector3(0.018f, -0.08f, 0),
@@ -300,6 +302,7 @@ namespace VrRos
             bool show = matching && scene != null && Time.unscaledTime - _wantedAt <= StaleSeconds
                 && Time.unscaledTime - _controllerAt <= StaleSeconds;
             _wantedOutline.enabled = _currentOutline.enabled = show;
+            _alignmentTrack.enabled = _alignmentProgress.enabled = show;
             if (!show) return;
             Vector3 origin = scene.transform.TransformPoint(_controller);
             Quaternion current = scene.transform.rotation * _controllerRotation;
@@ -307,10 +310,34 @@ namespace VrRos
             for (int i = 0; i < ControllerOutline.Length; ++i)
             {
                 _currentOutline.SetPosition(i, origin + current * ControllerOutline[i]);
-                _wantedOutline.SetPosition(i, origin + wanted * ControllerOutline[i]);
+                Vector3 target = origin + wanted * ControllerOutline[i];
+                _wantedOutline.SetPosition(i, target);
             }
             _currentOutline.startColor = _currentOutline.endColor = Color.white;
-            _wantedOutline.startColor = _wantedOutline.endColor = _ready ? ready : Color.cyan;
+            Color targetColor = _ready ? ready : Color.cyan;
+            _wantedOutline.startColor = _wantedOutline.endColor = targetColor;
+            // Keep one stable target stroke; layered translucent controller shadows shimmer in VR.
+            _wantedOutline.widthMultiplier = 0.004f;
+            float pulse = _ready ? 1f : 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 3f);
+            Color track = targetColor; track.a = 0.18f;
+            _alignmentTrack.startColor = _alignmentTrack.endColor = track;
+            // A subtle brightness pulse lives on the separate ring, never on the pose outline.
+            Color ringColor = targetColor * (_ready ? 1f : 0.8f + 0.2f * pulse);
+            ringColor.a = 1f;
+            _alignmentProgress.startColor = _alignmentProgress.endColor = ringColor;
+            // Keep the ring readable above the hand, even when the controller is edge-on.
+            Vector3 up = _head != null ? _head.transform.up : Vector3.up;
+            Vector3 right = _head != null ? _head.transform.right : Vector3.right;
+            Vector3 centre = origin + up * 0.17f;
+            float fraction = _ready ? 1f : Mathf.Min(0.96f, 1f / Mathf.Max(1f, _worst));
+            for (int i = 0; i < RingPoints; ++i)
+            {
+                float angle = Mathf.PI * 0.5f - 2f * Mathf.PI * i / (RingPoints - 1);
+                float progressAngle = Mathf.PI * 0.5f - 2f * Mathf.PI * fraction * i / (RingPoints - 1);
+                _alignmentTrack.SetPosition(i, centre + 0.027f * (right * Mathf.Cos(angle) + up * Mathf.Sin(angle)));
+                _alignmentProgress.SetPosition(i, centre + 0.027f *
+                    (right * Mathf.Cos(progressAngle) + up * Mathf.Sin(progressAngle)));
+            }
         }
 
         private void DrawGuide(bool matching, Color tint)
@@ -344,7 +371,17 @@ namespace VrRos
             _targetRing = Line("GripperTargetRing", 40, true);
             _currentOutline = Line("CurrentControllerOrientation", ControllerOutline.Length, false);
             _wantedOutline = Line("DesiredControllerOrientation", ControllerOutline.Length, false);
-            _currentOutline.widthMultiplier = 0.002f;
+            _alignmentTrack = Line("AlignmentRingTrack", RingPoints, false);
+            _alignmentProgress = Line("AlignmentRingProgress", RingPoints, false);
+            // These transparent ribbons share the same positions. Explicit ordering avoids
+            // camera-distance sorting swapping their layers as the head/controller moves.
+            _currentOutline.sortingOrder = 20;
+            _wantedOutline.sortingOrder = 30;
+            _alignmentTrack.sortingOrder = 10;
+            _alignmentProgress.sortingOrder = 30;
+            _alignmentTrack.widthMultiplier = 0.002f;
+            _alignmentProgress.widthMultiplier = 0.004f;
+            _currentOutline.widthMultiplier = 0.0025f;
             _wantedOutline.widthMultiplier = 0.004f;
         }
 
@@ -358,6 +395,8 @@ namespace VrRos
             line.positionCount = points;
             line.loop = loop;
             line.widthMultiplier = 0.003f;
+            line.numCapVertices = 6;
+            line.numCornerVertices = 6;
             line.enabled = false;
             return line;
         }
@@ -370,6 +409,8 @@ namespace VrRos
             if (_targetRing != null) Dispose(_targetRing.gameObject);
             if (_currentOutline != null) Dispose(_currentOutline.gameObject);
             if (_wantedOutline != null) Dispose(_wantedOutline.gameObject);
+            if (_alignmentTrack != null) Dispose(_alignmentTrack.gameObject);
+            if (_alignmentProgress != null) Dispose(_alignmentProgress.gameObject);
             Dispose(_guideMaterial);
         }
 
