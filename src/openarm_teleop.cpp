@@ -8,6 +8,12 @@
 
 namespace vive_vr_ros2 {
 namespace {
+template<typename T>
+T parameter(rclcpp::Node &node, const std::string &name, const T &value)
+{
+    return node.has_parameter(name) ? node.get_parameter(name).get_value<T>()
+                                    : node.declare_parameter<T>(name, value);
+}
 
 /* Past this the tool is not on its target yet, which a large hand movement legitimately is. */
 constexpr double kOutOfReachPosition = 0.05; // [m]
@@ -25,26 +31,28 @@ double OpenArmTeleop::age(Clock::time_point since)
     return std::chrono::duration<double>(Clock::now() - since).count();
 }
 
-OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
-    : node_(node), model_(model), data_(data), ik_(model)
+OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data, const std::string &arm)
+    : arm_(arm), node_(node), model_(model), data_(data), ik_(model, arm)
 {
-    scale_ = node.declare_parameter<double>("openarm.translation_scale", 0.25);
-    radius_ = node.declare_parameter<double>("openarm.max_translation_m", 0.15);
-    timeout_ = node.declare_parameter<double>("openarm.timeout_s", 0.25);
-    finger_speed_ = node.declare_parameter<double>("openarm.finger_speed_m_s", 0.02);
-    rotation_limit_ = node.declare_parameter<double>("openarm.max_rotation_rad", 1.75);
-    alignment_tolerance_ = node.declare_parameter<double>("openarm.alignment_tolerance_rad", 0.20);
-    position_tolerance_ = node.declare_parameter<double>("openarm.alignment_tolerance_m", 0.15);
-    alignment_configured_ = node.declare_parameter<bool>("openarm.alignment_configured", false);
-    require_alignment_ = node.declare_parameter<bool>("openarm.require_alignment", true);
-    gains_.joint_speed = node.declare_parameter<double>("openarm.joint_speed_rad_s", 1.5);
-    gains_.max_linear = node.declare_parameter<double>("openarm.max_linear_speed_m_s", 0.5);
-    gains_.max_angular = node.declare_parameter<double>("openarm.max_angular_speed_rad_s", 2.0);
-    gains_.tracking_tau = node.declare_parameter<double>("openarm.tracking_time_constant_s", 0.12);
-    gains_.damping = node.declare_parameter<double>("openarm.damping", 0.05);
-    gains_.posture_gain = node.declare_parameter<double>("openarm.posture_gain_hz", 0.5);
-    const auto pairing = node.declare_parameter<std::vector<double>>(
-      "openarm.controller_to_tool_xyzw", {0.0, 0.0, 0.0, 1.0});
+    const std::string pairing_prefix = arm == "right" ? "openarm." : "openarm.left.";
+    scale_ = parameter<double>(node, "openarm.translation_scale", 0.25);
+    radius_ = parameter<double>(node, "openarm.max_translation_m", 0.15);
+    timeout_ = parameter<double>(node, "openarm.timeout_s", 0.25);
+    finger_speed_ = parameter<double>(node, "openarm.finger_speed_m_s", 0.02);
+    rotation_limit_ = parameter<double>(node, "openarm.max_rotation_rad", 1.75);
+    alignment_tolerance_ = parameter<double>(node, "openarm.alignment_tolerance_rad", 0.20);
+    position_tolerance_ = parameter<double>(node, "openarm.alignment_tolerance_m", 0.15);
+    require_position_alignment_ = parameter<bool>(node, "openarm.require_position_alignment", false);
+    alignment_configured_ = parameter<bool>(node, pairing_prefix + "alignment_configured", false);
+    require_alignment_ = parameter<bool>(node, "openarm.require_alignment", true);
+    gains_.joint_speed = parameter<double>(node, "openarm.joint_speed_rad_s", 1.5);
+    gains_.max_linear = parameter<double>(node, "openarm.max_linear_speed_m_s", 0.5);
+    gains_.max_angular = parameter<double>(node, "openarm.max_angular_speed_rad_s", 2.0);
+    gains_.tracking_tau = parameter<double>(node, "openarm.tracking_time_constant_s", 0.12);
+    gains_.damping = parameter<double>(node, "openarm.damping", 0.05);
+    gains_.posture_gain = parameter<double>(node, "openarm.posture_gain_hz", 0.5);
+    const auto pairing = parameter<std::vector<double>>(node,
+      pairing_prefix + "controller_to_tool_xyzw", {0.0, 0.0, 0.0, 1.0});
     if (pairing.size() != 4) throw std::runtime_error("Invalid controller/tool pairing");
     pairing_q_[0] = pairing[3];
     for (int i = 0; i < 3; ++i) pairing_q_[i+1] = pairing[i];
@@ -61,7 +69,7 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
         throw std::runtime_error("Invalid OpenArm posture gain");
     }
     for (int i = 0; i < 2; ++i) {
-        const auto name = "openarm_right_finger_joint" + std::to_string(i + 1);
+        const auto name = "openarm_" + arm_ + "_finger_joint" + std::to_string(i + 1);
         const int joint = mj_name2id(model, mjOBJ_JOINT, name.c_str());
         finger_motors_[i] = mj_name2id(model, mjOBJ_ACTUATOR, (name + "_position").c_str());
         if (joint < 0 || finger_motors_[i] < 0) {
@@ -69,7 +77,7 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
         }
         fingers_[i] = model->jnt_qposadr[joint];
     }
-    const auto ns = node.get_parameter("out_ns").as_string() + "/teleop/right";
+    const auto ns = node.get_parameter("out_ns").as_string() + "/teleop/" + arm_;
     clutch_sub_ = node.create_subscription<std_msgs::msg::Bool>(
       ns + "/clutch", rclcpp::QoS(1).transient_local(),
       [this](std_msgs::msg::Bool::SharedPtr msg) { clutch(msg->data); });
@@ -80,21 +88,23 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data)
       ns + "/gripper", rclcpp::SensorDataQoS().keep_last(1),
       [this](std_msgs::msg::Float32::SharedPtr msg) { gripper(msg->data); });
     ee_pub_ = node.create_publisher<geometry_msgs::msg::PoseStamped>(
-      node.get_parameter("out_ns").as_string() + "/sim/right/ee_pose", rclcpp::SensorDataQoS());
+      node.get_parameter("out_ns").as_string() + "/sim/" + arm_ + "/ee_pose", rclcpp::SensorDataQoS());
+    alignment_pose_pub_ = node.create_publisher<geometry_msgs::msg::PoseStamped>(
+      ns + "/alignment_pose", rclcpp::SensorDataQoS());
     status_pub_ = node.create_publisher<vive_vr_ros2::msg::TeleopStatus>(ns + "/status", 1);
     controller_sub_ = node.create_subscription<geometry_msgs::msg::PoseStamped>(
-      node.get_parameter("out_ns").as_string() + "/right/pose", rclcpp::SensorDataQoS().keep_last(1),
+      node.get_parameter("out_ns").as_string() + "/" + arm_ + "/pose", rclcpp::SensorDataQoS().keep_last(1),
       [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) { controller(*msg); });
     reset();
-    RCLCPP_INFO(node.get_logger(), "Right-arm simulation: side grip enables motion; rear trigger controls gripper");
+    RCLCPP_INFO(node.get_logger(), "%s-arm simulation: side grip enables motion; rear trigger controls gripper", arm_.c_str());
 }
 
 void OpenArmTeleop::controller(const geometry_msgs::msg::PoseStamped &msg)
 {
     if (msg.header.frame_id != "world") {
         RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000,
-                             "Right controller pose is in frame '%s', not 'world'; ignored",
-                             msg.header.frame_id.c_str());
+                             "%s controller pose is in frame '%s', not 'world'; ignored",
+                             arm_.c_str(), msg.header.frame_id.c_str());
         return;
     }
     const auto &q = msg.pose.orientation;
@@ -130,11 +140,13 @@ bool OpenArmTeleop::aligned()
 {
     if (!alignment_configured_) return false;
     const Match m = match();
-    return m.live && m.rotation <= alignment_tolerance_ && m.position <= position_tolerance_;
+    return m.live && m.rotation <= alignment_tolerance_ &&
+           (!require_position_alignment_ || m.position <= position_tolerance_);
 }
 
-void OpenArmTeleop::hold()
+void OpenArmTeleop::hold(const char *reason)
 {
+    stop_reason_ = reason;
     ik_.sync(data_);
     for (int i = 0; i < 7; ++i) data_->ctrl[ik_.motors[i]] = data_->qpos[ik_.qpos[i]];
     for (int i = 0; i < 2; ++i) data_->ctrl[finger_motors_[i]] = data_->qpos[fingers_[i]];
@@ -156,6 +168,7 @@ void OpenArmTeleop::clutch(bool down)
 {
     if (!down) {
         if (active_) hold();
+        stop_reason_.clear();
         released_ = true;
         return;
     }
@@ -195,28 +208,29 @@ void OpenArmTeleop::gripper(float value)
 void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
 {
     if (!active_) return;
-    if (msg.header.frame_id != "right_tool_ref" || msg.child_frame_id != "right_tool_cmd") {
+    if (msg.header.frame_id != arm_ + "_tool_ref" || msg.child_frame_id != arm_ + "_tool_cmd") {
         RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000,
-                             "Right delta names frames '%s'->'%s'; ignored",
-                             msg.header.frame_id.c_str(), msg.child_frame_id.c_str());
+                             "%s delta names frames '%s'->'%s'; ignored",
+                             arm_.c_str(), msg.header.frame_id.c_str(), msg.child_frame_id.c_str());
         return;
     }
     const auto &t = msg.transform.translation;
     const auto &q = msg.transform.rotation;
     mjtNum p[3] = { t.x * scale_, t.y * scale_, t.z * scale_ };
     mjtNum quat[4] = { q.w, q.x, q.y, q.z };
-    for (double value : p) if (!std::isfinite(value)) { hold(); return; }
-    for (double value : quat) if (!std::isfinite(value)) { hold(); return; }
+    for (double value : p) if (!std::isfinite(value)) { hold("invalid_target"); return; }
+    for (double value : quat) if (!std::isfinite(value)) { hold("invalid_target"); return; }
     const double norm = mju_norm(quat, 4);
-    if (norm < 0.9 || norm > 1.1) { hold(); return; }
+    if (norm < 0.9 || norm > 1.1) { hold("invalid_target"); return; }
     mju_normalize4(quat);
     const double angle = 2 * std::acos(std::clamp(std::abs(quat[0]), 0.0, 1.0));
     /* The first delta of a press is against a reference captured at it: anything but a
      * near-identity one belongs to the previous press. */
     if (mju_norm3(p) > radius_ || angle > rotation_limit_ ||
         (!have_target_ && (mju_norm3(p) > 0.025 || angle > 0.15))) {
-        hold();
-        RCLCPP_WARN(node_.get_logger(), "Right target exceeded motion bounds; release and re-grip");
+        hold(mju_norm3(p) > radius_ ? "translation_limit" :
+             angle > rotation_limit_ ? "rotation_limit" : "reference_mismatch");
+        RCLCPP_WARN(node_.get_logger(), "%s target exceeded motion bounds; release and re-grip", arm_.c_str());
         return;
     }
     mju_rotVecQuat(target_p_, p, anchor_q_);
@@ -229,8 +243,8 @@ void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
 void OpenArmTeleop::tick(double dt)
 {
     if (active_ && age(last_delta_) > timeout_) {
-        hold();
-        RCLCPP_WARN(node_.get_logger(), "Right tracking timeout: holding; release and re-grip");
+        hold("tracking_timeout");
+        RCLCPP_WARN(node_.get_logger(), "%s tracking timeout: holding; release and re-grip", arm_.c_str());
     }
     if (active_ && have_target_) {
         tracking_ = ik_.step(target_p_, target_q_, dt, gains_);
@@ -252,9 +266,9 @@ void OpenArmTeleop::tick(double dt)
         } else if (age(progress_at_) > kProgressWindow && !stalled_) {
             stalled_ = true;
             RCLCPP_WARN(node_.get_logger(),
-                        "Right tool has stopped closing on its target, %.0f mm and %.0f deg away; "
+                        "%s tool has stopped closing on its target, %.0f mm and %.0f deg away; "
                         "the arm is as close as it can reach",
-                        tracking_.position_error * 1e3, tracking_.rotation_error * 180.0 / mjPI);
+                        arm_.c_str(), tracking_.position_error * 1e3, tracking_.rotation_error * 180.0 / mjPI);
         }
     }
     mj_kinematics(model_, data_);
@@ -272,12 +286,28 @@ void OpenArmTeleop::tick(double dt)
     pose.pose.orientation.z = q[3];
     ee_pub_->publish(pose);
     const Match m = match();
+    if (m.live && alignment_configured_) {
+        // controller * pairing = tool, so the desired controller is tool * inverse(pairing).
+        mjtNum inverse[4], wanted[4];
+        mju_negQuat(inverse, pairing_q_);
+        mju_mulQuat(wanted, data_->xquat + 4 * ik_.tcp, inverse);
+        auto target = pose;
+        target.pose.position.x = controller_p_[0];
+        target.pose.position.y = controller_p_[1];
+        target.pose.position.z = controller_p_[2];
+        target.pose.orientation.w = wanted[0];
+        target.pose.orientation.x = wanted[1];
+        target.pose.orientation.y = wanted[2];
+        target.pose.orientation.z = wanted[3];
+        alignment_pose_pub_->publish(target);
+    }
     vive_vr_ros2::msg::TeleopStatus status;
     status.header.stamp = pose.header.stamp;
     status.header.frame_id = "world";
     status.position_error_m = m.position;
     status.rotation_error_rad = m.rotation;
-    status.position_tolerance_m = position_tolerance_;
+    // Zero signals relative-position engagement to the headset (no proximity gate).
+    status.position_tolerance_m = require_position_alignment_ ? position_tolerance_ : 0.0;
     status.rotation_tolerance_rad = alignment_tolerance_;
     if (active_) status.state = !have_target_ ? "waiting_delta"
                               : stalled_      ? "unreachable"
@@ -286,6 +316,7 @@ void OpenArmTeleop::tick(double dt)
     else if (!alignment_configured_) status.state = "calibration_required";
     else if (!m.live) status.state = "tracking_lost";
     else status.state = aligned() ? "ready" : "align_pose";
+    status.stop_reason = stop_reason_;
     status.ready = status.state == "ready";
     status_pub_->publish(status);
 }

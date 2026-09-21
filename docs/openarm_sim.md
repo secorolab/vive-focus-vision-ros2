@@ -6,9 +6,8 @@ launch command. It does not install dependencies, build an APK, or connect to ph
 
 This is a **motion-test simulation**: gravity and contacts are disabled. The imported collision
 shapes overlap at the starting pose, so contact physics must be corrected before grasping tests.
-The right-arm IK bridge is opt-in with `launch --teleop`. It runs inside the separate
-`openarm_sim_node` application and writes only to its simulated motors. The left arm holds
-its home pose. `teleop_node` by itself still
+The dual-arm IK bridge is opt-in with `launch --teleop`. It runs inside the separate
+`openarm_sim_node` application and writes only to its simulated motors. Each controller drives its matching arm independently. `teleop_node` by itself still
 only produces controller deltas; it needs this consumer to move a robot.
 
 ## Scope and existing IK
@@ -63,7 +62,7 @@ Stop any previous tracking/simulation launch with Ctrl+C, then:
 python3 scripts/openarm_sim.py launch
 ```
 
-For right-arm controller motion, stop the preview and any separately running `teleop_node`, then:
+For controller motion on both arms, stop the preview and any separately running `teleop_node`, then:
 
 ```bash
 python3 scripts/openarm_sim.py launch --teleop
@@ -72,15 +71,15 @@ python3 scripts/openarm_sim.py launch --teleop
 This starts tracking, the simulation and exactly one `teleop_node`. Re-run `prepare` after
 updating this script to generate `teleop.yaml` and the straight-down home-pose keyframe.
 
-1. Release the right side grip before starting. Hold your right hand down beside you,
+1. Release both side grips before starting. Calibrate each hand separately, held down beside you,
    matching the hanging robot arm. Perform the alignment below before the first motion test.
 2. Match your controller orientation to the robot gripper using your calibrated grip.
-3. Hold the right side grip to move. Translation follows your hand at 1:1 scale in the
+3. Hold either side grip to move its matching arm. Translation follows your hand at 1:1 scale in the
    generated teleop configuration; wrist rotation changes the gripper orientation.
-   Begin with 5–10 cm movements before raising the arm farther. No headset indicator or
-   APK rebuild is required. If it does not engage, release grip, match orientation and retry.
+   Begin with 5–10 cm movements before raising the arm farther. If it does not engage,
+   release grip, match orientation and retry. Both grips can be held at the same time.
 4. Release the side grip to hold the arm. Re-grip to continue from its current pose.
-5. While engaged, squeeze the rear index trigger ("R2") to close the right gripper;
+5. While engaged, squeeze that controller's index trigger to close its gripper;
    release that trigger to open it. Engaging the side grip alone preserves the gripper position.
    The first trigger sample after re-gripping is captured without applying it; subsequent changes
    control the opening. This prevents an idle trigger from opening the gripper on clutch press.
@@ -144,6 +143,19 @@ mapping with a world-frame command.
 
 The script cannot detect which physical end of the controller you mean by its tip: the held
 pose defines the pairing. It requires a released clutch and fresh, steady orientation samples.
+For the left hand, run the same calibration with `--arm left`:
+
+```bash
+python3 scripts/openarm_sim.py launch --teleop --align --arm left --delay 10
+```
+
+Keep the left grip released and hold the left controller in your comfortable hanging-gripper
+orientation. It saves `controller_alignment_left.json` and `openarm.left.*` calibration fields;
+your existing right-hand calibration remains unchanged. Both arms are blocked during the
+calibration launch. Without left calibration, the right arm still works and the left waits.
+Run `python3 scripts/openarm_sim.py configure` after upgrading to add the left controller configuration (saved calibrations
+are retained). Rebuild ROS and the APK for this update.
+
 It writes `controller_alignment.json` and updates `teleop.yaml`; `prepare` retains this saved
 alignment. **Stop and restart `launch --teleop` to apply it.** If you change how you grip the
 controller or the intended tip direction, repeat alignment. Begin with a small lift, then test
@@ -156,7 +168,7 @@ python3 scripts/openarm_sim.py reset
 ```
 
 Release grip before reset. The service resets simulated joint state and targets immediately;
-the right arm cannot resume until it sees release then re-grip. This is simulation-only behavior.
+the affected arm cannot resume until it sees release then re-grip. This is simulation-only behavior.
 
 Defaults under `vive_scene.ros__parameters` (override in `teleop.yaml`):
 
@@ -170,7 +182,7 @@ Defaults under `vive_scene.ros__parameters` (override in `teleop.yaml`):
 | `openarm.tracking_time_constant_s` | 0.12 | Time constant with which the tool closes its pose error; smaller is tighter and twitchier. |
 | `openarm.damping` | 0.05 | Least-squares damping, phased in only as a singularity is approached. |
 | `openarm.posture_gain_hz` | 0.5 | How hard the spare degree of freedom drifts the elbow back towards mid-range. |
-| `openarm.alignment_tolerance_m` | 0.15 | How near the controller must be to the tool before a press engages. |
+| `openarm.alignment_tolerance_m` | 0.15 | Optional proximity threshold, used only with `openarm.require_position_alignment=true`. |
 | `openarm.finger_speed_m_s` | 0.02 | Maximum rate of finger-target changes. |
 | `openarm.timeout_s` | 0.25 | Maximum time without a delta arriving before holding and requiring re-grip. |
 
@@ -182,15 +194,16 @@ so a 90-degree forward turn no longer trips the former 34-degree cutoff. The gen
 `teleop.yaml` uses translation scale 1.0 and a 1.0 m displacement bound per press; the
 class defaults in the table remain conservative for custom configurations. Robot reach and
 joint limits still apply: a long human arm movement can request an unreachable TCP pose.
-All seven right-arm joints participate in end-effector IK; human elbow posture is not measured.
+All seven joints of each arm participate in end-effector IK; human elbow posture is not measured.
 
-Side-grip engagement requires the controller to **match the tool pose**: orientation within
-`openarm.alignment_tolerance_rad` (0.20 rad, about 11 degrees) using the saved pairing, and
-position within `openarm.alignment_tolerance_m` (0.15 m), against fresh controller data. Bring
-the controller to the gripper, then press. This is not whole-body calibration: the position
-comparison is only as good as the play space, which nothing measures, so the operator closes the
-loop by eye on the gripper they can see. `openarm.require_alignment=false` disables the gate for
-automated delta-only tests.
+Side-grip engagement requires fresh controller tracking and matching wrist orientation within
+`openarm.alignment_tolerance_rad` (0.20 rad, about 11 degrees), using the saved pairing.
+Stand comfortably: your hand does not need to overlap the virtual gripper or reach the floor.
+Pressing side grip anchors the current robot tool pose; subsequent hand displacement drives
+relative tool motion. Releasing and pressing again starts a new reference without a jump.
+Optional `openarm.require_position_alignment=true` restores the proximity gate, using
+`openarm.alignment_tolerance_m` (0.15 m). The default is false.
+`openarm.require_alignment=false` bypasses alignment for automated delta-only tests.
 
 The bridge publishes `/vive_vr/teleop/right/status` (`vive_vr_ros2/TeleopStatus`): a `state` of
 `ready`, `align_pose`, `calibration_required`, `tracking_lost`, `release_grip`, `waiting_delta`,
@@ -198,7 +211,29 @@ The bridge publishes `/vive_vr/teleop/right/status` (`vive_vr_ros2/TeleopStatus`
 against. `VrTeleopIndicator` in the client tints the gripper from red through amber to green
 from that message. Green is the PC's `ready` flag rather than a threshold held on the headset,
 so green always means the press will take; only the shade between is computed on the client.
-Re-run `prepare` and restart teleop after upgrading, preserving your saved alignment;
+During normal use the headset shows **only hand indicators**. A recovery panel appears only
+after a forced stop or when the target is out of reach, naming the affected hand and explaining
+how to continue. It guides you through releasing grip, matching the hand outline and re-gripping,
+then disappears once movement resumes. Each hand has
+a white outline for its current controller orientation and a cyan outline for the required
+orientation; the target turns green when ready. Rotate white into cyan, then press that grip.
+The target is computed from that arm's current TCP and saved controller/tool pairing and is
+published on `/vive_vr/teleop/{left,right}/alignment_pose` as `geometry_msgs/PoseStamped`.
+Guides appear automatically in existing scenes. Neither hand needs to reach the robot.
+Stale outlines and readiness are hidden after disconnect or 0.5 s without fresh data.
+Position tolerance zero in the status means no proximity check; raw distance is diagnostic.
+
+A forced stop now includes `stop_reason` in the status: `translation_limit`, `rotation_limit`,
+`tracking_timeout`, `invalid_target`, or `reference_mismatch`. The temporary recovery panel translates this into a short cause and next action.
+For generated configurations, bounds per press are 1 m and 1.75 rad (about 100 degrees).
+Release grip, align the wrist, and press again to establish a new reference. Robot reach/joint
+limits instead report `unreachable`; the servo continues pursuing the closest reachable pose.
+Tracking freshness uses steady-clock message arrival, so headset timestamp corrections do not
+open the clutch. A real pose dropout still stops motion and requires a physical release/re-press.
+
+This change requires rebuilding ROS and the APK, then restarting the simulation.
+
+Run `configure` and restart teleop after upgrading, preserving your saved alignments;
 `align` also writes the pairing to the simulation configuration. The combined
 `launch --teleop --align` workflow blocks robot engagement during calibration.
 
@@ -215,7 +250,7 @@ delta until the next step ([Known limits](limits.md)). A gap in arrivals longer 
 The bridge is a resolved-rate servo, not a per-tick pose solve. It owns the commanded
 configuration, seeded from the measured joints at grip press, and each tick moves it down the
 pose error: the Jacobian from KDL's `ChainJntToJacSolver` over the chain `init_robot_from_mjcf`
-builds to `openarm_right_hand_tcp`, and the joint velocity from a damped least-squares inverse
+builds to the selected `openarm_{left,right}_hand_tcp`, and the joint velocity from a damped least-squares inverse
 damped only near a singularity (Nakamura and Hanafusa 1986; Chiaverini, Oriolo and Walker 1994),
 with the spare seventh joint pulling the arm to mid-range through the null space (Liégeois 1977).
 
@@ -262,8 +297,9 @@ directory), and `--library` (MuJoCo shared library). Pass the same `--output` to
 | `openarm_v1_motion_test.xml` | Copy with gravity and contacts disabled for initial motion checks. |
 | `openarm_v1_controlled.xml` | Motion-test copy with 14 arm and 4 finger position motors, damping and two finger-coupling constraints. |
 | `preview.yaml` | Copy of this project's ROS configuration with zero gravity, object grabbing disabled and a 0.002-second physics step. |
-| `teleop.yaml` | Same configuration with the right-arm simulation bridge enabled. |
-| `controller_alignment.json` | Measured controller/tool rotation, retained when regenerating models. |
+| `teleop.yaml` | Same configuration with the independent left/right simulation bridges enabled. |
+| `controller_alignment.json` | Right controller/tool rotation, retained when regenerating models. |
+| `controller_alignment_left.json` | Independent left controller/tool rotation, also retained. |
 | `vr_scene_controlled/scene.glb` | Robot geometry displayed by the headset. |
 | `vr_scene_controlled/manifest.json` | Mapping between the exported geometry and MuJoCo body IDs. |
 
@@ -299,8 +335,8 @@ This is a basic check, not validation across all poses or gains.
 it, actuator tracking, the per-tick velocity and limit bounds, null-space centring without
 disturbing the tool, the home singularity, and out-of-reach settling.
 
-Both C++ checks run against `tests/openarm_test_arm.xml`, a seven-joint arm with the OpenArm
-right-arm names, so `colcon test` needs no OpenArm description; set `OPENARM_TEST_MODEL` to a
+The C++ checks run against `tests/openarm_test_arm.xml`, two seven-joint arms with OpenArm
+left/right names, so `colcon test` needs no OpenArm description; set `OPENARM_TEST_MODEL` to a
 generated model to run them against the real robot too.
 `tests/openarm_alignment_check.py` checks the measured
 frame rotation, translation and rotation direction preservation, and RPY conversion.

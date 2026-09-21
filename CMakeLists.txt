@@ -160,9 +160,13 @@ if(BUILD_TESTING AND BUILD_OPENARM_SIM)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_check.py)
   add_test(NAME openarm_alignment_capture_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_capture_check.py)
+  add_test(NAME openarm_left_alignment_capture_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_capture_check.py left)
+  add_test(NAME teleop_freshness_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/teleop_freshness_check.py $<TARGET_FILE:teleop_node>)
   # These run against tests/openarm_test_arm.xml; OPENARM_TEST_MODEL adds a run on the real robot.
   set(OPENARM_TEST_MODEL "" CACHE FILEPATH "Generated OpenArm controlled MJCF for integration tests")
-  foreach(check openarm_ik_check openarm_bridge_check)
+  foreach(check openarm_ik_check openarm_bridge_check openarm_dual_check)
     add_executable(${check} tests/${check}.cpp)
     target_link_libraries(${check} PRIVATE openarm_sim_support)
     target_compile_definitions(${check} PRIVATE TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests")

@@ -60,9 +60,9 @@ python3 scripts/fetch_vive_plugin.py
 
 ## OpenArm V1 teleoperation
 
-The OpenArm application drives the **right arm in MuJoCo** from the right controller. A
+The OpenArm application drives the **both arms in MuJoCo** from their matching controllers. A
 resolved-rate servo over the Orocos KDL Jacobian moves all seven arm joints to follow the
-gripper position and orientation; the left arm holds its home pose. This is a motion-test simulation with gravity and contacts disabled,
+gripper position and orientation independently for each arm. This is a motion-test simulation with gravity and contacts disabled,
 not physical robot control or a grasping simulation. Your elbow is not tracked, so the robot
 can use a different elbow posture to reach the same gripper pose.
 
@@ -114,11 +114,24 @@ python3 scripts/openarm_sim.py launch --teleop --align --delay 10
    robot gripper, with your chosen controller tip direction pointing down.
 3. Hold still for at least one second. The script captures alignment and automatically restarts
    the stack. Wait for the headset to reconnect and the robot to reappear.
-4. Bring your hand to the gripper until it turns green, then press and hold the right side grip.
+4. Rotate the white controller outline into the cyan target until it turns green, then hold the right side grip.
    Start with a small hand movement and wrist rotation. Release the grip to hold position.
 
 Keep the terminal open while using VR. This one launch runs the robot simulation, ROS bridge,
 discovery server and scene server. **Ctrl+C stops them all.**
+
+To enable the left hand, stop the launch and calibrate it once:
+
+```bash
+python3 scripts/openarm_sim.py configure
+python3 scripts/openarm_sim.py launch --teleop --align --arm left --delay 10
+```
+
+Keep the **left** grip released and hold that controller in the same comfortable hanging-tool
+pose during capture. Each arm has its own calibration, grip reference, trigger and visual guide.
+Your right calibration is preserved. Both arms are blocked during calibration, and neither
+controller can command the other arm. Rebuild ROS and the APK after updating the source.
+`configure` updates controller settings on an existing model without reimporting meshes.
 
 For later sessions with the same controller grip and orientation pairing, reuse the saved
 alignment instead of capturing again:
@@ -129,16 +142,18 @@ python3 scripts/openarm_sim.py launch --teleop
 
 | Input | Effect while the side grip is held |
 |---|---|
-| Move the right hand | Move the gripper target at 1:1 translation scale. |
+| Move either hand | Move the gripper target at 1:1 translation scale. |
 | Rotate the wrist | Rotate the gripper target; 90-degree turns fit within the 100-degree bound per press. |
 | Pull/release the index trigger | Close/open the gripper after the initial trigger sample is captured. |
 | Release the side grip | Hold the arm; re-grip starts a new relative movement. |
 
 Robot reach, joint limits and speed limits still apply. The generated configuration bounds
 translation to 1 m per press. Engagement requires a saved alignment and a fresh controller pose
-within about 11 degrees and 15 cm of the robot gripper. If it does not engage, release the
-side grip, bring your hand to the gripper and press again: the gripper tints red, then amber as
-you close in, then green when a press will take. Past its reach the arm holds the closest pose
+within about 11 degrees of the calibrated gripper orientation. Your hand position is free;
+you do not need to reach the robot or the floor. Match the white outline to the cyan one
+until the target turns green, then hold that side grip. VR shows only hand indicators, with
+no permanent information panel. A temporary message explains how to recover from a movement
+limit or tracking pause and disappears when you resume. Past its reach the arm holds the closest pose
 it can and keeps following; move back towards it and it picks you up again. Motion is relative
 to each grip press, not an absolute hand-to-robot calibration.
 
@@ -200,7 +215,7 @@ in [Configuration](docs/configuration.md#headset-settings).
 - [First run on the headset](docs/bringup.md) — the on-device checklist
 - [Testing](docs/testing.md) — what is verified, how, and what is not
 - [Design notes](docs/design.md) — why the system is shaped this way, and what was rejected
-- [OpenArm simulation](docs/openarm_sim.md) — right-arm IK, alignment, controls and tests
+- [OpenArm simulation](docs/openarm_sim.md) — dual-arm IK, alignment, controls and tests
 - [Teleoperation](docs/teleop.md) — the clutch, the delta stream, and why it needs no calibration
 - [Known limits](docs/limits.md) — what is missing or approximate
 

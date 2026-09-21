@@ -45,6 +45,7 @@ def launch_setup(context):
         # Stream controller/TCP poses for calibration, but never engage robot motion.
         scene_params['openarm.require_alignment'] = True
         scene_params['openarm.alignment_configured'] = False
+        scene_params['openarm.left.alignment_configured'] = False
     return [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'tracking.launch.py')),
