@@ -294,7 +294,7 @@ directory), and `--library` (MuJoCo shared library). Pass the same `--output` to
 |---|---|
 | Original `openarm_v10.urdf.xacro` | Robot-description template in `openarm_description`; unchanged. |
 | `openarm_v1.urdf` | Template expanded into links, joints, masses, limits and mesh references for both arms. |
-| `openarm_v1_mujoco.urdf` | Import copy with absolute mesh paths and only collision shapes. Preserves fixed bodies and allows balancing inconsistent inertia values. |
+| `openarm_v1_mujoco.urdf` | Import copy with absolute mesh paths, coloured visual parts, and separate collision shapes. Preserves fixed bodies and allows balancing inconsistent inertia values. |
 | `openarm_v1.xml` | Converted MuJoCo model with corrected mesh references; no position motors. |
 | `openarm_v1_motion_test.xml` | Copy with gravity and contacts disabled for initial motion checks. |
 | `openarm_v1_controlled.xml` | Motion-test copy with 14 arm and 4 finger position motors, damping and two finger-coupling constraints. |
@@ -306,6 +306,23 @@ directory), and `--library` (MuJoCo shared library). Pass the same `--output` to
 | `vr_scene_controlled/manifest.json` | Mapping between the exported geometry and MuJoCo body IDs. |
 
 **URDF** is ROS's robot-description format. **MJCF** is MuJoCo's XML model format.
+The OpenArm description stores its visual colours in COLLADA (`.dae`) files. MuJoCo cannot
+load those directly. `prepare` uses `scripts/openarm_visuals.py` (requires `python3-numpy`) to
+convert each authored material part into an OBJ mesh plus a URDF diffuse colour. Dense visual
+parts are clustered at 1 mm resolution for headset rendering; collisions and robot inertias
+are unchanged. Generated OBJ files live in `visual_meshes/` beside the generated model.
+The exporter includes visual group 1 only, keeping the collision hulls out of the VR view.
+Unsupported COLLADA primitives, texture materials or coordinate conventions fail explicitly.
+
+By default, `prepare` applies an approximate black-and-silver V1 hardware finish: dark arm
+housings and brackets, with silver stand hardware and gripper details. This is a display
+preset, not measured material data. Use `prepare --appearance cad` to retain the original
+pale CAD colours. Neither option modifies the source OpenArm description.
+
+After updating from an older plain-grey collision-only model, run `prepare` and restart the
+simulation and headset app. The scene geometry changes, so `configure` alone is insufficient;
+no APK rebuild is required. Both saved controller calibrations are retained.
+
 A **mesh** is a 3D surface. Collision meshes are simpler than the visual meshes used in RViz,
 so this headset model is grey and has simplified details.
 

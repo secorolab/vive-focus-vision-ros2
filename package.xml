@@ -31,6 +31,7 @@
        fork; see the README. -->
   <depend>mj_kdl_wrapper</depend>
 
+  <exec_depend>python3-numpy</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>rosbridge_server</exec_depend>

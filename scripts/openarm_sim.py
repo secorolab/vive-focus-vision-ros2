@@ -130,6 +130,8 @@ def prepare(args):
         if not path.is_file():
             raise FileNotFoundError(path)
         mesh.set('filename', str(path))
+    from openarm_visuals import prepare_visuals
+    prepare_visuals(urdf, folder, appearance=args.appearance)
     extension = ET.SubElement(urdf, 'mujoco')
     # Visuals carry the materials and textures; discarding them drew the arm as collision hulls.
     ET.SubElement(extension, 'compiler', strippath='false', fusestatic='false',
@@ -320,6 +322,8 @@ def main():
     parser.add_argument('--library', type=Path, default=Path.home()
                         / '.cache/mj_kdl_wrapper/mujoco-3.9.0/lib/libmujoco.so.3.9.0')
     parser.add_argument('--skip-export', action='store_true', help='prepare model files only')
+    parser.add_argument('--appearance', choices=('hardware', 'cad'), default='hardware',
+                        help='V1 black/silver finish or original CAD colours (prepare only)')
     parser.add_argument('--host-ip', help='PC address reachable by the headset (launch only)')
     parser.add_argument('--teleop', action='store_true', help='launch both arms with independent simulation IK')
     parser.add_argument('--align', dest='align_on_launch', action='store_true',

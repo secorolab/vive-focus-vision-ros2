@@ -154,6 +154,8 @@ endif()
 if(BUILD_TESTING AND BUILD_OPENARM_SIM)
   enable_testing()
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME openarm_visuals_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_visuals_check.py)
   add_test(NAME openarm_launch_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_launch_check.py)
   add_test(NAME openarm_alignment_check
