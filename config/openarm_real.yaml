@@ -1,0 +1,15 @@
+# Physical-robot VR tuning only. Simulation continues to use its own teleop.yaml.
+# Calibration/tool pairings are imported separately by the launch.
+openarm_hardware_preview:
+  ros__parameters:
+    openarm.translation_scale: 1.0
+    openarm.max_translation_m: 0.50
+    openarm.max_rotation_rad: 3.141592653589793
+    openarm.stop_at_motion_bounds: false
+    openarm.joint_speed_rad_s: 0.3
+    openarm.max_linear_speed_m_s: 0.10
+    openarm.max_angular_speed_rad_s: 0.5
+    openarm.posture_gain_hz: 0.0
+    openarm.tracking_time_constant_s: 0.15
+    openarm.finger_speed_m_s: 0.005
+    openarm.require_alignment: true

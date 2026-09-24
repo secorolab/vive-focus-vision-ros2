@@ -3,11 +3,12 @@
 
 #include <array>
 #include <memory>
+#include <string>
 #include <mujoco/mujoco.h>
 
 namespace vive_vr_ros2 {
 
-/** Resolved-rate servo for the OpenArm right arm, over the Orocos KDL chain.
+/** Resolved-rate servo for the selected OpenArm arm, over the Orocos KDL chain.
  * It owns the commanded configuration, so one clutch press stays on one IK branch; the running
  * physics state is read-only, and `sync` is the only place measured joints enter. */
 class OpenArmIk
@@ -32,12 +33,12 @@ class OpenArmIk
         bool   limited        = false; // a bound or the damping held the arm back
     };
 
-    explicit OpenArmIk(mjModel *model);
+    explicit OpenArmIk(mjModel *model, const std::string &arm = "right");
     ~OpenArmIk();
     OpenArmIk(const OpenArmIk &) = delete;
     OpenArmIk &operator=(const OpenArmIk &) = delete;
 
-    /** Adopts the measured joints as the commanded ones. */
+    /** Adopts measured joints, clamped 0.01 rad inside the mechanical limits. */
     void sync(const mjData *live);
 
     /** Advances the commanded configuration towards the target pose by one period. */

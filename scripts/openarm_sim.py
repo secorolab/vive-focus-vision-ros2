@@ -109,8 +109,6 @@ def fix_mesh_references(urdf, model):
 
 
 def prepare(args):
-    import yaml
-
     folder = args.output
     description = args.description
     xacro = description / 'assets/robot/openarm_v1.0/urdf/openarm_v10.urdf.xacro'
@@ -132,6 +130,8 @@ def prepare(args):
         if not path.is_file():
             raise FileNotFoundError(path)
         mesh.set('filename', str(path))
+    from openarm_visuals import prepare_visuals
+    prepare_visuals(urdf, folder, appearance=args.appearance)
     extension = ET.SubElement(urdf, 'mujoco')
     # Visuals carry the materials and textures; discarding them drew the arm as collision hulls.
     ET.SubElement(extension, 'compiler', strippath='false', fusestatic='false',
@@ -199,6 +199,18 @@ def prepare(args):
     write_xml(model, controlled)
     mj.compile(controlled)
 
+    configure(args)
+    print(f'Validated model with {len(joints)} position actuators: {controlled}')
+    if not args.skip_export:
+        export(args)
+
+
+def configure(args):
+    """Refresh controller settings without reimporting or exporting robot geometry."""
+    import yaml
+    folder = args.output
+    if not (folder / 'openarm_v1_controlled.xml').is_file():
+        raise FileNotFoundError('Run prepare once before configure')
     config = yaml.safe_load((REPO / 'config/vive_vr.yaml').read_text())
     params = config.setdefault('vive_scene', {}).setdefault('ros__parameters', {})
     params.update(gravity_z=0.0, enable_grab=False, timestep=0.002, reset_keyframe=0)
@@ -209,19 +221,19 @@ def prepare(args):
     params['openarm.translation_scale'] = 1.0
     params['openarm.max_translation_m'] = 1.0
     params['openarm.max_rotation_rad'] = 1.75
-    right = config.setdefault('vive_teleop', {}).setdefault('ros__parameters', {}).setdefault(
-        'teleop', {}).setdefault('right', {})
-    alignment = folder / 'controller_alignment.json'
-    if alignment.is_file():
-        record = json.loads(alignment.read_text())
-        right['tool_from_controller_rpy'] = record['tool_from_controller_rpy']
-        params['openarm.controller_to_tool_xyzw'] = record['quaternion_xyzw']
-        params['openarm.alignment_configured'] = True
-        print('Retained controller alignment:', alignment)
+    for arm in ('right', 'left'):
+        hand = config.setdefault('vive_teleop', {}).setdefault('ros__parameters', {}).setdefault(
+            'teleop', {}).setdefault(arm, {})
+        filename = 'controller_alignment.json' if arm == 'right' else 'controller_alignment_left.json'
+        alignment = folder / filename
+        if alignment.is_file():
+            record = json.loads(alignment.read_text())
+            hand['tool_from_controller_rpy'] = record['tool_from_controller_rpy']
+            prefix = 'openarm.' if arm == 'right' else 'openarm.left.'
+            params[prefix + 'controller_to_tool_xyzw'] = record['quaternion_xyzw']
+            params[prefix + 'alignment_configured'] = True
+            print('Retained controller alignment:', alignment)
     (folder / 'teleop.yaml').write_text(yaml.safe_dump(config))
-    print(f'Validated model with {len(joints)} position actuators: {controlled}')
-    if not args.skip_export:
-        export(args)
 
 
 def export(args):
@@ -264,7 +276,7 @@ def launch(args):
 
 def calibrate_before_launch(command, args):
     """Own and stop only our temporary launch; never kill another running stack."""
-    print(f'Put on the headset. Keep right grip released and hand DOWN. '
+    print(f'Put on the headset. Keep {args.arm} grip released and hand DOWN. '
           f'Alignment starts in {args.delay:g} seconds; teleop restarts automatically.', flush=True)
     process = subprocess.Popen(command + ['calibration_only:=true'], start_new_session=True)
     try:
@@ -292,7 +304,7 @@ def reset(args):
 def align(args):
     os.environ.setdefault('ROS_DOMAIN_ID', '42')
     run(sys.executable, REPO / 'scripts/openarm_align.py', '--output', args.output,
-        '--delay', args.delay, '--timeout', 60)
+        '--delay', args.delay, '--timeout', 60, '--arm', args.arm)
 
 
 def inputs(args):
@@ -302,7 +314,7 @@ def inputs(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'export', 'launch', 'reset', 'align', 'inputs'))
+    parser.add_argument('command', choices=('prepare', 'configure', 'export', 'launch', 'reset', 'align', 'inputs'))
     parser.add_argument('--output', type=Path,
                         default=Path.home() / 'vive_vr_ws/models/openarm_v1')
     parser.add_argument('--description', type=Path,
@@ -310,10 +322,14 @@ def main():
     parser.add_argument('--library', type=Path, default=Path.home()
                         / '.cache/mj_kdl_wrapper/mujoco-3.9.0/lib/libmujoco.so.3.9.0')
     parser.add_argument('--skip-export', action='store_true', help='prepare model files only')
+    parser.add_argument('--appearance', choices=('hardware', 'cad'), default='hardware',
+                        help='V1 black/silver finish or original CAD colours (prepare only)')
     parser.add_argument('--host-ip', help='PC address reachable by the headset (launch only)')
-    parser.add_argument('--teleop', action='store_true', help='launch right-arm simulation IK')
+    parser.add_argument('--teleop', action='store_true', help='launch both arms with independent simulation IK')
     parser.add_argument('--align', dest='align_on_launch', action='store_true',
                         help='capture alignment then restart teleop automatically (launch --teleop only)')
+    parser.add_argument('--arm', choices=('right', 'left'), default='right',
+                        help='controller to calibrate with align or launch --align')
     parser.add_argument('--delay', type=float, default=10,
                         help='seconds to put on headset before alignment (default: 10)')
     parser.add_argument('--home', choices=('down', 'bent'), default='down',
@@ -327,7 +343,7 @@ def main():
     args.description = args.description.expanduser().resolve()
     args.library = args.library.expanduser().resolve()
     try:
-        {'prepare': prepare, 'export': export, 'launch': launch, 'reset': reset,
+        {'prepare': prepare, 'configure': configure, 'export': export, 'launch': launch, 'reset': reset,
          'align': align, 'inputs': inputs}[args.command](args)
     except KeyboardInterrupt:
         parser.exit(130, 'Stopped.\n')

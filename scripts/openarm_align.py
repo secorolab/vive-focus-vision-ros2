@@ -52,6 +52,7 @@ def main():
     import yaml
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--arm', choices=('right', 'left'), default='right')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--timeout', type=float, default=20)
     parser.add_argument('--delay', type=float, default=10, help='seconds to get into the alignment pose')
@@ -71,13 +72,13 @@ def main():
     previous_stamp = None
     def pose(name, msg):
         poses[name] = (msg, time.monotonic())
-    node.create_subscription(PoseStamped, namespace+'/right/pose',
+    node.create_subscription(PoseStamped, namespace+f'/{args.arm}/pose',
                              lambda m: pose('controller', m), sensor)
-    node.create_subscription(PoseStamped, namespace+'/sim/right/ee_pose',
+    node.create_subscription(PoseStamped, namespace+f'/sim/{args.arm}/ee_pose',
                              lambda m: pose('tool', m), sensor)
-    node.create_subscription(Bool, namespace+'/teleop/right/clutch',
+    node.create_subscription(Bool, namespace+f'/teleop/{args.arm}/clutch',
                              lambda m: grip.__setitem__(0, m.data), latched)
-    print('Keep right grip RELEASED. Hold the controller still in the orientation that represents')
+    print(f'Keep {args.arm} grip RELEASED. Hold the controller still in the orientation that represents')
     print('the hanging gripper: the controller direction you choose as the tool tip points DOWN.')
     print(f'You have {args.delay:g} seconds to get into position.')
     print('Capturing one second of steady poses; the robot will not be commanded.', flush=True)
@@ -117,14 +118,15 @@ def main():
             if len(samples) >= 15 and now-samples[0][0] >= 1:
                 q = normalized(tuple(sum(s[1][i] for s in samples)/len(samples) for i in range(4)))
                 rpy = degrees_rpy(q)
-                config['vive_teleop']['ros__parameters']['teleop']['right']['tool_from_controller_rpy'] = rpy
+                config['vive_teleop']['ros__parameters']['teleop'][args.arm]['tool_from_controller_rpy'] = rpy
                 record = {'tool_from_controller_rpy': rpy, 'quaternion_xyzw': list(q),
                           'method': 'matched controller and TCP orientations in VR world',
                           'samples': len(samples)}
-                (args.output / 'controller_alignment.json').write_text(json.dumps(record, indent=2)+'\n')
+                (args.output / ('controller_alignment.json' if args.arm == 'right' else 'controller_alignment_left.json')).write_text(json.dumps(record, indent=2)+'\n')
                 params = config.setdefault('vive_scene', {}).setdefault('ros__parameters', {})
-                params['openarm.controller_to_tool_xyzw'] = list(q)
-                params['openarm.alignment_configured'] = True
+                prefix = 'openarm.' if args.arm == 'right' else 'openarm.left.'
+                params[prefix + 'controller_to_tool_xyzw'] = list(q)
+                params[prefix + 'alignment_configured'] = True
                 params['openarm.require_alignment'] = True
                 config_path.write_text(yaml.safe_dump(config))
                 print('Saved tool_from_controller_rpy (degrees):', [round(v,3) for v in rpy])

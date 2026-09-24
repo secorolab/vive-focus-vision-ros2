@@ -37,20 +37,22 @@ struct OpenArmIk::Impl
     explicit Impl(mjModel *m) : model(m), scratch(mj_makeData(m), mj_deleteData) {}
 };
 
-OpenArmIk::OpenArmIk(mjModel *model) : impl_(std::make_unique<Impl>(model))
+OpenArmIk::OpenArmIk(mjModel *model, const std::string &arm) : impl_(std::make_unique<Impl>(model))
 {
+    if (arm != "left" && arm != "right") throw std::runtime_error("Invalid OpenArm side");
+    const std::string tip = "openarm_" + arm + "_hand_tcp";
     auto &state = *impl_;
-    tcp = mj_name2id(model, mjOBJ_BODY, "openarm_right_hand_tcp");
+    tcp = mj_name2id(model, mjOBJ_BODY, tip.c_str());
     if (tcp < 0 || !state.scratch ||
         !mj_kdl::init_robot_from_mjcf(&state.robot, model, state.scratch.get(),
-                                    "world", "openarm_right_hand_tcp")) {
-        throw std::runtime_error("Cannot build the OpenArm right TCP chain");
+                                    "world", tip.c_str())) {
+        throw std::runtime_error("Cannot build the OpenArm TCP chain");
     }
     if (state.robot.n_joints != 7) {
-        throw std::runtime_error("OpenArm right chain must have seven joints");
+        throw std::runtime_error("OpenArm chain must have seven joints");
     }
     for (int i = 0; i < 7; ++i) {
-        const std::string name = "openarm_right_joint" + std::to_string(i + 1);
+        const std::string name = "openarm_" + arm + "_joint" + std::to_string(i + 1);
         joints[i] = mj_name2id(model, mjOBJ_JOINT, name.c_str());
         qpos[i] = state.robot.kdl_to_mj_qpos[i];
         dofs[i] = state.robot.kdl_to_mj_dof[i];

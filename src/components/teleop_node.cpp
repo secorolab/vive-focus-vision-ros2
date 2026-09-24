@@ -106,6 +106,7 @@ class TeleopNode : public rclcpp::Node
         bool           have_pose = false;
         tf2::Transform pose      = tf2::Transform::getIdentity();
         rclcpp::Time   pose_stamp;
+        std::chrono::steady_clock::time_point pose_received;
 
         bool           clutched = false;
         bool           pressed  = false;
@@ -178,6 +179,7 @@ class TeleopNode : public rclcpp::Node
         arm.pose       = to_tf(msg.pose);
         arm.pose_stamp = rclcpp::Time(msg.header.stamp).nanoseconds() ? rclcpp::Time(msg.header.stamp)
                                                                      : now();
+        arm.pose_received = std::chrono::steady_clock::now();
         arm.have_pose  = true;
         if (arm.clutched) { publish_delta(arm); }
     }
@@ -195,7 +197,13 @@ class TeleopNode : public rclcpp::Node
         publish_gripper(arm, msg);
 
         const bool down = msg.buttons[static_cast<size_t>(arm.clutch_button)] != 0;
-        if (down == arm.pressed) return;
+        if (down == arm.pressed) {
+            // Arming resets the downstream release gate. Fresh joystick samples
+            // must confirm an already-released grip without requiring a squeeze.
+            // Never repeat true: a held grip must not re-engage after a reset.
+            if (!down) publish_clutch(arm, false);
+            return;
+        }
         arm.pressed = down;
 
         if (!down) {
@@ -203,8 +211,9 @@ class TeleopNode : public rclcpp::Node
             return;
         }
 
-        if (!arm.have_pose) {
-            RCLCPP_WARN(get_logger(), "%s: clutch pressed before any pose arrived; ignored",
+        if (!arm.have_pose || std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - arm.pose_received).count() >= pose_timeout_s_) {
+            RCLCPP_WARN(get_logger(), "%s: clutch pressed without a fresh pose; ignored",
                         arm.name.c_str());
             return;
         }
@@ -276,8 +285,9 @@ class TeleopNode : public rclcpp::Node
     {
         for (const auto &arm : arms_) {
             if (!arm->clutched) continue;
-            if ((now() - arm->pose_stamp).seconds() < pose_timeout_s_) continue;
-            arm->pressed = false;
+            if (std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                    arm->pose_received).count() < pose_timeout_s_) continue;
+            // Keep the physical button state: recovery requires an actual release/re-press.
             close_clutch(*arm, "no pose");
         }
     }
