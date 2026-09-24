@@ -1,4 +1,4 @@
-# Simulation and physical robot
+# Simulation and physical robot {#page_openarm_modes}
 
 Both modes use the same headset app and controller alignment. They have separate
 application code, settings and ROS domains. The existing low-level launch files

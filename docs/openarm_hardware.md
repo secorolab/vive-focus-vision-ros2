@@ -1,4 +1,4 @@
-# OpenArm V1 live VR test
+# OpenArm V1 live VR test {#page_openarm_hardware}
 
 For the separate simulation/physical entry points and source layout, see
 [OpenArm modes](openarm_modes.md). The older live launch below remains compatible.
