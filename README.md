@@ -60,7 +60,12 @@ python3 scripts/fetch_vive_plugin.py
 
 ## OpenArm V1 teleoperation
 
-The OpenArm application drives the **both arms in MuJoCo** from their matching controllers. A
+Simulation and physical control have independent application code, configuration and
+launch entry points: **`openarm_virtual.launch.py`** for simulation and
+**`openarm_real.launch.py`** for the physical robot. Both use the existing VR app.
+See [switching modes, separate builds and start commands](docs/openarm_modes.md).
+
+The simulation application drives **both arms in MuJoCo** from their matching controllers. A
 resolved-rate servo over the Orocos KDL Jacobian moves all seven arm joints to follow the
 gripper position and orientation independently for each arm. This is a motion-test simulation with gravity and contacts disabled,
 not physical robot control or a grasping simulation. Your elbow is not tracked, so the robot
@@ -181,6 +186,10 @@ and test commands, see [OpenArm simulation](docs/openarm_sim.md).
 
 ## Headset settings
 
+Guarded physical OpenArm bring-up, low-speed live VR testing, and read-only preview are
+described in [OpenArm hardware](docs/openarm_hardware.md). Live commands require explicit
+arming; the guarded driver starts by holding measured positions without homing.
+
 Everything the client can be told without rebuilding the APK lives in one file, on the headset:
 
 ```
@@ -224,8 +233,8 @@ in [Configuration](docs/configuration.md#headset-settings).
 The Focus Vision client has connected to the PC, downloaded the OpenArm scene, streamed
 controller data and supplied a saved controller/tool alignment. Automated checks cover IK,
 alignment math and capture, clutch gating, limits, timeouts and calibration-launch cleanup.
-Full headset motion testing across the workspace remains to be completed; physical hardware
-control and contact-based grasping are not implemented by the OpenArm bridge.
+Full headset motion testing across the workspace remains to be completed; contact-based grasping remains outside the simulation bridge. The separate guarded hardware
+path is experimental; see [hardware testing](docs/openarm_hardware.md) for its limits.
 See [OpenArm verification](docs/openarm_sim.md#verification-and-next-work) and
 [Testing](docs/testing.md) for the scope of the checks.
 

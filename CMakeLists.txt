@@ -138,22 +138,63 @@ install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_vive_vr_ros2 HAS_LIBRARY_TARGET)
 
-# Robot-specific simulation stays outside the reusable, MuJoCo-only VR core.
+# Independent OpenArm applications sit above shared VR transport and kinematics.
 option(BUILD_OPENARM_SIM "Build the OpenArm simulation application" ON)
-if(BUILD_OPENARM_SIM)
-  add_library(openarm_sim_support SHARED src/openarm_ik.cpp src/openarm_teleop.cpp)
-  target_link_libraries(openarm_sim_support PUBLIC vive_vr_core mj_kdl_wrapper::mj_kdl_wrapper)
-  add_executable(openarm_sim_node src/openarm_sim_node.cpp)
-  target_link_libraries(openarm_sim_node PRIVATE openarm_sim_support ${std_srvs_TARGETS})
-  set_target_properties(openarm_sim_support openarm_sim_node PROPERTIES
+option(BUILD_OPENARM_VR_BRIDGE "Build the physical-robot VR feedback/command bridge" ON)
+option(BUILD_OPENARM_HARDWARE "Build the guarded OpenArm CAN hardware plugin" OFF)
+if(BUILD_OPENARM_HARDWARE)
+  find_package(hardware_interface REQUIRED)
+  find_package(pluginlib REQUIRED)
+  find_package(OpenArmCAN REQUIRED)
+  add_library(openarm_guarded_hardware SHARED src/openarm/hardware/guarded_driver.cpp)
+  target_include_directories(openarm_guarded_hardware PRIVATE include)
+  target_link_libraries(openarm_guarded_hardware OpenArmCAN::openarm_can rclcpp::rclcpp ${std_msgs_TARGETS})
+  ament_target_dependencies(openarm_guarded_hardware hardware_interface pluginlib)
+  pluginlib_export_plugin_description_file(hardware_interface config/openarm_guarded_hardware.xml)
+  install(TARGETS openarm_guarded_hardware LIBRARY DESTINATION lib)
+endif()
+# Shared kinematics and clutch semantics contain neither physics stepping nor CAN I/O.
+if(BUILD_OPENARM_SIM OR BUILD_OPENARM_VR_BRIDGE)
+  add_library(openarm_teleop_support SHARED src/openarm/common/ik.cpp src/openarm/common/teleop.cpp)
+  target_link_libraries(openarm_teleop_support PUBLIC vive_vr_core mj_kdl_wrapper::mj_kdl_wrapper)
+  set_target_properties(openarm_teleop_support PROPERTIES
     BUILD_RPATH "${MUJOCO_LIB_DIR}" INSTALL_RPATH "${MUJOCO_LIB_DIR}")
-  install(TARGETS openarm_sim_support LIBRARY DESTINATION lib)
+  install(TARGETS openarm_teleop_support LIBRARY DESTINATION lib)
+endif()
+if(BUILD_OPENARM_SIM)
+  add_executable(openarm_sim_node src/openarm/simulation/node.cpp)
+  target_link_libraries(openarm_sim_node PRIVATE openarm_teleop_support ${std_srvs_TARGETS})
+  set_target_properties(openarm_sim_node PROPERTIES
+    BUILD_RPATH "${MUJOCO_LIB_DIR}" INSTALL_RPATH "${MUJOCO_LIB_DIR}")
   install(TARGETS openarm_sim_node DESTINATION lib/${PROJECT_NAME})
 endif()
+if(BUILD_OPENARM_VR_BRIDGE)
+  find_package(trajectory_msgs REQUIRED)
+  find_package(controller_manager_msgs REQUIRED)
+  # Retain executable/service names for existing launch files and headset workflows.
+  add_executable(openarm_hardware_preview_node src/openarm/hardware/vr_bridge.cpp)
+  target_link_libraries(openarm_hardware_preview_node PRIVATE openarm_teleop_support ${trajectory_msgs_TARGETS} ${std_srvs_TARGETS} ${controller_manager_msgs_TARGETS})
+  set_target_properties(openarm_hardware_preview_node PROPERTIES
+    BUILD_RPATH "${MUJOCO_LIB_DIR}" INSTALL_RPATH "${MUJOCO_LIB_DIR}")
+  install(TARGETS openarm_hardware_preview_node DESTINATION lib/${PROJECT_NAME})
+endif()
 
-if(BUILD_TESTING AND BUILD_OPENARM_SIM)
+if(BUILD_TESTING AND (BUILD_OPENARM_SIM OR BUILD_OPENARM_VR_BRIDGE))
   enable_testing()
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_executable(hardware_guard_check tests/hardware_guard_check.cpp)
+  target_include_directories(hardware_guard_check PRIVATE include)
+  add_test(NAME hardware_guard_check COMMAND hardware_guard_check)
+  if(BUILD_OPENARM_VR_BRIDGE)
+    add_test(NAME openarm_return_to_zero_check
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_return_to_zero_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
+    add_test(NAME openarm_live_bridge_check
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_live_bridge_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
+    add_test(NAME openarm_hardware_preview_check
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_hardware_preview_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
+  endif()
+  add_test(NAME openarm_modes_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_modes_check.py)
   add_test(NAME openarm_visuals_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_visuals_check.py)
   add_test(NAME openarm_launch_check
@@ -170,7 +211,7 @@ if(BUILD_TESTING AND BUILD_OPENARM_SIM)
   set(OPENARM_TEST_MODEL "" CACHE FILEPATH "Generated OpenArm controlled MJCF for integration tests")
   foreach(check openarm_ik_check openarm_bridge_check openarm_dual_check)
     add_executable(${check} tests/${check}.cpp)
-    target_link_libraries(${check} PRIVATE openarm_sim_support)
+    target_link_libraries(${check} PRIVATE openarm_teleop_support)
     target_compile_definitions(${check} PRIVATE TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests")
     add_test(NAME ${check} COMMAND ${check})
     if(OPENARM_TEST_MODEL)

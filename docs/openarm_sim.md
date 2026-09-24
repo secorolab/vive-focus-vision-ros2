@@ -15,7 +15,9 @@ only produces controller deltas; it needs this consumer to move a robot.
 The upstream SceneNode, generic simulation launch, TeleopNode and VR core are unchanged.
 `openarm_sim_node` owns the robot simulation and embeds `BodyPosePublisher`, following
 [Embedding](embedding.md). CMake builds the extra application separately with
-`BUILD_OPENARM_SIM`; it can be disabled without changing the core VR package.
+`BUILD_OPENARM_SIM`; it can be disabled without changing the core VR package or
+the physical VR bridge (`BUILD_OPENARM_VR_BRIDGE`). See [OpenArm modes](openarm_modes.md)
+for independent launches, configurations and build options.
 
 Orocos KDL is already a dependency through `mj_kdl_wrapper`, and the OpenArm V1 MoveIt
 configuration also selects KDL. The adapter takes the chain and the Jacobian from KDL rather

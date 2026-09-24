@@ -197,7 +197,13 @@ class TeleopNode : public rclcpp::Node
         publish_gripper(arm, msg);
 
         const bool down = msg.buttons[static_cast<size_t>(arm.clutch_button)] != 0;
-        if (down == arm.pressed) return;
+        if (down == arm.pressed) {
+            // Arming resets the downstream release gate. Fresh joystick samples
+            // must confirm an already-released grip without requiring a squeeze.
+            // Never repeat true: a held grip must not re-engage after a reset.
+            if (!down) publish_clutch(arm, false);
+            return;
+        }
         arm.pressed = down;
 
         if (!down) {

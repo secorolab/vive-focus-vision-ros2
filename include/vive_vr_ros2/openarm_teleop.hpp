@@ -21,6 +21,9 @@ class OpenArmTeleop
     OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data, const std::string &arm = "right");
     void tick(double dt);
     void reset();
+    // External hardware feedback gate; inhibition also requires a new grip cycle.
+    void inhibit(bool value);
+    bool commanding() const { return active_ && have_target_; }
 
   private:
     using Clock = std::chrono::steady_clock;
@@ -55,6 +58,8 @@ class OpenArmTeleop
     std::string stop_reason_;
     bool released_ = false;
     bool active_ = false;
+    bool inhibited_ = false;
+    bool stop_at_motion_bounds_ = true;
     bool have_target_ = false;
     bool have_trigger_ = false;
     double last_trigger_ = 0.0;

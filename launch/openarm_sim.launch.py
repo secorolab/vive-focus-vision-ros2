@@ -19,6 +19,8 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file'),
         DeclareLaunchArgument('host_ip', description='PC LAN address reachable by the headset'),
         DeclareLaunchArgument('http_port', default_value='8000'),
+        DeclareLaunchArgument('rosbridge_port', default_value='9090'),
+        DeclareLaunchArgument('discovery_port', default_value='9091'),
         DeclareLaunchArgument('enable_teleop', default_value='false'),
         DeclareLaunchArgument('calibration_only', default_value='false'),
         OpaqueFunction(function=launch_setup),
@@ -49,7 +51,9 @@ def launch_setup(context):
     return [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'tracking.launch.py')),
-            launch_arguments={'params_file': arg('params_file')}.items()),
+            launch_arguments={'params_file': arg('params_file'),
+                              'rosbridge_port': arg('rosbridge_port'),
+                              'discovery_port': arg('discovery_port')}.items()),
         ExecuteProcess(cmd=['python3', '-m', 'http.server', arg('http_port'),
                             '--directory', arg('scene_dir')], output='screen'),
         Node(package='vive_vr_ros2', executable='openarm_sim_node', name='vive_scene',

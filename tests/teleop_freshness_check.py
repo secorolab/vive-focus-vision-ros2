@@ -47,6 +47,9 @@ def main():
             pump(0.05, False)
         pump(0.15, False)
         events.clear()
+        pump(0.15, False)
+        assert len(events) >= 2 and not any(events), 'Already-released grip was not refreshed'
+        events.clear()
         pump(0.6, True)
         assert events == [True], f'Old timestamps caused clutch drops: {events}'
         pump(0.5, True, False)
@@ -55,8 +58,8 @@ def main():
         assert events == [True, False], 'Tracking recovery re-engaged a held grip'
         pump(0.1, False)
         pump(0.15, True)
-        assert events == [True, False, True], 'Release/re-press did not recover'
-        print('PASS: old timestamps, true dropout, no automatic re-engagement, release recovery')
+        assert events[-1] and sum(events) == 2, 'Release/re-press did not recover'
+        print('PASS: idle release refresh, old timestamps, true dropout, no automatic re-engagement, release recovery')
     finally:
         process.terminate()
         process.wait(timeout=5)

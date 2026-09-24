@@ -38,7 +38,7 @@ class OpenArmIk
     OpenArmIk(const OpenArmIk &) = delete;
     OpenArmIk &operator=(const OpenArmIk &) = delete;
 
-    /** Adopts the measured joints as the commanded ones. */
+    /** Adopts measured joints, clamped 0.01 rad inside the mechanical limits. */
     void sync(const mjData *live);
 
     /** Advances the commanded configuration towards the target pose by one period. */
