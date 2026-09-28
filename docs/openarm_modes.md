@@ -168,9 +168,9 @@ Lock before enabling real VR. Unlocking disarms real control; center both sticks
 lock again and explicitly enable to resume. Old APKs cannot supply the lock flag.
 Each hand's stick up opens its gripper, down closes it, and center stops/holds.
 A 0.2 neutral deadzone and 0.5 engagement threshold reject small accidental deflections.
-Rear triggers and A/X no longer control physical grippers. After enabling or input
+Rear triggers toggle arm following; A/X do not control physical grippers. After enabling or input
 loss, center the stick before issuing another command.
-For the real robot, press the side grip once to engage arm following and again to
+For the real robot, press the rear trigger once to engage arm following and again to
 stop; releasing it does not stop an engaged arm. Align before engaging. Simulation
 retains hold-to-move.
 
@@ -226,3 +226,9 @@ Left gripper gains are now `kp=15`, `kd=0.20` to test reduction of the measured
 +0.75 mm residual; right remains `kp=10`, `kd=0.15`. The left closing force increases,
 so first test with empty fingers. No negative closing target or extra torque bias
 is introduced. Motor readback, not fingertip contact, determines reported completion.
+
+The progress advisory is rebased when the end-effector target moves by 5 mm or
+0.02 rad. It does not compare a pickup movement against the best error at an old
+target. An advisory alone does not show the large recovery panel or disengage
+following; actual stops still show recovery instructions. Joint, speed and feedback
+limits remain unchanged.

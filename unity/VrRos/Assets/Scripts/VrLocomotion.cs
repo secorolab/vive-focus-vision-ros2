@@ -174,7 +174,7 @@ namespace VrRos
         {
             if (_lockLabel==null) return;
             _lockLabel.text=WorldLocked ? "WORLD LOCKED\nStick up: open | down: close | center: stop\nEnable robot to show wrist alignment guides" :
-                "WORLD FREE - robot control disabled\nTap LEFT MENU to lock (do not hold)\nThen enable robot; side grip toggles arm following";
+                "WORLD FREE - robot control disabled\nTap LEFT MENU to lock (do not hold)\nThen enable robot; rear trigger toggles arm following";
             _lockLabel.color=WorldLocked ? Color.green : Color.white;
         }
 

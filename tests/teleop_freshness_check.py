@@ -22,7 +22,7 @@ def main():
                              lambda msg: events.append(msg.data),
                              QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL))
     process = subprocess.Popen([sys.argv[1], '--ros-args', '-p', 'out_ns:=/freshness',
-                                '-p', 'teleop.right.hand:=right', '-p', f'teleop.toggle_clutch:={str(toggle).lower()}'])
+                                '-p', 'teleop.right.hand:=right', '-p', f'teleop.toggle_clutch:={str(toggle).lower()}', '-p', f'teleop.right.clutch_button:={0 if toggle else 1}'])
 
     def pump(seconds, pressed=None, publish_pose=True):
         deadline = time.monotonic() + seconds
@@ -35,7 +35,7 @@ def main():
                 poses.publish(pose)
             if pressed is not None:
                 msg = Joy()
-                msg.buttons = [0, int(pressed)]
+                msg.buttons = [int(pressed),0] if toggle else [0,int(pressed)]
                 msg.axes = [0.0, 0.0, 0.0]
                 joy.publish(msg)
             rclpy.spin_once(node, timeout_sec=0.01)

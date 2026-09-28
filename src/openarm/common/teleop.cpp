@@ -257,6 +257,16 @@ void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
     mju_rotVecQuat(target_p_, p, anchor_q_);
     mju_addTo3(target_p_, anchor_p_);
     mju_mulQuat(target_q_, anchor_q_, quat);
+    // A moving hand defines a new goal: errors against an older goal cannot
+    // establish lack of progress toward this one. Accumulate movement against
+    // a reference so slow motion resets the window too, but tiny jitter does not.
+    mjtNum shift[3]; mju_sub3(shift,target_p_,progress_target_p_);
+    const double orientation_shift=2*std::acos(std::clamp(std::abs(mju_dot(target_q_,progress_target_q_,4)),0.0,1.0));
+    if (!have_target_ || mju_norm3(shift)>0.005 || orientation_shift>0.02) {
+        mju_copy3(progress_target_p_,target_p_); mju_copy4(progress_target_q_,target_q_);
+        best_position_=best_rotation_=std::numeric_limits<double>::max();
+        progress_at_=Clock::now(); stalled_=false;
+    }
     last_delta_ = Clock::now();
     have_target_ = true;
 }
@@ -278,6 +288,8 @@ void OpenArmTeleop::tick(double dt)
         if (tracking_.position_error <= kOutOfReachPosition &&
             tracking_.rotation_error <= kOutOfReachRotation) {
             stalled_ = false;
+            best_position_=tracking_.position_error; best_rotation_=tracking_.rotation_error;
+            progress_at_=Clock::now();
         } else if (tracking_.position_error < best_position_ - kProgressPosition ||
                    tracking_.rotation_error < best_rotation_ - kProgressRotation) {
             best_position_ = tracking_.position_error;
@@ -288,7 +300,7 @@ void OpenArmTeleop::tick(double dt)
             stalled_ = true;
             RCLCPP_WARN(node_.get_logger(),
                         "%s tool has stopped closing on its target, %.0f mm and %.0f deg away; "
-                        "the arm is as close as it can reach",
+                        "target is not converging; motion remains engaged",
                         arm_.c_str(), tracking_.position_error * 1e3, tracking_.rotation_error * 180.0 / mjPI);
         }
     }

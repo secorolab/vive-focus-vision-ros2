@@ -37,7 +37,7 @@ def setup(context):
         ExecuteProcess(cmd=['python3', '-m', 'http.server', arg('http_port'),
                             '--directory', arg('scene_dir')], output='screen'),
         Node(package='vive_vr_ros2', executable='teleop_node', name='vive_teleop',
-             parameters=[arg('params_file'), {'teleop.toggle_clutch': True}], output='screen'),
+             parameters=[arg('params_file'), {'teleop.toggle_clutch': True, 'teleop.left.clutch_button': 0, 'teleop.right.clutch_button': 0}], output='screen'),
         Node(package='vive_vr_ros2', executable='openarm_hardware_preview_node',
              parameters=[arg('hardware_params_file'), params], output='screen'),
     ]

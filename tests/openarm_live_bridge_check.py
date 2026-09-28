@@ -11,6 +11,7 @@ from pathlib import Path
 import rclpy
 from rclpy.qos import QoSProfile, DurabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import JointState
+from vive_vr_ros2.msg import TeleopStatus
 from geometry_msgs.msg import TransformStamped, PoseStamped
 from std_msgs.msg import Bool, Float32
 from std_srvs.srv import SetBool
@@ -31,6 +32,8 @@ commands, left_commands, gripper_commands = [], [], []
 subs = [node.create_subscription(JointTrajectory, '/right_joint_trajectory_controller/joint_trajectory', commands.append, 10),
         node.create_subscription(JointTrajectory, '/left_joint_trajectory_controller/joint_trajectory', left_commands.append, 10),
         node.create_subscription(JointTrajectory, '/right_gripper_controller/joint_trajectory', gripper_commands.append, 10)]
+states=[]
+subs.append(node.create_subscription(TeleopStatus, '/vive_vr/teleop/right/status', lambda msg:states.append(msg.state), 10))
 controller_active = True
 
 def controller_list(request, response):
@@ -102,6 +105,10 @@ try:
     assert len(commands)>count, 'capped target failed to resume within the same grip'
     for a,b in zip(commands,commands[1:]):
         assert max(abs(x-y) for x,y in zip(a.points[0].positions,b.points[0].positions)) <= 0.012001
+    # Following a moving target must not reuse the best error at an old target.
+    for step in range(20):
+        pump(0.07, delta_x=0.02+step*0.008)
+        assert states and states[-1]!='unreachable', 'moving goal falsely reported unreachable'
     for fault in ('health_false','health_timeout','feedback_timeout','controller_inactive','tracking_timeout'):
         controller_active = fault != 'controller_inactive'
         kw={'healthy':fault!='health_false','health_on':fault!='health_timeout',

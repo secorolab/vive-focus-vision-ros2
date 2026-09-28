@@ -72,6 +72,7 @@ class OpenArmTeleop
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr controller_sub_;
     rclcpp::Publisher<vive_vr_ros2::msg::TeleopStatus>::SharedPtr status_pub_;
     mjtNum anchor_p_[3], anchor_q_[4], target_p_[3], target_q_[4];
+    mjtNum progress_target_p_[3]{}, progress_target_q_[4]{1,0,0,0};
     std::array<int, 2> fingers_, finger_motors_;
     double finger_target_ = 0.0;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr clutch_sub_;
