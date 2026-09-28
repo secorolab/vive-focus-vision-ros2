@@ -40,17 +40,18 @@ def setup(context):
             limit = limits[joint.attrib['name']]
             for bound in ('lower', 'upper'):
                 ET.SubElement(hardware, 'param', name=f'{bound}{i}').text = limit.attrib[bound]
-    # Only the ROS controller's envelope gets small startup/readback allowances.
+    # Match the driver's existing feedback acceptance for startup recovery.
+    # Only the ROS controller's envelope gets these readback allowances.
     # GuardedOpenArm received the ORIGINAL limits above and enforces those at the
     # motor boundary, allowing an out-of-range starting target only to hold/return.
     if arg('use_fake_hardware') == 'false':
         for name in ('openarm_right_joint4', 'openarm_left_joint4'):
-            limits[name].set('lower', str(float(limits[name].get('lower')) - 0.02))
-        # The closed gripper can report slightly below zero (-0.136 mm observed).
+            limits[name].set('lower', str(float(limits[name].get('lower')) - 0.05))
+        # The closed gripper can report slightly below zero (-0.280 mm observed).
         # Accept that measured hold without repeated clamping/logging. The driver
         # still owns the original 0..0.044 m range and its inward-only corridor.
         for name in ('openarm_right_finger_joint1', 'openarm_left_finger_joint1'):
-            limits[name].set('lower', str(float(limits[name].get('lower')) - 0.0002))
+            limits[name].set('lower', str(float(limits[name].get('lower')) - 0.002))
     description = ET.tostring(root, encoding='unicode')
     return [
         Node(package='robot_state_publisher', executable='robot_state_publisher',

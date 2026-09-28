@@ -156,3 +156,73 @@ The script prints J1–J7 in degrees for each arm. During `--execute` it reports
 both elbow angles and the largest remaining zero error once per second. Zero
 completion means measured angles within 1 degree, not an
 encoder recalibration or a claim of mechanically exact zero.
+
+## Physical gripper controls
+
+The real launch enables gripper buttons by default; simulation controls are unchanged.
+Install the updated headset APK. Tap the left menu button briefly (under 0.8 s)
+to toggle WORLD LOCKED; holding it retains the existing hand/controller-mode switch.
+Lock freezes joystick translation, turning, height buttons and recentering, while
+normal head tracking continues. Its label stays at the location where lock was toggled.
+Lock before enabling real VR. Unlocking disarms real control; center both sticks,
+lock again and explicitly enable to resume. Old APKs cannot supply the lock flag.
+Each hand's stick up opens its gripper, down closes it, and center stops/holds.
+A 0.2 neutral deadzone and 0.5 engagement threshold reject small accidental deflections.
+Rear triggers and A/X no longer control physical grippers. After enabling or input
+loss, center the stick before issuing another command.
+For the real robot, press the side grip once to engage arm following and again to
+stop; releasing it does not stop an engaged arm. Align before engaging. Simulation
+retains hold-to-move.
+
+Grippers ramp up to 15 mm/s with a 75 mm/s² acceleration limit and require fresh controller tracking and button data.
+Tracking loss or disarming requires another release before movement can resume.
+Return-to-zero leaves grippers unchanged unless `--close-grippers` is supplied. Use `control_grippers:=false` to disable
+this feature. Restart the real launch after rebuilding; no APK rebuild is needed.
+
+## Return to zero and close both grippers
+
+Keep the real launch running, with empty grippers and a clear arm path:
+
+```zsh
+source /opt/ros/jazzy/setup.zsh
+python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_return_to_zero.py --execute --close-grippers
+```
+
+This uses the existing encoder calibration. Both arms follow a smooth joint-space
+path to zero at up to 0.05 rad/s; grippers target zero at up to 10 mm/s. Completion
+requires measured arm error within 1 degree and finger error within 1 mm for 0.5 s.
+Measured gripper positions are printed; completion does not certify mechanical contact.
+Ctrl+C cancels, retaining motor torque. VR stays disarmed afterward. Omit
+`--close-grippers` to preserve gripper positions. `--status --close-grippers` only
+reads positions. No direct CAN or trajectory publication is needed from the terminal.
+
+The real VR defaults are 0.6 rad/s joint speed, 0.20 m/s tool translation and
+1.0 rad/s tool rotation. Feedback freshness, following-error limits and CAN fault
+handling remain enforced. These caps are tuning values, not a certified safety rating.
+
+The guarded driver's gripper position gains are `kp=10`, `kd=0.15` (previously
+`5`, `0.1`), to test stronger position correction with additional damping against
+the observed stop-start motion and near-zero residual. Closing force increases;
+validate with empty grippers after restarting the real launch. Physical smoothness
+and closure still require observation. Desired motor velocity and feed-forward
+torque remain zero, including during motion, so a retained CAN command stays a
+position hold. The closed target and completion tolerance are unchanged; a timeout
+must not be treated as confirmed closure. Startup logs print the active gains.
+
+Startup holds measured joint positions; you do not need to manually match zero.
+The real controller permits an elbow readback down to -0.05 rad and finger readback
+down to -0.002 m, matching the driver's existing feedback acceptance. These are
+recovery allowances, not new movement ranges: the driver allows an already-outside
+target to hold or move inward, never farther outward or back outside after recovery.
+Return-to-zero accepts that elbow startup offset. If readings exceed these allowances
+or the calibration is wrong, diagnose the physical position/calibration rather than
+repeatedly widening limits or resetting zero at an arbitrary pose.
+
+The real input node uses `teleop.toggle_clutch=true`. Pose or button-stream loss
+drops the toggle. Arming/disarming and homing reset it; release the button and press
+again to engage. A new engagement captures a fresh hand reference. Gripper sticks operate independently of the arm toggle.
+
+Left gripper gains are now `kp=15`, `kd=0.20` to test reduction of the measured
++0.75 mm residual; right remains `kp=10`, `kd=0.15`. The left closing force increases,
+so first test with empty fingers. No negative closing target or extra torque bias
+is introduced. Motor readback, not fingertip contact, determines reported completion.

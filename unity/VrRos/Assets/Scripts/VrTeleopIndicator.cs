@@ -202,7 +202,7 @@ namespace VrRos
         {
             if (_recoveryPanel == null) return;
             bool unreachable = live && _state == "unreachable";
-            bool show = _head != null && (_recoveryReason.Length > 0 || unreachable);
+            bool show = _head != null && (_recoveryReason.Length > 0 || unreachable || (live && _state == "release_grip"));
             _recoveryPanel.SetActive(show);
             if (!show) return;
             // Separate rows allow both arms to report a stop without covering each other.
@@ -218,6 +218,11 @@ namespace VrRos
             _recoveryTitle.text = hand + " — " + cause;
             if (!live || !loaded)
                 _recoveryText.text = "Release the side grip.\nWait for the robot connection to return.";
+            else if (_state == "release_grip" && _recoveryReason.Length == 0)
+            {
+                _recoveryTitle.text = hand + " — Not engaged";
+                _recoveryText.text = "Lock the world and enable robot control.\nRelease the side grip, then press after alignment.";
+            }
             else if (unreachable)
             {
                 _recoveryTitle.text = hand + " — Target out of reach";

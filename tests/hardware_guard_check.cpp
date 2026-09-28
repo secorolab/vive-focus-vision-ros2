@@ -5,6 +5,17 @@
 using namespace vive_vr_ros2;
 void check(bool condition) { if (!condition) throw std::runtime_error("hardware guard check failed"); }
 int main() {
+    double pos=0.01, velocity=0;
+    for (int i=0;i<400;++i) {
+        const double old_velocity=velocity, old_pos=pos;
+        pos=smooth_bounded_step(0.044,pos,velocity,0.015,0.075,0.02);
+        check(pos>=old_pos && pos<=0.044);
+        check(std::abs(velocity)<=0.015+1e-12);
+        if (pos<0.044) check(std::abs(velocity-old_velocity)<=0.0015+1e-12);
+    }
+    check(pos==0.044 && velocity==0);
+    for (int i=0;i<400;++i) pos=smooth_bounded_step(0,pos,velocity,0.015,0.075,0.02);
+    check(pos==0 && velocity==0);
     using Clock = std::chrono::steady_clock;
     Clock::time_point t{};
     std::vector<Clock::time_point> sends;
@@ -51,6 +62,19 @@ int main() {
     check(!valid_recovery_command(-0.00019,-0.000136,-0.000136,0,0.044,0.01)); // no further closing
     check(!valid_recovery_command(-0.0001,0,0,0,0.044,0.01)); // no negative goal after recovery
     check(!valid_recovery_command(0.0441,0.044,0.044,0,0.044,0.01)); // opening limit unchanged
+    check(valid_recovery_command(-0.000280,-0.000280,-0.000280,0,0.044,0.01));
+    check(valid_recovery_command(0,-0.000280,-0.000280,0,0.044,0.01));
+    check(!valid_recovery_command(-0.0004,-0.000280,-0.000280,0,0.044,0.01));
+    check(!valid_recovery_command(-0.000280,-0.000280,0,0,0.044,0.01));
+    check(valid_recovery_command(-0.039101,-0.039101,-0.039101,0,2.44,0.1));
+    check(valid_recovery_command(-0.038,-0.039101,-0.039101,0,2.44,0.1));
+    check(!valid_recovery_command(-0.04,-0.039101,-0.039101,0,2.44,0.1));
+    check(!valid_recovery_command(-0.001,0,0,0,2.44,0.1));
+    check(valid_recovery_command(-0.000761,-0.000761,-0.000761,0,0.044,0.01));
+    check(!valid_recovery_command(-0.001,-0.000761,-0.000761,0,0.044,0.01));
+    check(bounded_measured_hold(-0.008202,-0.010491,0,0,2.44,0.001)==0);
+    check(bounded_measured_hold(-0.012,-0.010491,0,0,2.44,0.001)==-0.012);
+    check(bounded_measured_hold(2.445,2.45,2.44,0,2.44,0.001)==2.44);
     MotorObservation m{true,false,false,0.01,0.0,0.0};
     check(valid_motor(m));
     m.responded=false; check(!valid_motor(m)); m.responded=true;

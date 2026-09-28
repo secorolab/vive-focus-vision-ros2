@@ -188,6 +188,8 @@ if(BUILD_TESTING AND (BUILD_OPENARM_SIM OR BUILD_OPENARM_VR_BRIDGE))
   if(BUILD_OPENARM_VR_BRIDGE)
     add_test(NAME openarm_return_to_zero_check
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_return_to_zero_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
+    add_test(NAME openarm_gripper_check
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_gripper_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
     add_test(NAME openarm_live_bridge_check
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_live_bridge_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
     add_test(NAME openarm_hardware_preview_check
@@ -205,6 +207,8 @@ if(BUILD_TESTING AND (BUILD_OPENARM_SIM OR BUILD_OPENARM_VR_BRIDGE))
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_capture_check.py)
   add_test(NAME openarm_left_alignment_capture_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_capture_check.py left)
+  add_test(NAME teleop_toggle_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/teleop_freshness_check.py $<TARGET_FILE:teleop_node> --toggle)
   add_test(NAME teleop_freshness_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/teleop_freshness_check.py $<TARGET_FILE:teleop_node>)
   # These run against tests/openarm_test_arm.xml; OPENARM_TEST_MODEL adds a run on the real robot.

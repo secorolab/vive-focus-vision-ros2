@@ -14,6 +14,7 @@ def main():
                       help='move both arms along a direct joint-space path; ensure that path is clear')
     mode.add_argument('--cancel', action='store_true', help='stop a return and leave VR disarmed')
     mode.add_argument('--status', action='store_true', help='show measured arm angles without moving')
+    parser.add_argument('--close-grippers', action='store_true', help='also close both empty grippers to their existing zero target')
     args = parser.parse_args()
     # Match openarm_real.launch.py even when the calling shell uses the sim domain.
     os.environ['ROS_DOMAIN_ID'] = '84'
@@ -28,7 +29,8 @@ def main():
 
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node = rclpy.create_node('openarm_return_to_zero_client')
-    client = node.create_client(SetBool, '/openarm_hardware_preview/return_to_zero')
+    service_name='return_to_zero_and_close' if args.close_grippers else 'return_to_zero'
+    client = node.create_client(SetBool, '/openarm_hardware_preview/'+service_name)
     heartbeat = node.create_publisher(Empty, '/openarm_hardware_preview/zero_keepalive', 1)
     status = [None, 0]
     def receive(msg):
@@ -37,13 +39,14 @@ def main():
     sub = node.create_subscription(String, '/openarm_hardware_preview/zero_status', receive,
                                   QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
     names = [f'openarm_{side}_joint{i}' for side in ('right','left') for i in range(1,8)]
+    finger_names=[f'openarm_{side}_finger_joint1' for side in ('right','left')]
     measured = [{}, 0.0]
     def joints(msg):
         age = (node.get_clock().now().nanoseconds - (msg.header.stamp.sec*10**9+msg.header.stamp.nanosec))/1e9
         if len(msg.name)!=len(msg.position) or len(set(msg.name))!=len(msg.name) or not -0.1<=age<=0.15:
             measured[1]=0; return
         values = dict(zip(msg.name,msg.position))
-        if all(n in values and math.isfinite(values[n]) for n in names):
+        if all(n in values and math.isfinite(values[n]) for n in names+(finger_names if args.close_grippers else [])):
             measured[:] = [values, time.monotonic()]
         else: measured[1]=0
     joint_sub = node.create_subscription(JointState, '/joint_states', joints, qos_profile_sensor_data)
@@ -56,6 +59,9 @@ def main():
             print('Measured joint angles in degrees (J1 through J7):', flush=True)
             for side in ('right','left'):
                 print(f"  {side:5s}: " + '  '.join(f'{math.degrees(q[f"openarm_{side}_joint{i}"]):+.2f}' for i in range(1,8)), flush=True)
+        if args.close_grippers:
+            print('Gripper positions (mm; closed target = 0): ' + ', '.join(
+                f'{side}: {q[n]*1000:+.2f}' for side,n in zip(('right','left'),finger_names)), flush=True)
         worst=max(abs(q[n]) for n in names)
         print(f"Farthest joint from zero: {math.degrees(worst):.2f} deg; "
               f"left elbow: {math.degrees(q['openarm_left_joint4']):+.2f} deg; "
@@ -88,7 +94,8 @@ def main():
         baseline = status[1]
         if args.execute:
             show_positions(full=True)
-            print('Requesting return of BOTH arms to joint zero, max 0.05 rad/s. Grippers unchanged.', flush=True)
+            print('Requesting return of BOTH arms to joint zero, max 0.05 rad/s. ' +
+                  ('Closing both grippers; keep them empty and clear.' if args.close_grippers else 'Grippers unchanged.'), flush=True)
             print('Direct path: keep it clear. Ctrl+C stops the return; it does not release motor torque.', flush=True)
         uncertain = args.execute
         response = call(args.execute)
@@ -113,7 +120,9 @@ def main():
                 if status[0]=='complete':
                     accepted=False
                     show_positions(full=True)
-                    print('Both arms reached the zero target within 1 degree. VR remains disarmed.', flush=True)
+                    print('Both arms reached zero within 1 degree. ' +
+                          ('Grippers reached the closed target within 1 mm. ' if args.close_grippers else '') +
+                          'VR remains disarmed.', flush=True)
                     return 0
                 if status[0].startswith('stopped:'):
                     raise RuntimeError(status[0])

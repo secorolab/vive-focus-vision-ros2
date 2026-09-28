@@ -25,6 +25,7 @@ feedback=node.create_publisher(JointState,'/joint_states',qos_profile_sensor_dat
 health=[node.create_publisher(Bool,f'/vive_vr/hardware/{s}/healthy',qos) for s in ('right','left')]
 beat=node.create_publisher(Empty,'/openarm_hardware_preview/zero_keepalive',1)
 client=node.create_client(SetBool,'/openarm_hardware_preview/return_to_zero')
+close_client=node.create_client(SetBool,'/openarm_hardware_preview/return_to_zero_and_close')
 enable=node.create_client(SetBool,'/openarm_hardware_preview/enable')
 names=[f'openarm_{s}_joint{i}' for s in ('right','left') for i in range(1,8)]
 names += [f'openarm_{s}_finger_joint1' for s in ('right','left')]
@@ -40,7 +41,10 @@ def receive(side,msg):
         positions.update(zip(msg.joint_names,msg.points[0].positions))
 subs=[node.create_subscription(JointTrajectory,f'/{side}_joint_trajectory_controller/joint_trajectory',
                                lambda msg,i=i:receive(i,msg),10) for i,side in enumerate(('right','left'))]
-subs += [node.create_subscription(JointTrajectory,f'/{s}_gripper_controller/joint_trajectory',grippers.append,10)
+def receive_gripper(msg):
+    grippers.append(msg)
+    if follow: positions.update(zip(msg.joint_names,msg.points[0].positions))
+subs += [node.create_subscription(JointTrajectory,f'/{s}_gripper_controller/joint_trajectory',receive_gripper,10)
          for s in ('right','left')]
 subs += [node.create_subscription(String,'/openarm_hardware_preview/zero_status',lambda m:status.append(m.data),qos)]
 def controllers(req,res):
@@ -78,9 +82,9 @@ try:
     healthy=False; pump(1.5)
     assert not call(client,True).success
     assert not any(commands)
-    healthy=True; positions['openarm_left_joint4']=-0.03; pump(0.5)
+    healthy=True; positions['openarm_left_joint4']=-0.06; pump(0.5)
     assert not call(client,True).success, 'accepted excessive elbow offset'
-    positions['openarm_left_joint4']=-0.01049; pump(0.2)
+    positions['openarm_left_joint4']=-0.039101; pump(0.2)
     assert call(client,True).success
     assert not call(enable,True).success, 'VR enabled during return'
     assert not call(client,True).success, 'second return replaced active one'
@@ -126,6 +130,27 @@ try:
         assert counts==[len(c) for c in commands], 'automatically resumed'
     assert not grippers
     print('PASS: zero completion, bounded smooth path, VR exclusion, gripper preservation, cancel, lease and feedback/controller/following faults')
+    healthy=True; active=True; feedback_on=True; keepalive=True; follow=True
+    for n in names[:14]: positions[n]=0
+    for n in names[14:]: positions[n]=0.02
+    pump(0.5); grippers.clear()
+    assert call(close_client,True).success
+    assert not call(enable,True).success
+    pump(5)
+    assert status[-1]=='complete', status
+    assert all(abs(positions[n])<=0.001 for n in names[14:])
+    assert grippers, 'close option sent no gripper commands'
+    for side in ('right','left'):
+        values=[m.points[0].positions[0] for m in grippers if side in m.joint_names[0]]
+        assert all(0<=b<=a and a-b<=0.000200001 for a,b in zip(values,values[1:])), values
+    for n in names[14:]: positions[n]=0.02
+    pump(0.2); assert call(close_client,True).success; pump(0.3)
+    keepalive=False; pump(0.7)
+    assert status[-1].startswith('stopped:'), status
+    count=len(grippers); pump(0.2)
+    assert len(grippers)==count, 'closure kept moving after lease expired'
+    print('Combined zero/close and lease cancellation checks passed')
+
 finally:
     proc.terminate()
     try: proc.wait(timeout=5)

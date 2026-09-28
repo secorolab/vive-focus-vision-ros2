@@ -6,7 +6,7 @@ import time
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Joy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Empty
 from rclpy.qos import QoSProfile, DurabilityPolicy, qos_profile_sensor_data
 
 
@@ -15,12 +15,14 @@ def main():
     node = rclpy.create_node('freshness_check')
     poses = node.create_publisher(PoseStamped, '/freshness/right/pose', qos_profile_sensor_data)
     joy = node.create_publisher(Joy, '/freshness/right/joy', qos_profile_sensor_data)
+    toggle="--toggle" in sys.argv
+    reset=node.create_publisher(Empty,"/freshness/teleop/reset",10)
     events = []
     node.create_subscription(Bool, '/freshness/teleop/right/clutch',
                              lambda msg: events.append(msg.data),
                              QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL))
     process = subprocess.Popen([sys.argv[1], '--ros-args', '-p', 'out_ns:=/freshness',
-                                '-p', 'teleop.right.hand:=right'])
+                                '-p', 'teleop.right.hand:=right', '-p', f'teleop.toggle_clutch:={str(toggle).lower()}'])
 
     def pump(seconds, pressed=None, publish_pose=True):
         deadline = time.monotonic() + seconds
@@ -59,6 +61,25 @@ def main():
         pump(0.1, False)
         pump(0.15, True)
         assert events[-1] and sum(events) == 2, 'Release/re-press did not recover'
+        if toggle:
+            pump(0.15,False)
+            assert events[-1], 'release stopped toggled engagement'
+            pump(0.15,True)
+            assert not events[-1], 'second press did not stop'
+            pump(0.1,False); pump(0.1,True); pump(0.1,False)
+            assert events[-1], 'new toggle did not engage'
+            pump(0.4,None)
+            assert not events[-1], 'button dropout kept toggle engaged'
+            count=sum(events); pump(0.15,True)
+            assert sum(events)==count, 'held button resumed after loss'
+            pump(0.1,False); pump(0.1,True)
+            assert events[-1]
+            reset.publish(Empty()); pump(0.15,True)
+            assert not events[-1], 'reset did not stop toggle'
+            count=sum(events); pump(0.15,True)
+            assert sum(events)==count
+            pump(0.1,False); pump(0.1,True)
+            assert events[-1], 'fresh press after reset failed'
         print('PASS: idle release refresh, old timestamps, true dropout, no automatic re-engagement, release recovery')
     finally:
         process.terminate()

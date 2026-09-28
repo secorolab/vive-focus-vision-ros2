@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic live bridge tests on an isolated ROS domain; never opens CAN."""
 import os
-os.environ['ROS_DOMAIN_ID'] = '193'
+os.environ['ROS_DOMAIN_ID'] = '196'
 os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = 'LOCALHOST'
 import subprocess
 import sys
@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 import rclpy
 from rclpy.qos import QoSProfile, DurabilityPolicy, qos_profile_sensor_data
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, Joy
 from geometry_msgs.msg import TransformStamped, PoseStamped
 from std_msgs.msg import Bool, Float32
 from std_srvs.srv import SetBool
@@ -41,24 +41,36 @@ service = node.create_service(ListControllers, '/controller_manager/list_control
 client = node.create_client(SetBool, '/openarm_hardware_preview/enable')
 model = str(Path(__file__).with_name('openarm_test_arm.xml'))
 proc = subprocess.Popen([sys.argv[1], '--ros-args', '-p', f'model:={model}',
-                         '-p', 'hardware.enable_commands:=true',
-                         '-p', 'openarm.joint_speed_rad_s:=0.6',
-                         '-p', 'openarm.max_linear_speed_m_s:=0.20',
-                         '-p', 'openarm.max_angular_speed_rad_s:=1.0',
+                         '-p', 'hardware.enable_commands:=true', '-p', 'hardware.control_grippers:=true',
                          '-p', 'openarm.alignment_configured:=true',
                          '-p', 'openarm.left.alignment_configured:=true'], stdout=subprocess.DEVNULL)
 names = [f'openarm_{side}_joint{i}' for side in ('right','left') for i in range(1,8)] + [f'openarm_{side}_finger_joint1' for side in ('right','left')]
+
+left_gripper_commands=[]
+subs.append(node.create_subscription(JointTrajectory, '/left_gripper_controller/joint_trajectory', left_gripper_commands.append, 10))
+buttons=[0,0,0]
+stick=0.0
+locked=True
+joy_on=True
+pose_on=True
+joy=node.create_publisher(Joy, '/vive_vr/right/joy', qos_profile_sensor_data)
+neutral_joy={side:node.create_publisher(Joy,f'/vive_vr/{side}/joy',qos_profile_sensor_data) for side in ('right','left')}
 
 def pump(seconds, healthy=True, feedback_on=True, delta_on=True, health_on=True, delta_x=0.01, delta_angle=0.0):
     end = time.monotonic()+seconds
     while time.monotonic()<end:
         if feedback_on:
             msg=JointState(); msg.header.stamp=node.get_clock().now().to_msg()
-            msg.name=names; msg.position=[0.0]*14+[0.01,0.01]; feedback.publish(msg)
+            msg.name=names; msg.position=[0.0]*14+[gripper_commands[-1].points[0].positions[0] if gripper_commands else 0.01, left_gripper_commands[-1].points[0].positions[0] if left_gripper_commands else 0.01]; feedback.publish(msg)
         if health_on:
             for pub in health: pub.publish(Bool(data=healthy))
-        for pub in poses:
-            p=PoseStamped(); p.header.frame_id='world'; p.pose.orientation.w=1.0; pub.publish(p)
+        if joy_on:
+            j=Joy(); j.header.stamp=node.get_clock().now().to_msg(); j.buttons=[0,0,0,0,0,0,int(locked)]; j.axes=[0.0,stick,0.0,0.0]; joy.publish(j)
+            neutral=Joy(); neutral.header.stamp=j.header.stamp
+            neutral.buttons=[0,0,0,0,0,0,int(locked)]; neutral.axes=[0.0]*4
+            neutral_joy['left' if joy.topic_name.endswith('/right/joy') else 'right'].publish(neutral)
+        for pub in poses if pose_on else []:
+            p=PoseStamped(); p.header.stamp=node.get_clock().now().to_msg(); p.header.frame_id='world'; p.pose.orientation.w=1.0; pub.publish(p)
         if delta_on:
             d=TransformStamped(); d.header.frame_id='right_tool_ref'; d.child_frame_id='right_tool_cmd'
             d.transform.rotation.w=math.cos(delta_angle/2); d.transform.rotation.z=math.sin(delta_angle/2)
@@ -72,48 +84,39 @@ def arm():
     while not f.done() and time.monotonic()<deadline: pump(0.02)
     assert f.done() and f.result().success, f.result()
 
-def grip():
-    clutch.publish(Bool(data=False)); pump(0.08)
-    clutch.publish(Bool(data=True)); pump(0.18)
-
 try:
-    pump(1.5, healthy=False)
-    assert client.service_is_ready()
-    f=client.call_async(SetBool.Request(data=True)); pump(0.1, healthy=False)
-    assert f.done() and not f.result().success, 'armed without hardware health'
-    assert 'right driver reports a fault' in f.result().message
-    assert 'left driver reports a fault' in f.result().message
-    pump(0.5); grip()
-    assert not commands, 'commanded before explicit enable'
-    arm(); pump(0.1)
-    assert not commands, 'enable with held grip caused movement'
-    grip()
-    assert commands, 'healthy armed re-grip did not command'
-    assert all(len(m.joint_names)==7 and len(m.points[0].positions)==7 for m in commands)
-    assert not left_commands, 'right controller commanded left arm'
-    assert not gripper_commands, 'grippers moved despite disabled gripper control'
-    trigger.publish(Float32(data=0.0)); pump(0.1)
-    trigger.publish(Float32(data=1.0)); pump(2.2)
-    count=len(commands); pump(0.1)
-    assert len(commands)>count, 'disabled gripper target disarmed the arm'
-    count=len(commands); pump(0.1, delta_x=2.0, delta_angle=2.0)
-    assert len(commands)>count, 'large hand offset dropped the grip instead of capping the target'
-    count=len(commands); pump(0.1)
-    assert len(commands)>count, 'capped target failed to resume within the same grip'
-    for a,b in zip(commands,commands[1:]):
-        assert max(abs(x-y) for x,y in zip(a.points[0].positions,b.points[0].positions)) <= 0.012001
-    for fault in ('health_false','health_timeout','feedback_timeout','controller_inactive','tracking_timeout'):
-        controller_active = fault != 'controller_inactive'
-        kw={'healthy':fault!='health_false','health_on':fault!='health_timeout',
-            'feedback_on':fault!='feedback_timeout','delta_on':fault!='tracking_timeout'}
-        pump(1.0, **kw)
-        count=len(commands); pump(0.2, **kw)
-        assert len(commands)==count, f'commands continued during {fault}'
-        controller_active=True; pump(0.5)
-        assert len(commands)==count, f'auto resumed after {fault}'
-        arm(); grip()
-        assert len(commands)>count, f'could not resume after {fault}'
-    print('PASS: explicit arm, grip gating, split seven-joint output, speed bound, arm isolation, gripper gate, health/feedback/controller/tracking stops')
+    stick=-1.0; pump(1.5); arm(); pump(0.15)
+    assert not gripper_commands, 'deflected stick started on enable'
+    stick=0.0; pump(0.1); stick=-1.0; pump(0.3)
+    assert len(gripper_commands)>3
+    values=[m.points[0].positions[0] for m in gripper_commands]
+    assert values[-1]<values[0]<=0.01
+    assert all(0<=a-b<=0.000300001 for a,b in zip(values,values[1:]))
+    assert not commands and not left_commands and not left_gripper_commands
+    stick=0.0; pump(0.1); count=len(gripper_commands); pump(0.15)
+    assert len(gripper_commands)==count, 'neutral did not stop'
+    stick=1.0; pump(0.3); before=gripper_commands[-1].points[0].positions[0]; pump(0.15)
+    assert gripper_commands[-1].points[0].positions[0]>before
+    joy_on=False; pump(0.4); count=len(gripper_commands); pump(0.1)
+    assert len(gripper_commands)==count
+    joy_on=True; pump(0.15)
+    assert len(gripper_commands)==count, 'stick resumed without neutral'
+    stick=0.0; pump(0.1); stick=-1.0; pump(0.2)
+    assert len(gripper_commands)>count
+    pose_on=False; pump(0.4); count=len(gripper_commands); pose_on=True; pump(0.2)
+    assert len(gripper_commands)==count
+    stick=0.0; pump(0.1); stick=1.0; pump(0.2)
+    locked=False; pump(0.2); count=len(gripper_commands); locked=True; pump(0.2)
+    assert len(gripper_commands)==count, 'unlock did not disarm'
+    stick=0.0; arm(); pump(0.1)
+    joy=node.create_publisher(Joy, '/vive_vr/left/joy', qos_profile_sensor_data)
+    pump(0.4); stick=-1.0; pump(0.2)
+    assert left_gripper_commands[-1].points[0].positions[0]<0.01
+    stick=0.0; pump(0.1); before=left_gripper_commands[-1].points[0].positions[0]
+    stick=1.0; pump(0.3)
+    assert left_gripper_commands[-1].points[0].positions[0]>before
+    print('Stick direction, neutral stop, lock, freshness and isolation checks passed')
+
 finally:
     proc.terminate()
     try: proc.wait(timeout=5)

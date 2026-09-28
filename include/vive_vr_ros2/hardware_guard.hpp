@@ -47,6 +47,13 @@ inline bool valid_recovery_command(double desired, double measured, double previ
 // expand the corridor or accept an unrelated out-of-range target.
 inline double bounded_measured_hold(double desired, double measured, double previous,
                                    double lower, double upper, double tolerance) {
+    // JTC interpolates toward its measured timeout hold. If feedback sits
+    // outside a boundary already recovered by the sent target, clamp that
+    // entire interpolation segment to the boundary, never back outside.
+    if (std::isfinite(desired) && std::isfinite(measured) && std::isfinite(previous)) {
+        if (measured<lower && previous>=lower && desired>=measured && desired<lower) return lower;
+        if (measured>upper && previous<=upper && desired<=measured && desired>upper) return upper;
+    }
     if (std::isfinite(desired) && std::isfinite(measured) &&
         std::abs(desired-measured)<=tolerance)
         return std::clamp(desired,std::min(lower,previous),std::max(upper,previous));
@@ -55,4 +62,18 @@ inline double bounded_measured_hold(double desired, double measured, double prev
 inline double limited_step(double desired, double previous, double speed, double dt) {
     return previous + std::clamp(desired - previous, -speed * dt, speed * dt);
 }
+// Acceleration ramp and braking distance reduce start/stop steps. Clamp the
+// integrated position at the endpoint; release/fault paths hold immediately.
+inline double smooth_bounded_step(double goal, double previous, double &velocity,
+                                  double speed, double acceleration, double dt) {
+    const double distance=goal-previous;
+    const double target=std::copysign(std::min(speed,std::sqrt(2*acceleration*std::abs(distance))),distance);
+    velocity=limited_step(target,velocity,acceleration,dt);
+    const double next=previous+velocity*dt;
+    if ((distance>=0 && next>=goal) || (distance<=0 && next<=goal)) {
+        velocity=0; return goal;
+    }
+    return next;
+}
+
 }

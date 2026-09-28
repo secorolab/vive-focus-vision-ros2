@@ -121,8 +121,10 @@ make a small movement. Start with one arm. Releasing grip holds its last bounded
 Fresh joystick samples continuously confirm an already-released grip: a controller
 resting with its grip released does not need an extra squeeze/release after arming.
 Held grips remain edge-triggered and cannot automatically re-engage after a reset.
-The grippers remain held; trigger control is off for the first test. To enable trigger
-control on a later run, add `control_grippers:=true` (the V1 motor-to-finger mapping is
+With this low-level launch, the grippers remain held; trigger control is off for the
+first test. The normal `openarm_real.launch.py` enables the
+[physical gripper buttons](@ref page_openarm_modes) by default. To enable trigger
+control with the low-level launch, add `control_grippers:=true` (the V1 motor-to-finger mapping is
 approximate and needs physical validation).
 
 Disable VR commands while retaining the last bounded targets:
@@ -146,10 +148,10 @@ This service is **not an emergency stop**. It depends on ROS and a running proce
   range does not fix missing motor replies. Green alignment guides appear only while
   ready/alignment matching, so they hide during an engaged grip or a hardware disarm.
 - Position-only hardware commands are finite, within the model envelope (small measured
-  startup tolerance allowed), within 0.25 rad of feedback, and rate limited to 0.30 rad/s.
-  Gripper equivalents are 0.01 m following error and 0.005 m/s.
+  startup tolerance allowed), within 0.25 rad of feedback, and rate limited to 0.60 rad/s.
+  Gripper equivalents are 0.01 m following error and 0.015 m/s.
 - VR targets run at 50 Hz: translation scale 1.0, at most 50 cm / 180 degrees per grip,
-  tool speed 0.10 m/s / 0.5 rad/s, no null-space posture drift. Larger hand offsets cap
+  tool speed 0.20 m/s / 1.0 rad/s, no null-space posture drift. Larger hand offsets cap
   the target at this envelope instead of dropping the grip. Moving back within the
   envelope continues the same grip. The first-delta reference check remains active.
   Hand translation now requests equal tool displacement (10 cm hand = 10 cm target),
@@ -234,21 +236,27 @@ missing replies before that fault, so capture across a fresh startup and failure
 ### Small elbow offsets at startup
 
 For the guarded real driver only, the ROS controller description accepts an elbow
-lower-bound offset down to -0.02 rad. The driver receives the original nominal
+lower-bound offset down to -0.05 rad. The driver receives the original nominal
 limits (elbow minimum 0) before that controller description is adjusted. At
 activation it holds the measured pose. An outside command may hold or move back
 inward, never farther outside; measured drift cannot expand that command range.
 Once the sent target is inside, the original limits apply again. Simulation and
 fake-hardware descriptions retain their existing limits. This avoids a controller
-startup failure for the observed -0.60-degree offset without changing motor zero.
+startup failure for the observed -2.24-degree offset without changing motor zero.
 
 Use `openarm_return_to_zero.py --status` to read angles, or `--execute` to request
 a slow return after startup. Larger elbow offsets and missing feedback are still
 rejected. Zero is verified with a 1-degree measured-position tolerance.
 
 For the guarded real grippers, the ROS controller description also accepts a
-closed-position readback down to -0.0002 m (-0.2 mm). This covers the observed
--0.136 mm hold without repeated limit-clamping messages. The driver retains its
+closed-position readback down to -0.002 m (-2 mm). This covers the observed
+-0.761 mm hold without repeated limit-clamping messages. The driver retains its
 original 0..0.044 m limits: an existing negative startup target may hold or return
 inward, but new targets cannot close farther outside that position. The opening
 limit, calibration, motor gains and fake/simulation limits are unchanged.
+
+The guarded driver also bounds the interpolation of a controller timeout hold:
+if feedback is just outside a boundary that the sent target has already recovered,
+targets between that feedback and the boundary are held at the boundary. This covers
+the observed elbow command -0.008202 rad with feedback -0.010491 and last target 0.
+Targets farther outside than feedback are still rejected; no outward recovery is allowed.

@@ -15,7 +15,7 @@ def generate_launch_description():
         DeclareLaunchArgument('model_dir', default_value=os.path.expanduser('~/vive_vr_ws/models/openarm_v1')),
         DeclareLaunchArgument('input_params_file', default_value=PathJoinSubstitution([LC('model_dir'),'teleop.yaml'])),
         DeclareLaunchArgument('hardware_params_file', default_value=os.path.join(share,'config','openarm_real.yaml')),
-        DeclareLaunchArgument('control_grippers', default_value='false', choices=['true','false']),
+        DeclareLaunchArgument('control_grippers', default_value='true', choices=['true','false']),
         DeclareLaunchArgument('http_port', default_value='8000'),
         DeclareLaunchArgument('rosbridge_port', default_value='9090'),
         DeclareLaunchArgument('discovery_port', default_value='9091'),

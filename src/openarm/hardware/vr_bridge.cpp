@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <sensor_msgs/msg/joy.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -28,6 +29,13 @@ class HardwarePreview : public rclcpp::Node {
         rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr health;
         Clock::time_point healthy_at{};
         bool healthy = false, sent = false;
+        rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr hand_pose;
+        Clock::time_point joy_at{}, hand_at{};
+        int64_t joy_stamp=0, hand_stamp=0;
+        bool gripper_ready=false, gripper_sent=false;
+        int gripper_direction=0; // +1 opens, -1 closes; zero requires a fresh engagement.
+        double gripper_last=0, gripper_velocity=0;
         std::array<double,8> last{};
     };
 public:
@@ -47,7 +55,7 @@ public:
         declare_parameter<double>("openarm.max_angular_speed_rad_s", 0.5);
         declare_parameter<double>("openarm.posture_gain_hz", 0.0);
         declare_parameter<double>("openarm.tracking_time_constant_s", 0.15);
-        declare_parameter<double>("openarm.finger_speed_m_s", 0.005);
+        declare_parameter<double>("openarm.finger_speed_m_s", 0.015);
         char error[1024] = {};
         model_.reset(mj_loadXML(filename.c_str(), nullptr, error, sizeof(error)));
         if (!model_) throw std::runtime_error(error);
@@ -71,17 +79,37 @@ public:
         }
         if (live_output_) {
             if (!get_parameter("openarm.require_alignment").as_bool() ||
-                get_parameter("openarm.joint_speed_rad_s").as_double() > 0.3 ||
-                get_parameter("openarm.max_linear_speed_m_s").as_double() > 0.10 ||
-                get_parameter("openarm.max_angular_speed_rad_s").as_double() > 0.5)
-                throw std::runtime_error("Live testing requires alignment and conservative speed limits");
+                get_parameter("openarm.joint_speed_rad_s").as_double() > 0.6 ||
+                get_parameter("openarm.max_linear_speed_m_s").as_double() > 0.20 ||
+                get_parameter("openarm.max_angular_speed_rad_s").as_double() > 1.0)
+                throw std::runtime_error("Live control requires alignment and bounded speed limits");
+            const double finger_speed=get_parameter("openarm.finger_speed_m_s").as_double();
+            if (!std::isfinite(finger_speed) || finger_speed<=0 || finger_speed>0.015)
+                throw std::runtime_error("Gripper speed must be in (0, 0.015] m/s");
             for (size_t side=0; side<2; ++side) {
                 const std::string name = side==0 ? "right" : "left";
                 auto &arm = arms_[side];
                 arm.command = create_publisher<trajectory_msgs::msg::JointTrajectory>(
                     "/" + name + "_joint_trajectory_controller/joint_trajectory", rclcpp::QoS(1));
-                if (grippers_) arm.gripper = create_publisher<trajectory_msgs::msg::JointTrajectory>(
-                    "/" + name + "_gripper_controller/joint_trajectory", rclcpp::QoS(1));
+                if (grippers_) {
+                    arm.gripper = create_publisher<trajectory_msgs::msg::JointTrajectory>(
+                        "/" + name + "_gripper_controller/joint_trajectory", rclcpp::QoS(1));
+                    const auto ns=get_parameter("out_ns").as_string()+"/"+name;
+                    arm.joy=create_subscription<sensor_msgs::msg::Joy>(ns+"/joy",rclcpp::SensorDataQoS().keep_last(1),
+                        [this,side](sensor_msgs::msg::Joy::SharedPtr msg) { gripper_buttons(arms_[side],*msg); });
+                    arm.hand_pose=create_subscription<geometry_msgs::msg::PoseStamped>(ns+"/pose",rclcpp::SensorDataQoS().keep_last(1),
+                        [this,side](geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+                            auto &a=arms_[side];
+                            const auto &p=msg->pose.position; const auto &q=msg->pose.orientation;
+                            const double norm=q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w;
+                            if (!fresh_input(msg->header.stamp,a.hand_stamp) ||
+                                !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+                                !std::isfinite(norm) || norm<0.81 || norm>1.21) {
+                                a.hand_at={}; a.gripper_ready=false; a.gripper_direction=0; return;
+                            }
+                            a.hand_at=Clock::now();
+                        });
+                }
                 arm.health = create_subscription<std_msgs::msg::Bool>(
                     "/vive_vr/hardware/" + name + "/healthy", rclcpp::QoS(1).transient_local(),
                     [this,side](std_msgs::msg::Bool::SharedPtr msg) {
@@ -93,6 +121,7 @@ public:
             controllers_ = create_client<controller_manager_msgs::srv::ListControllers>("/controller_manager/list_controllers");
             controller_timer_ = create_wall_timer(std::chrono::milliseconds(250), [this] { check_controllers(); });
         }
+        clutch_reset_=create_publisher<std_msgs::msg::Empty>(get_parameter("out_ns").as_string()+"/teleop/reset",10);
         arm_service_ = create_service<std_srvs::srv::SetBool>("~/enable",
             [this](const std_srvs::srv::SetBool::Request::SharedPtr request,
                    std_srvs::srv::SetBool::Response::SharedPtr response) {
@@ -100,20 +129,28 @@ public:
                     disarm("operator disabled"); response->success=true; response->message="VR commands disabled; last targets held";
                 } else if (homing_) {
                     response->success=false; response->message="Return to zero is active; cancel it before enabling VR";
+                } else if (grippers_ && std::any_of(arms_.begin(),arms_.end(),[](const Arm &arm) {
+                    return arm.joy_at==Clock::time_point{} ||
+                        std::chrono::duration<double>(Clock::now()-arm.joy_at).count()>0.25;
+                })) {
+                    response->success=false;
+                    response->message="Lock the world in the updated headset app and supply fresh controller input before enabling";
                 } else if (const auto reason = arming_blockers(); !reason.empty()) {
                     disarm("arming conditions failed");
                     response->success=false; response->message="Cannot arm: " + reason;
                 } else {
+                    // Re-arming cannot revive a held trigger or retain an old stream.
+                    for (auto &arm:arms_) stop_gripper(arm,true);
                     armed_=true;
                     for (auto &arm : arms_) { arm.teleop->reset(); arm.teleop->inhibit(false); arm.sent=false; }
-                    response->success=true; response->message="Armed at low speed; release both grips before engaging";
+                    clutch_reset_->publish(std_msgs::msg::Empty{});
+                    response->success=true; response->message="Armed with bounded speeds; release controller buttons before engaging";
                 }
             });
         home_status_ = create_publisher<std_msgs::msg::String>("~/zero_status", rclcpp::QoS(1).transient_local());
         home_heartbeat_ = create_subscription<std_msgs::msg::Empty>("~/zero_keepalive", 1,
             [this](std_msgs::msg::Empty::SharedPtr) { if (homing_) home_lease_=Clock::now(); });
-        home_service_ = create_service<std_srvs::srv::SetBool>("~/return_to_zero",
-            [this](const std_srvs::srv::SetBool::Request::SharedPtr request,
+        auto home_callback = [this](bool close_grippers) { return [this,close_grippers](const std_srvs::srv::SetBool::Request::SharedPtr request,
                    std_srvs::srv::SetBool::Response::SharedPtr response) {
                 if (!request->data) {
                     disarm("return to zero cancelled");
@@ -124,12 +161,13 @@ public:
                 if (const auto why=arming_blockers(); !why.empty()) {
                     response->message="Cannot return to zero: " + why; return;
                 }
-                double largest=0;
+                if (close_grippers && !grippers_) { response->message="Gripper control is disabled"; return; }
+                double largest=0, finger_largest=0;
                 for (size_t side=0;side<2;++side) for (size_t i=0;i<7;++i) {
                     const auto &axis=arms_[side].axes[i];
                     const double q=data_->qpos[axis.qpos];
                     const double lo=model_->jnt_range[axis.joint*2], hi=model_->jnt_range[axis.joint*2+1];
-                    const double margin=i==3 ? 0.02 : 0.0;
+                    const double margin=i==3 ? 0.05 : 0.0;
                     if (lo>0 || hi<0 || q<lo-margin || q>hi) {
                         response->message="Zero or measured position outside joint limits: " + axis.name;
                         return;
@@ -137,7 +175,17 @@ public:
                     home_start_[side][i]=q;
                     largest=std::max(largest,std::abs(q));
                 }
+                for (size_t side=0;side<2;++side) {
+                    const auto &axis=arms_[side].axes[7];
+                    home_finger_start_[side]=data_->qpos[axis.qpos];
+                    if (close_grippers && (model_->jnt_range[axis.joint*2]>0 || model_->jnt_range[axis.joint*2+1]<0)) {
+                        response->message="Closed gripper target outside model limits"; return;
+                    }
+                    finger_largest=std::max(finger_largest,std::abs(home_finger_start_[side]));
+                }
                 disarm("return to zero requested");
+                clutch_reset_->publish(std_msgs::msg::Empty{});
+                home_close_grippers_=close_grippers;
                 for (auto &arm:arms_) {
                     for (size_t i=0;i<8;++i) arm.last[i]=data_->qpos[arm.axes[i].qpos];
                     arm.sent=false;
@@ -145,12 +193,16 @@ public:
                 // Quintic smoothstep has maximum derivative 1.875. Peak joint
                 // speed is <=0.05 rad/s, independent of VR speed settings.
                 home_duration_=std::max(2.0,1.875*largest/0.05);
+                if (close_grippers) home_duration_=std::max(home_duration_,1.875*finger_largest/0.01);
                 home_elapsed_=0; home_settled_=0;
                 home_lease_=home_began_=Clock::now(); homing_=true;
                 set_home_status("running");
                 response->success=true;
-                response->message="Returning both arms to existing joint zero; grippers unchanged; VR locked out";
-            });
+                response->message=close_grippers ? "Returning arms to zero and closing grippers; VR locked out" :
+                    "Returning both arms to existing joint zero; grippers unchanged; VR locked out";
+            }; };
+        home_service_ = create_service<std_srvs::srv::SetBool>("~/return_to_zero",home_callback(false));
+        home_close_service_ = create_service<std_srvs::srv::SetBool>("~/return_to_zero_and_close",home_callback(true));
         set_home_status("idle");
         SceneConf conf;
         conf.manifest_path = declare_parameter<std::string>("manifest", "");
@@ -223,20 +275,85 @@ private:
                 if (!ok) disarm("controller inactive");
             });
     }
-    void publish_command(Arm &arm, bool include_gripper=true) {
+    bool fresh_input(const builtin_interfaces::msg::Time &stamp, int64_t &previous) const {
+        const rclcpp::Time time(stamp);
+        const double age=(now()-time).seconds();
+        if (time.nanoseconds()<=previous || age < -0.1 || age>0.25) return false;
+        previous=time.nanoseconds(); return true;
+    }
+    bool hand_fresh(const Arm &arm) const {
+        return arm.hand_at!=Clock::time_point{} &&
+               std::chrono::duration<double>(Clock::now()-arm.hand_at).count()<=0.25;
+    }
+    void gripper_buttons(Arm &arm, const sensor_msgs::msg::Joy &msg) {
+        if (!fresh_input(msg.header.stamp,arm.joy_stamp) || msg.buttons.size()<7 ||
+            msg.axes.size()<2 || !std::isfinite(msg.axes[1]) || std::abs(msg.axes[1])>1.0 ||
+            msg.buttons[6]!=1) {
+            arm.joy_at={}; arm.gripper_ready=false; arm.gripper_direction=0;
+            if (armed_) disarm("world unlocked or invalid stick input; lock world before enabling");
+            return;
+        }
+        arm.joy_at=Clock::now();
+        if (!armed_ || homing_ || !live_ || !hand_fresh(arm)) {
+            arm.gripper_ready=false; arm.gripper_direction=0; return;
+        }
+        const double stick=msg.axes[1];
+        if (std::abs(stick)<=0.2) {
+            arm.gripper_direction=0;
+            arm.gripper_ready=true;
+            return;
+        }
+        if (arm.gripper_ready) {
+            if (stick>=0.5) arm.gripper_direction=1;
+            else if (stick<=-0.5) arm.gripper_direction=-1;
+        }
+    }
+
+    void publish_gripper(Arm &arm) {
+        trajectory_msgs::msg::JointTrajectory msg;
+        msg.joint_names={arm.axes[7].name};
+        trajectory_msgs::msg::JointTrajectoryPoint point;
+        point.positions={arm.gripper_last}; point.time_from_start.nanosec=40000000;
+        msg.points.push_back(point); arm.gripper->publish(msg);
+    }
+    void stop_gripper(Arm &arm, bool require_release) {
+        if (arm.gripper_sent) { publish_gripper(arm); arm.gripper_sent=false; }
+        arm.gripper_velocity=0;
+        if (require_release) { arm.gripper_ready=false; arm.gripper_direction=0; }
+    }
+    void tick_gripper(Arm &arm, double dt) {
+        if (!arm.gripper) return;
+        if (!armed_ || homing_ || !live_ || !hand_fresh(arm) ||
+            arm.joy_at==Clock::time_point{} ||
+            std::chrono::duration<double>(Clock::now()-arm.joy_at).count()>0.25) {
+            stop_gripper(arm,true); return;
+        }
+        if (!arm.gripper_direction) { stop_gripper(arm,false); return; }
+        const auto &axis=arm.axes[7];
+        const double measured=data_->qpos[axis.qpos];
+        const double previous=arm.gripper_sent ? arm.gripper_last : measured;
+        const double lower=model_->jnt_range[axis.joint*2], upper=model_->jnt_range[axis.joint*2+1];
+        const double goal=arm.gripper_direction>0 ? upper : lower;
+        const double next=smooth_bounded_step(goal,previous,arm.gripper_velocity,
+            get_parameter("openarm.finger_speed_m_s").as_double(),0.075,std::clamp(dt,0.0,0.02));
+        if (!valid_recovery_command(next,measured,previous,lower,upper,0.008)) {
+            disarm("gripper following error or joint limit"); return;
+        }
+        arm.gripper_last=next; arm.gripper_sent=true; publish_gripper(arm);
+    }
+    void publish_command(Arm &arm) {
         trajectory_msgs::msg::JointTrajectory msg;
         // Zero stamp means start now, avoiding queued targets with stale start times.
         trajectory_msgs::msg::JointTrajectoryPoint point;
         point.time_from_start.nanosec=40000000;
         for (size_t i=0;i<7;++i) { msg.joint_names.push_back(arm.axes[i].name); point.positions.push_back(arm.last[i]); }
         msg.points.push_back(point); arm.command->publish(msg);
-        if (arm.gripper && include_gripper) {
-            msg.joint_names={arm.axes[7].name}; msg.points[0].positions={arm.last[7]}; arm.gripper->publish(msg);
-        }
     }
     void disarm(const char *reason) {
+        if ((armed_ || homing_) && clutch_reset_) clutch_reset_->publish(std_msgs::msg::Empty{});
+        for (auto &arm:arms_) stop_gripper(arm,true);
         if (homing_) {
-            for (auto &arm:arms_) if (arm.sent) publish_command(arm,false);
+            for (auto &arm:arms_) if (arm.sent) publish_command(arm);
             homing_=false;
             set_home_status(std::string("stopped: ")+reason);
         }
@@ -318,14 +435,27 @@ private:
             next[side][i]=desired;
             settled &= std::abs(q)<=0.017453292519943295; // one degree
         }
+        if (home_close_grippers_) for (size_t side=0;side<2;++side) {
+            auto &arm=arms_[side]; const auto &axis=arm.axes[7];
+            const double measured=data_->qpos[axis.qpos];
+            const double previous=arm.gripper_sent ? arm.gripper_last : home_finger_start_[side];
+            const double desired=home_finger_start_[side]*(1.0-blend);
+            if (!valid_recovery_command(desired,measured,previous,model_->jnt_range[axis.joint*2],
+                                        model_->jnt_range[axis.joint*2+1],0.008)) {
+                disarm("return to zero gripper following error or joint limit"); return;
+            }
+            arm.gripper_last=desired; arm.gripper_sent=true;
+            settled &= std::abs(measured)<=0.001; // 1 mm, report actual feedback in CLI
+        }
         for (size_t side=0;side<2;++side) {
+            if (home_close_grippers_) publish_gripper(arms_[side]);
             for (size_t i=0;i<7;++i) arms_[side].last[i]=next[side][i];
-            arms_[side].sent=true; publish_command(arms_[side],false);
+            arms_[side].sent=true; publish_command(arms_[side]);
         }
         home_settled_=(u>=1.0 && settled) ? home_settled_+std::clamp(dt,0.0,0.02) : 0;
         if (home_settled_>=0.5) {
             homing_=false;
-            for (auto &arm:arms_) arm.sent=false;
+            for (auto &arm:arms_) { arm.sent=false; arm.gripper_sent=false; }
             set_home_status("complete");
             RCLCPP_INFO(get_logger(),"Return to zero complete within 1 degree; VR remains disarmed");
         }
@@ -339,6 +469,7 @@ private:
         if (live_output_ && armed_ && !healthy()) disarm("hardware health/controller heartbeat missing");
         if (homing_) tick_home(dt);
         for (auto &arm : arms_) {
+            if (!homing_) tick_gripper(arm,dt);
             arm.teleop->tick(std::clamp(dt, 0.0, 0.02));
             if (!live_ || !arm.teleop->commanding()) {
                 // A released or timed-out grip replaces the short trajectory with a
@@ -362,9 +493,9 @@ private:
                 for (size_t i=0;i<8;++i) {
                     const auto &axis=arm.axes[i];
                     const double measured=data_->qpos[axis.qpos];
-                    // Disabled grippers do not issue commands. Their unused IK
-                    // targets must not trip the arm's following-error guard.
-                    if (i==7 && !grippers_) { next[i]=measured; continue; }
+                    // Physical grippers have an independent button/heartbeat path.
+                    // Ignore the shared simulation teleop's analog finger target.
+                    if (i==7) { next[i]=measured; continue; }
                     const double desired=data_->ctrl[axis.motor];
                     const double lower=std::min(model_->jnt_range[axis.joint*2],measured);
                     const double upper=std::max(model_->jnt_range[axis.joint*2+1],measured);
@@ -374,7 +505,7 @@ private:
                         valid=false;
                     }
                     next[i]=limited_step(desired, arm.sent ? arm.last[i] : measured,
-                                         i==7 ? 0.005 : 0.3, std::min(dt,0.02));
+                                         get_parameter("openarm.joint_speed_rad_s").as_double(), std::min(dt,0.02));
                 }
                 if (!valid) { disarm("command limits or following error"); continue; }
                 arm.last=next; arm.sent=true; publish_command(arm);
@@ -399,6 +530,10 @@ private:
     rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr home_heartbeat_;
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr home_service_;
     bool live_ = false, live_output_=false, grippers_=false, armed_=false;
+    bool home_close_grippers_=false;
+    std::array<double,2> home_finger_start_{};
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr home_close_service_;
+    rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr clutch_reset_;
     bool controllers_ok_=false, request_pending_=false;
     Clock::time_point controllers_at_{}, request_at_{};
     rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedPtr controllers_;

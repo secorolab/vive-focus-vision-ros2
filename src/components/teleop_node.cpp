@@ -22,6 +22,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/joy.hpp>
+#include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <tf2/LinearMath/Quaternion.hpp>
@@ -63,6 +64,15 @@ class TeleopNode : public rclcpp::Node
     explicit TeleopNode(const rclcpp::NodeOptions &options) : Node("vive_teleop", options)
     {
         out_ns_ = declare_parameter<std::string>("out_ns", "/vive_vr");
+        toggle_clutch_=declare_parameter<bool>("teleop.toggle_clutch",false);
+        reset_sub_=create_subscription<std_msgs::msg::Empty>(out_ns_+"/teleop/reset",10,
+            [this](std_msgs::msg::Empty::SharedPtr) {
+                if (!toggle_clutch_) return;
+                for (auto &arm:arms_) {
+                    close_clutch(*arm,"hardware reset");
+                    arm->pressed=true; // require a fresh physical release before any new edge
+                }
+            });
 
         /* A clutch held perfectly still must stay closed, so a dropout is the absence of pose
          * messages and not <hand>/active, which reports "has not moved" and would open the
@@ -110,6 +120,7 @@ class TeleopNode : public rclcpp::Node
 
         bool           clutched = false;
         bool           pressed  = false;
+        std::chrono::steady_clock::time_point joy_received{};
         tf2::Transform ref      = tf2::Transform::getIdentity();
     };
 
@@ -191,9 +202,11 @@ class TeleopNode : public rclcpp::Node
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
                                  "%s: button %d is outside a Joy of %zu buttons", arm.name.c_str(),
                                  arm.clutch_button, msg.buttons.size());
+            if (toggle_clutch_) { close_clutch(arm,"invalid buttons"); arm.pressed=true; }
             return;
         }
 
+        arm.joy_received=std::chrono::steady_clock::now();
         publish_gripper(arm, msg);
 
         const bool down = msg.buttons[static_cast<size_t>(arm.clutch_button)] != 0;
@@ -201,16 +214,20 @@ class TeleopNode : public rclcpp::Node
             // Arming resets the downstream release gate. Fresh joystick samples
             // must confirm an already-released grip without requiring a squeeze.
             // Never repeat true: a held grip must not re-engage after a reset.
-            if (!down) publish_clutch(arm, false);
+            if (!down && (!toggle_clutch_ || !arm.clutched)) publish_clutch(arm, false);
             return;
         }
         arm.pressed = down;
 
         if (!down) {
-            close_clutch(arm, "released");
+            if (!toggle_clutch_) close_clutch(arm, "released");
+            else if (!arm.clutched) publish_clutch(arm,false);
             return;
         }
 
+        if (toggle_clutch_ && arm.clutched) {
+            close_clutch(arm,"toggle off"); return;
+        }
         if (!arm.have_pose || std::chrono::duration<double>(
                 std::chrono::steady_clock::now() - arm.pose_received).count() >= pose_timeout_s_) {
             RCLCPP_WARN(get_logger(), "%s: clutch pressed without a fresh pose; ignored",
@@ -285,6 +302,9 @@ class TeleopNode : public rclcpp::Node
     {
         for (const auto &arm : arms_) {
             if (!arm->clutched) continue;
+            if (toggle_clutch_ && std::chrono::duration<double>(std::chrono::steady_clock::now()-arm->joy_received).count()>=pose_timeout_s_) {
+                close_clutch(*arm,"no buttons"); arm->pressed=true; continue;
+            }
             if (std::chrono::duration<double>(std::chrono::steady_clock::now() -
                     arm->pose_received).count() < pose_timeout_s_) continue;
             // Keep the physical button state: recovery requires an actual release/re-press.
@@ -292,6 +312,8 @@ class TeleopNode : public rclcpp::Node
         }
     }
 
+    bool toggle_clutch_=false;
+    rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr reset_sub_;
     std::string                       out_ns_;
     double                            pose_timeout_s_ = 0.25;
     std::vector<std::unique_ptr<Arm>> arms_;

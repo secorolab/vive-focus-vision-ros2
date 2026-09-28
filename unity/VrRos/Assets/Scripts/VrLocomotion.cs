@@ -4,6 +4,8 @@
 
 using UnityEngine;
 using UnityEngine.XR;
+using UnityEngine.UI;
+using TMPro;
 
 namespace VrRos
 {
@@ -35,6 +37,12 @@ namespace VrRos
         [Tooltip("Vertical movement on the face buttons, for looking into a scene from above")]
         public float verticalSpeed = 1.0f;
 
+        public static bool WorldLocked { get; private set; }
+        private float _lockMenuSince = -1f;
+        private bool _lockMenuWasDown;
+        private bool _needNeutralStick;
+        private TextMeshProUGUI _lockLabel;
+        private bool _lockLabelPlaced;
         private bool _recenterPressed;
         private Vector3? _sceneSpawn;
         private float _sceneSpawnYaw;
@@ -99,7 +107,17 @@ namespace VrRos
 
         private void Update()
         {
-            if (head == null) return;
+            EnsureLockLabel();
+            PollWorldLock();
+            if (head == null || WorldLocked) return;
+            if (_needNeutralStick) {
+                foreach (var hand in new[] { XRNode.LeftHand, XRNode.RightHand }) {
+                    var device = InputDevices.GetDeviceAtXRNode(hand);
+                    if (!device.isValid || !device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 axes)
+                        || axes.magnitude > deadzone) return;
+                }
+                _needNeutralStick = false;
+            }
 
             // No headset means the desktop player, where there is no stick to read.
             if (!XRSettings.isDeviceActive)
@@ -120,6 +138,61 @@ namespace VrRos
             DriveAndTurn(move);
             Elevate(other);
             PollRecenter(move);
+        }
+
+        private void EnsureLockLabel()
+        {
+            if (rig==null || head==null) return;
+            if (_lockLabel==null) {
+                var panel=new GameObject("World lock status",typeof(RectTransform),typeof(Canvas),typeof(Image));
+                panel.transform.SetParent(rig,false);
+                var rect=panel.GetComponent<RectTransform>();
+                rect.sizeDelta=new Vector2(720,150); rect.localScale=Vector3.one*0.001f;
+                panel.GetComponent<Canvas>().renderMode=RenderMode.WorldSpace;
+                var background=panel.GetComponent<Image>();
+                background.color=new Color(0.03f,0.04f,0.05f,0.95f); background.raycastTarget=false;
+                var label=new GameObject("Text",typeof(RectTransform),typeof(TextMeshProUGUI));
+                label.transform.SetParent(panel.transform,false);
+                _lockLabel=label.GetComponent<TextMeshProUGUI>();
+                _lockLabel.rectTransform.sizeDelta=new Vector2(690,135);
+                _lockLabel.fontSize=28; _lockLabel.alignment=TextAlignmentOptions.Center;
+                _lockLabel.raycastTarget=false;
+                UpdateLockLabel();
+            }
+            if (!_lockLabelPlaced || !WorldLocked) {
+                PlaceLockLabel(); _lockLabelPlaced=true;
+            }
+        }
+        private void PlaceLockLabel()
+        {
+            if (_lockLabel==null || head==null) return;
+            var panel=_lockLabel.transform.parent;
+            panel.position=head.transform.TransformPoint(new Vector3(0,-0.3f,1.1f));
+            panel.rotation=head.transform.rotation;
+        }
+        private void UpdateLockLabel()
+        {
+            if (_lockLabel==null) return;
+            _lockLabel.text=WorldLocked ? "WORLD LOCKED\nStick up: open | down: close | center: stop\nEnable robot to show wrist alignment guides" :
+                "WORLD FREE - robot control disabled\nTap LEFT MENU to lock (do not hold)\nThen enable robot; side grip toggles arm following";
+            _lockLabel.color=WorldLocked ? Color.green : Color.white;
+        }
+
+        private void PollWorldLock()
+        {
+            var device = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+            if (!device.isValid) { _lockMenuWasDown=false; _lockMenuSince=-1f; return; }
+            bool down=device.TryGetFeatureValue(CommonUsages.menuButton,out bool menu) && menu;
+            if (down && !_lockMenuWasDown) _lockMenuSince=Time.unscaledTime;
+            if (!down && _lockMenuWasDown && _lockMenuSince>=0f && Time.unscaledTime-_lockMenuSince<0.8f) {
+                WorldLocked=!WorldLocked;
+                _needNeutralStick=true;
+                PlaceLockLabel();
+                UpdateLockLabel();
+                _lockLabel.color=WorldLocked ? Color.green : Color.white;
+                if (_lockLabel!=null) Debug.Log(_lockLabel.text);
+            }
+            _lockMenuWasDown=down;
         }
 
         /// <summary>WASD walks, Q and E change height, the right mouse button held looks around.</summary>

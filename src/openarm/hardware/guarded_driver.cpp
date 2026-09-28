@@ -58,7 +58,12 @@ public:
             using M = openarm::damiao_motor::MotorType;
             arm_->init_arm_motors({M::DM8009,M::DM8009,M::DM4340,M::DM4340,M::DM4310,M::DM4310,M::DM4310},
                                  {1,2,3,4,5,6,7}, {17,18,19,20,21,22,23});
+            gripper_kp_=prefix=="left_" ? 15.0 : 10.0;
+            gripper_kd_=prefix=="left_" ? 0.20 : 0.15;
             arm_->init_gripper_motor(M::DM4310,8,24);
+            RCLCPP_INFO(node_->get_logger(),
+                "Gripper position gains kp=%.2f kd=%.2f; velocity/torque feed-forward disabled",
+                gripper_kp_, gripper_kd_);
             arm_->set_callback_mode_all(openarm::damiao_motor::CallbackMode::STATE);
             params_.resize(7);
             publish_health(false);
@@ -133,7 +138,7 @@ public:
         }
         if (!sample()) { trip("activation feedback failed"); return CallbackReturn::ERROR; }
         last_write_ = Clock::now();
-        RCLCPP_INFO(node_->get_logger(), "Enabled at measured pose; no homing. Joint limit 0.3 rad/s, feedback timeout 100 ms");
+        RCLCPP_INFO(node_->get_logger(), "Enabled at measured pose; no homing. Joint limit 0.6 rad/s, feedback timeout 100 ms");
         return CallbackReturn::SUCCESS;
     }
     CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override {
@@ -200,7 +205,7 @@ public:
             }
         }
         for (size_t i=0;i<8;++i)
-            sent_[i] = limited_step(command_[i], sent_[i], i==7 ? 0.005 : 0.30, std::min(dt,0.01));
+            sent_[i] = limited_step(command_[i], sent_[i], i==7 ? 0.015 : 0.60, std::min(dt,0.01));
         try {
             transmit();
             if (!arm_->is_bus_healthy()) return trip("CAN transmit error");
@@ -250,7 +255,14 @@ private:
             [this](int i) {
                 if (!arm_->is_bus_healthy()) return false;
                 if (i < 7) arm_->get_arm().mit_control_one(i, {kp_[i],kd_[i],sent_[i],0.0,0.0});
-                else arm_->get_gripper().mit_control_one(0, {5.0,0.1,sent_[7]*(-1.0472/0.044),0.0,0.0});
+                else {
+                    // Stronger position correction addresses the observed near-zero
+                    // residual/stick-slip; extra damping limits abrupt motion.
+                    // Keep dq/tau zero: a retained command after a CAN fault must
+                    // remain a position hold, not a persistent velocity/torque bias.
+                    arm_->get_gripper().mit_control_one(0,
+                        {gripper_kp_,gripper_kd_,sent_[7]*(-1.0472/0.044),0.0,0.0});
+                }
                 // Drain replies while spacing outgoing frames, instead of leaving
                 // them queued until both arms finish their write cycles. This is
                 // receive-only: no extra polling frames or command-rate increase.
@@ -300,6 +312,8 @@ private:
     std::thread health_thread_;
     std::array<std::string,8> names_;
     std::array<double,8> position_{},velocity_{},effort_{},command_{},sent_{},lower_{},upper_{};
+    // Gripper-only tuning; arm gains, target limits and fault thresholds unchanged.
+    double gripper_kp_=10.0, gripper_kd_=0.15;
     std::array<double,7> kp_{},kd_{};
     std::vector<openarm::damiao_motor::MITParam> params_;
     bool fault_=false,active_=false,first_write_=true,first_read_=true;

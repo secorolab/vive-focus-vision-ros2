@@ -52,6 +52,7 @@ class Modes(unittest.TestCase):
         self.assertEqual(context.environment['ROS_DOMAIN_ID'], '84')
         self.assertTrue(include.launch_description_source.location.endswith('openarm_live.launch.py'))
         self.assertEqual(args['use_fake_hardware'], 'false')
+        self.assertEqual(args['control_grippers'], 'true')
         self.assertTrue(args['hardware_params_file'].endswith('openarm_real.yaml'))
 
     def test_startup_allowances_keep_original_driver_limits(self):
@@ -79,9 +80,9 @@ class Modes(unittest.TestCase):
             generated=ET.fromstring(node.call_args_list[0].kwargs['parameters'][0]['robot_description'])
             for side in ('right','left'):
                 limit=generated.find(f'joint[@name="openarm_{side}_joint4"]/limit')
-                self.assertEqual(float(limit.get('lower')), -0.02 if fake=='false' else 0)
+                self.assertEqual(float(limit.get('lower')), -0.05 if fake=='false' else 0)
                 grip=generated.find(f'joint[@name="openarm_{side}_finger_joint1"]/limit')
-                self.assertEqual(float(grip.get('lower')), -0.0002 if fake=='false' else 0)
+                self.assertEqual(float(grip.get('lower')), -0.002 if fake=='false' else 0)
                 self.assertEqual(float(grip.get('upper')),0.044)
             for control in generated.findall('ros2_control'):
                 self.assertEqual(control.find('hardware/param[@name="lower3"]').text,'0')
