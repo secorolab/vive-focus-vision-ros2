@@ -232,3 +232,15 @@ The progress advisory is rebased when the end-effector target moves by 5 mm or
 target. An advisory alone does not show the large recovery panel or disengage
 following; actual stops still show recovery instructions. Joint, speed and feedback
 limits remain unchanged.
+
+### Real-robot VR orientation
+
+`config/openarm_real.yaml` sets `view_yaw_deg: 90.0`: the headset spawn is
+orbited around the robot/world origin, making the robot appear turned 90 degrees
+to the right relative to the tracking space. Both spawn position and heading
+rotate together; robot joint coordinates, IK, and controller-to-tool calibration
+remain unchanged. Controller poses use the rotated rig, keeping wrist indicators
+and hand movement consistent with the displayed robot. Simulation defaults to
+zero. Set this value to `0.0` to restore the previous view, or `-90.0` for the
+opposite orientation. Restart the real launch and reopen the updated headset app
+after changing it. This requires an APK built with scene `view_yaw_deg` support.

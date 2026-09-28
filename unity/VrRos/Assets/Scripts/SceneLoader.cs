@@ -187,10 +187,13 @@ namespace VrRos
             }
 
             // Transient-local redelivers on every reconnect; only reload when something changed.
-            string key = $"{url}|{(string)env?["url"]}";
+            float viewYaw = (float?)payload["view_yaw_deg"] ?? 0f;
+            if (float.IsNaN(viewYaw) || float.IsInfinity(viewYaw)) viewYaw = 0f;
+            string key = $"{url}|{(string)env?["url"]}|{viewYaw}";
             if (key == _loadedUrl) return;
             _loadedUrl = key;
 
+            if (locomotion != null) locomotion.SetViewYaw(viewYaw);
             ApplySceneSpawn(manifest);
 
             /* Fire and forget, but not silently: an unobserved Task swallows its exception, and

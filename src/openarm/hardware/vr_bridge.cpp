@@ -210,6 +210,7 @@ public:
         conf.topic_ns = get_parameter("out_ns").as_string();
         conf.frame_id = "world";
         conf.rate_hz = 50.0;
+        conf.view_yaw_deg = declare_parameter<double>("view_yaw_deg", 0.0);
         scene_ = std::make_unique<BodyPosePublisher>(*this, model_.get(), conf);
         feedback_ = create_subscription<sensor_msgs::msg::JointState>(
             declare_parameter<std::string>("joint_states_topic", "/joint_states"),

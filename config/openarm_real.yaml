@@ -2,6 +2,8 @@
 # Calibration/tool pairings are imported separately by the launch.
 openarm_hardware_preview:
   ros__parameters:
+    # Orbit the headset spawn so the robot faces 90 degrees right in tracking space.
+    view_yaw_deg: 90.0
     openarm.translation_scale: 1.0
     openarm.max_translation_m: 0.50
     openarm.max_rotation_rad: 3.141592653589793

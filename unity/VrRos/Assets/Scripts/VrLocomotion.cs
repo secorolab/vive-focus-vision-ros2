@@ -73,14 +73,23 @@ namespace VrRos
             MoveToSpawn();
         }
 
+        private float _viewYawDegrees;
+
+        public void SetViewYaw(float degrees)
+        {
+            _viewYawDegrees = degrees;
+            MoveToSpawn();
+        }
+
         private void MoveToSpawn()
         {
             /* The spawn point is given in ROS coordinates, because that is the frame the scene
              * and every published pose are in. */
             Vector3 p = _sceneSpawn ?? config.Active.spawnPosition;
             float yaw = _sceneSpawn.HasValue ? _sceneSpawnYaw : config.Active.spawnYawDegrees;
-            rig.SetPositionAndRotation(FrameConv.RosToUnity(p.x, p.y, p.z),
-                                       Quaternion.Euler(0f, -yaw, 0f));
+            Quaternion orbit = Quaternion.Euler(0f, -_viewYawDegrees, 0f);
+            rig.SetPositionAndRotation(orbit * FrameConv.RosToUnity(p.x, p.y, p.z),
+                                       Quaternion.Euler(0f, -yaw - _viewYawDegrees, 0f));
         }
 
         /// <summary>
