@@ -31,7 +31,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs geometry_msgs
 )
 
-find_package(mj_kdl_wrapper REQUIRED)
+find_package(mj_kdl_wrapper 0.4 REQUIRED)
 
 # The .glb embeds images as PNG, and PNG means deflate.
 find_package(ZLIB REQUIRED)

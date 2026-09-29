@@ -63,16 +63,31 @@ class SceneNode : public rclcpp::Node
         /* Loaded directly, not through build_scene: that attaches only the first root body of
          * each RobotSpec, which is right for a robot and silently truncates a world file with
          * several top-level bodies. The model here has to match what scene_export read, or the
-         * client indexes body poses into the wrong geometry.
-         *
-         * Env still owns the result, so reset() keeps working. */
-        mj_kdl::ensure_plugins_loaded();
-        char error[1024] = "";
-        env_.model       = mj_loadXML(mjcf.c_str(), nullptr, error, sizeof(error));
-        if (!env_.model) throw std::runtime_error("failed to load " + mjcf + ": " + error);
-        env_.model->opt.timestep  = timestep;
+         * client indexes body poses into the wrong geometry. */
+        // Adopted inside init_env, which loads the MuJoCo plugins the MJCF may need first.
+        std::string load_error;
+        env_.adopt = [this, mjcf, &load_error](mjModel *m, mjData *d) {
+            mj_kdl::destroy_scene(m, d);
+            char error[1024] = "";
+            world_model_     = mj_loadXML(mjcf.c_str(), nullptr, error, sizeof(error));
+            if (!world_model_) {
+                load_error = error;
+                return std::pair<mjModel *, mjData *>{ nullptr, nullptr };
+            }
+            world_data_ = mj_makeData(world_model_);
+            return std::pair<mjModel *, mjData *>{ world_model_, world_data_ };
+        };
+        mj_kdl::SceneSpec spec;
+        spec.timestep   = timestep;
+        spec.add_floor  = false;
+        spec.add_skybox = false;
+        if (const mj_kdl::Status s = mj_kdl::init_env(&env_, &spec); !s) {
+            throw std::runtime_error("failed to load " + mjcf + ": "
+                                     + (load_error.empty() ? s.error : load_error));
+        }
+        env_.adopt                 = nullptr;
+        env_.model->opt.timestep   = timestep;
         env_.model->opt.gravity[2] = gravity_z;
-        env_.data                 = mj_makeData(env_.model);
         mj_forward(env_.model, env_.data);
 
         scene_out_ = std::make_unique<BodyPosePublisher>(*this, env_.model, conf);
@@ -156,7 +171,12 @@ class SceneNode : public rclcpp::Node
                     conf.frame_id.c_str());
     }
 
-    ~SceneNode() override { mj_kdl::cleanup(&env_); }
+    ~SceneNode() override
+    {
+        mj_kdl::cleanup(&env_);
+        mj_deleteData(world_data_);
+        mj_deleteModel(world_model_);
+    }
 
   private:
     void tick()
@@ -199,6 +219,8 @@ class SceneNode : public rclcpp::Node
         }
     }
 
+    mjModel          *world_model_ = nullptr; // adopted by env_, freed here
+    mjData           *world_data_  = nullptr;
     mj_kdl::Env       env_;
     double            rate_hz_ = 60.0;
     int               reset_keyframe_ = -1;

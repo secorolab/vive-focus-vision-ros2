@@ -320,7 +320,7 @@ def main():
     parser.add_argument('--description', type=Path,
                         default=Path.home() / 'openarm_ws/src/openarm_description')
     parser.add_argument('--library', type=Path, default=Path.home()
-                        / '.cache/mj_kdl_wrapper/mujoco-3.9.0/lib/libmujoco.so.3.9.0')
+                        / '.cache/mj_kdl_wrapper/mujoco-3.14.0/lib/libmujoco.so.3.14.0')
     parser.add_argument('--skip-export', action='store_true', help='prepare model files only')
     parser.add_argument('--appearance', choices=('hardware', 'cad'), default='hardware',
                         help='V1 black/silver finish or original CAD colours (prepare only)')

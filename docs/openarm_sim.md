@@ -41,7 +41,7 @@ colcon build --packages-select vive_vr_ros2 --cmake-args -DBUILD_SCENES=OFF -DBU
 ```
 
 Requires the already-built ROS Jazzy, OpenArm description and VIVE workspaces, Python PyYAML
-(available with the ROS setup), and the wrapper's cached MuJoCo 3.9.0 library. No extra Python
+(available with the ROS setup), and the wrapper's cached MuJoCo 3.14.0 library. No extra Python
 MuJoCo installation is needed. In a Zsh terminal:
 
 ```bash

@@ -12,7 +12,7 @@ repositories:
   mj_kdl_wrapper:
     type: git
     url: git@github.com:vamsikalagaturu/mj_kdl_wrapper.git
-    version: dev
+    version: v0.4.0
   orocos_kinematics_dynamics:
     type: git
     url: git@github.com:secorolab/orocos_kinematics_dynamics.git

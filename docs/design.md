@@ -6,7 +6,7 @@ decisions do not get re-litigated from scratch.
 ## Physics on the PC, rendering on the headset
 
 MuJoCo has no official Android build. Community arm64 binaries exist and the old `qsort_r`
-blocker is fixed upstream, but `mj_kdl_wrapper` pins MuJoCo 3.9.0 alongside a KDL fork, GLFW, EGL,
+blocker is fixed upstream, but `mj_kdl_wrapper` pins MuJoCo 3.14.0 alongside a KDL fork, GLFW, EGL,
 ffmpeg and Eigen — none of which is going on a headset.
 
 That constraint points the same way the use case does: one sim clock on one machine is what makes
