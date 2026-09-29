@@ -155,6 +155,17 @@ int GlbBuilder::add_mesh_node(MeshGroup mesh)
     return static_cast<int>(meshes_.size()) - 1;
 }
 
+int GlbBuilder::add_shared_mesh(std::string name, std::vector<Primitive> primitives)
+{
+    MeshGroup mesh;
+    mesh.name       = std::move(name);
+    mesh.primitives = std::move(primitives);
+    shared_.push_back(std::move(mesh));
+    return static_cast<int>(shared_.size()) - 1;
+}
+
+void GlbBuilder::add_instance(Instance instance) { instances_.push_back(std::move(instance)); }
+
 void GlbBuilder::add_light(Light light) { lights_.push_back(std::move(light)); }
 
 bool GlbBuilder::write(const std::string &path) const
@@ -165,9 +176,23 @@ bool GlbBuilder::write(const std::string &path) const
     int accessor_count = 0;
     int view_count     = 0;
 
-    meshes_json << "\"meshes\":[";
+    // A body whose geometry is all instanced has a node but no mesh of its own.
+    std::vector<int> body_mesh(meshes_.size(), -1);
+    int              mesh_count = 0;
     for (size_t m = 0; m < meshes_.size(); ++m) {
-        const MeshGroup &mesh = meshes_[m];
+        if (!meshes_[m].primitives.empty()) body_mesh[m] = mesh_count++;
+    }
+    const int shared_base = mesh_count;
+
+    std::vector<const MeshGroup *> written;
+    for (size_t m = 0; m < meshes_.size(); ++m) {
+        if (body_mesh[m] >= 0) written.push_back(&meshes_[m]);
+    }
+    for (const MeshGroup &mesh : shared_) written.push_back(&mesh);
+
+    meshes_json << "\"meshes\":[";
+    for (size_t m = 0; m < written.size(); ++m) {
+        const MeshGroup &mesh = *written[m];
         if (m) meshes_json << ",";
         meshes_json << "{\"name\":\"" << mesh.name << "\",\"primitives\":[";
 
@@ -277,15 +302,32 @@ bool GlbBuilder::write(const std::string &path) const
         if (m) json << ",";
         json << m;
     }
+    // Instance nodes come after the lights, so body and light node indices are unchanged.
+    const size_t                  instance_base = meshes_.size() + lights_.size();
+    std::vector<std::vector<int>> children(meshes_.size());
+    for (size_t i = 0; i < instances_.size(); ++i) {
+        children[instances_[i].parent].push_back(static_cast<int>(instance_base + i));
+    }
+
     json << "]}],\"nodes\":[";
     for (size_t m = 0; m < meshes_.size(); ++m) {
         const MeshGroup &mesh = meshes_[m];
         if (m) json << ",";
-        json << "{\"name\":\"" << mesh.name << "\",\"mesh\":" << m << ",\"translation\":["
-             << fmt_float(mesh.translation[0]) << "," << fmt_float(mesh.translation[1]) << ","
-             << fmt_float(mesh.translation[2]) << "],\"rotation\":["
-             << fmt_float(mesh.rotation[0]) << "," << fmt_float(mesh.rotation[1]) << ","
-             << fmt_float(mesh.rotation[2]) << "," << fmt_float(mesh.rotation[3]) << "]}";
+        json << "{\"name\":\"" << mesh.name << "\"";
+        if (body_mesh[m] >= 0) json << ",\"mesh\":" << body_mesh[m];
+        if (!children[m].empty()) {
+            json << ",\"children\":[";
+            for (size_t c = 0; c < children[m].size(); ++c) {
+                if (c) json << ",";
+                json << children[m][c];
+            }
+            json << "]";
+        }
+        json << ",\"translation\":[" << fmt_float(mesh.translation[0]) << ","
+             << fmt_float(mesh.translation[1]) << "," << fmt_float(mesh.translation[2])
+             << "],\"rotation\":[" << fmt_float(mesh.rotation[0]) << ","
+             << fmt_float(mesh.rotation[1]) << "," << fmt_float(mesh.rotation[2]) << ","
+             << fmt_float(mesh.rotation[3]) << "]}";
     }
 
     /* A punctual light points down its node's -Z, so the node carries a rotation taking -Z onto
@@ -299,6 +341,14 @@ bool GlbBuilder::write(const std::string &path) const
         json << fmt_float(q[0]) << "," << fmt_float(q[1]) << "," << fmt_float(q[2]) << ","
              << fmt_float(q[3]) << "],\"extensions\":{\"KHR_lights_punctual\":{\"light\":" << l
              << "}}}";
+    }
+    for (const Instance &inst : instances_) {
+        json << ",{\"name\":\"" << inst.name << "\",\"mesh\":" << shared_base + inst.mesh
+             << ",\"translation\":[" << fmt_float(inst.translation[0]) << ","
+             << fmt_float(inst.translation[1]) << "," << fmt_float(inst.translation[2])
+             << "],\"rotation\":[" << fmt_float(inst.rotation[0]) << ","
+             << fmt_float(inst.rotation[1]) << "," << fmt_float(inst.rotation[2]) << ","
+             << fmt_float(inst.rotation[3]) << "]}";
     }
     json << "],";
 

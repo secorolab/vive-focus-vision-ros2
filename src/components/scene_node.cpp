@@ -22,6 +22,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 #include "vive_vr_ros2/body_pose_publisher.hpp"
@@ -105,6 +106,30 @@ class SceneNode : public rclcpp::Node
          * object at the origin - rather than to where the MJCF put them. */
         reset_keyframe_ = declare_parameter<int>("reset_keyframe", -1);
 
+        const auto ctrl_names =
+          declare_parameter<std::vector<std::string>>("ctrl_actuators", std::vector<std::string>{});
+        ctrl_timeout_s_ = declare_parameter<double>("ctrl_timeout_s", 0.5);
+        for (const std::string &name : ctrl_names) {
+            const int id = mj_name2id(env_.model, mjOBJ_ACTUATOR, name.c_str());
+            if (id < 0) throw std::runtime_error("ctrl_actuators: no actuator named " + name);
+            ctrl_ids_.push_back(id);
+        }
+        if (!ctrl_ids_.empty()) {
+            ctrl_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
+              "~/ctrl", rclcpp::QoS(1), [this](std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+                  if (msg->data.size() != ctrl_ids_.size()) {
+                      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                           "~/ctrl: got %zu values for %zu actuators; ignored",
+                                           msg->data.size(), ctrl_ids_.size());
+                      return;
+                  }
+                  ctrl_values_   = msg->data;
+                  ctrl_received_ = now();
+              });
+            RCLCPP_INFO(get_logger(), "~/ctrl drives %zu actuators, zeroed after %.2f s of silence",
+                        ctrl_ids_.size(), ctrl_timeout_s_);
+        }
+
         reset_srv_ = create_service<std_srvs::srv::Trigger>(
           "~/reset",
           [this](const std_srvs::srv::Trigger::Request::SharedPtr,
@@ -138,6 +163,7 @@ class SceneNode : public rclcpp::Node
     {
         /* One publish period of sim time, so the stream tracks the wall clock. */
         const mjtNum target = env_.data->time + 1.0 / rate_hz_;
+        apply_ctrl();
         while (env_.data->time < target) {
             if (grabber_) grabber_->apply(env_.data);
             mj_step(env_.model, env_.data);
@@ -145,6 +171,16 @@ class SceneNode : public rclcpp::Node
 
         if (scene_out_->wants_update(env_.data->time)) scene_out_->publish(env_.data);
         publish_held();
+    }
+
+    void apply_ctrl()
+    {
+        if (ctrl_ids_.empty()) return;
+        const bool fresh = !ctrl_values_.empty()
+                           && (now() - ctrl_received_).seconds() <= ctrl_timeout_s_;
+        for (size_t i = 0; i < ctrl_ids_.size(); ++i) {
+            env_.data->ctrl[ctrl_ids_[i]] = fresh ? ctrl_values_[i] : 0.0;
+        }
     }
 
     /* What each hand actually holds, so the client can show it. Only the grabber knows: it
@@ -166,6 +202,12 @@ class SceneNode : public rclcpp::Node
     mj_kdl::Env       env_;
     double            rate_hz_ = 60.0;
     int               reset_keyframe_ = -1;
+
+    std::vector<int>                                                   ctrl_ids_;
+    std::vector<double>                                                ctrl_values_;
+    rclcpp::Time                                                       ctrl_received_;
+    double                                                             ctrl_timeout_s_ = 0.5;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr ctrl_sub_;
 
     std::unique_ptr<BodyPosePublisher>                          scene_out_;
     std::unique_ptr<Grabber>                                    grabber_;
