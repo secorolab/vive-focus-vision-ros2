@@ -33,6 +33,16 @@ struct MeshGroup
     std::array<float, 4> rotation    = { 0, 0, 0, 1 }; // xyzw
 };
 
+/** A child node of a body node drawing a shared mesh, placed in that body's frame. */
+struct Instance
+{
+    std::string          name;
+    int                  parent = -1; // node index from add_mesh_node
+    int                  mesh   = -1; // index from add_shared_mesh
+    std::array<float, 3> translation = { 0, 0, 0 };
+    std::array<float, 4> rotation    = { 0, 0, 0, 1 }; // xyzw
+};
+
 /** A KHR_lights_punctual light, so a viewer lights the scene the way MuJoCo does. */
 struct Light
 {
@@ -51,7 +61,7 @@ struct Texture
     std::vector<uint8_t> rgba; // width * height * 4
 };
 
-/** Minimal binary glTF (.glb) writer: triangle meshes, flat colours, one node per mesh. */
+/** Minimal binary glTF (.glb) writer: triangle meshes, flat colours, instanced shared meshes. */
 class GlbBuilder
 {
   public:
@@ -62,8 +72,13 @@ class GlbBuilder
     /** Returns a texture index, reusing one already added under the same key. */
     int add_texture(const std::string &key, Texture texture);
 
-    /** Adds a mesh plus the root node that references it; returns the node index. */
+    /** Adds a root node, with a mesh if it has primitives; returns the node index. */
     int add_mesh_node(MeshGroup mesh);
+
+    /** Adds a mesh that instances reference instead of carrying a copy; returns its index. */
+    int add_shared_mesh(std::string name, std::vector<Primitive> primitives);
+
+    void add_instance(Instance instance);
 
     void add_light(Light light);
 
@@ -82,6 +97,8 @@ class GlbBuilder
     std::vector<Texture>     textures_;
     std::vector<std::string> texture_keys_;
     std::vector<MeshGroup>   meshes_;
+    std::vector<MeshGroup>   shared_;
+    std::vector<Instance>    instances_;
     std::vector<Light>       lights_;
 };
 

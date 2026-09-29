@@ -28,6 +28,9 @@ struct OpenArmIk::Impl
 {
     mjModel *model;
     std::unique_ptr<mjData, decltype(&mj_deleteData)> scratch;
+    std::unique_ptr<mjModel, decltype(&mj_deleteModel)> chain_model{ nullptr, mj_deleteModel };
+    std::unique_ptr<mjData, decltype(&mj_deleteData)> chain_data{ nullptr, mj_deleteData };
+    mj_kdl::Env env;
     mj_kdl::Robot robot;
     std::unique_ptr<KDL::ChainFkSolverPos_recursive> fk;
     std::unique_ptr<KDL::ChainJntToJacSolver> jacobian;
@@ -37,25 +40,44 @@ struct OpenArmIk::Impl
     explicit Impl(mjModel *m) : model(m), scratch(mj_makeData(m), mj_deleteData) {}
 };
 
-OpenArmIk::OpenArmIk(mjModel *model) : impl_(std::make_unique<Impl>(model))
+OpenArmIk::OpenArmIk(mjModel *model, const std::string &arm) : impl_(std::make_unique<Impl>(model))
 {
+    if (arm != "left" && arm != "right") throw std::runtime_error("Invalid OpenArm side");
+    const std::string tip = "openarm_" + arm + "_hand_tcp";
     auto &state = *impl_;
-    tcp = mj_name2id(model, mjOBJ_BODY, "openarm_right_hand_tcp");
-    if (tcp < 0 || !state.scratch ||
-        !mj_kdl::init_robot_from_mjcf(&state.robot, model, state.scratch.get(),
-                                    "world", "openarm_right_hand_tcp")) {
-        throw std::runtime_error("Cannot build the OpenArm right TCP chain");
+    tcp = mj_name2id(model, mjOBJ_BODY, tip.c_str());
+
+    // Robots are built inside an Env; this one runs on a copy, so the caller's pair is untouched.
+    state.env.adopt = [&state](mjModel *m, mjData *d) {
+        mj_kdl::destroy_scene(m, d);
+        state.chain_model.reset(mj_copyModel(nullptr, state.model));
+        state.chain_data.reset(state.chain_model ? mj_makeData(state.chain_model.get()) : nullptr);
+        return std::pair<mjModel *, mjData *>{ state.chain_model.get(), state.chain_data.get() };
+    };
+    mj_kdl::SceneSpec spec;
+    spec.timestep = model->opt.timestep;
+    spec.add_floor = false;
+    spec.add_skybox = false;
+    if (tcp < 0 || !state.scratch || !mj_kdl::init_env(&state.env, &spec) ||
+        !mj_kdl::init_robot_from_mjcf(&state.robot, &state.env, "world", tip.c_str())) {
+        throw std::runtime_error("Cannot build the OpenArm TCP chain");
     }
     if (state.robot.n_joints != 7) {
-        throw std::runtime_error("OpenArm right chain must have seven joints");
+        throw std::runtime_error("OpenArm chain must have seven joints");
     }
     for (int i = 0; i < 7; ++i) {
-        const std::string name = "openarm_right_joint" + std::to_string(i + 1);
+        const std::string name = "openarm_" + arm + "_joint" + std::to_string(i + 1);
         joints[i] = mj_name2id(model, mjOBJ_JOINT, name.c_str());
-        qpos[i] = state.robot.kdl_to_mj_qpos[i];
-        dofs[i] = state.robot.kdl_to_mj_dof[i];
-        motors[i] = state.robot.kdl_to_mj_ctrl[i];
-        if (joints[i] < 0 || motors[i] < 0 || state.robot.joint_names[i] != name ||
+        if (joints[i] < 0) throw std::runtime_error("Unexpected OpenArm joint/actuator: " + name);
+        qpos[i] = model->jnt_qposadr[joints[i]];
+        dofs[i] = model->jnt_dofadr[joints[i]];
+        motors[i] = -1;
+        for (int a = 0; a < model->nu && motors[i] < 0; ++a) {
+            if (model->actuator_trntype[a] == mjTRN_JOINT && model->actuator_trnid[2 * a] == joints[i]) {
+                motors[i] = a;
+            }
+        }
+        if (motors[i] < 0 || state.robot.joint_names[i] != name ||
             model->jnt_type[joints[i]] != mjJNT_HINGE || !model->jnt_limited[joints[i]]) {
             throw std::runtime_error("Unexpected OpenArm joint/actuator: " + name);
         }

@@ -22,6 +22,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
 #include "vive_vr_ros2/body_pose_publisher.hpp"
@@ -62,16 +63,31 @@ class SceneNode : public rclcpp::Node
         /* Loaded directly, not through build_scene: that attaches only the first root body of
          * each RobotSpec, which is right for a robot and silently truncates a world file with
          * several top-level bodies. The model here has to match what scene_export read, or the
-         * client indexes body poses into the wrong geometry.
-         *
-         * Env still owns the result, so reset() keeps working. */
-        mj_kdl::ensure_plugins_loaded();
-        char error[1024] = "";
-        env_.model       = mj_loadXML(mjcf.c_str(), nullptr, error, sizeof(error));
-        if (!env_.model) throw std::runtime_error("failed to load " + mjcf + ": " + error);
-        env_.model->opt.timestep  = timestep;
+         * client indexes body poses into the wrong geometry. */
+        // Adopted inside init_env, which loads the MuJoCo plugins the MJCF may need first.
+        std::string load_error;
+        env_.adopt = [this, mjcf, &load_error](mjModel *m, mjData *d) {
+            mj_kdl::destroy_scene(m, d);
+            char error[1024] = "";
+            world_model_     = mj_loadXML(mjcf.c_str(), nullptr, error, sizeof(error));
+            if (!world_model_) {
+                load_error = error;
+                return std::pair<mjModel *, mjData *>{ nullptr, nullptr };
+            }
+            world_data_ = mj_makeData(world_model_);
+            return std::pair<mjModel *, mjData *>{ world_model_, world_data_ };
+        };
+        mj_kdl::SceneSpec spec;
+        spec.timestep   = timestep;
+        spec.add_floor  = false;
+        spec.add_skybox = false;
+        if (const mj_kdl::Status s = mj_kdl::init_env(&env_, &spec); !s) {
+            throw std::runtime_error("failed to load " + mjcf + ": "
+                                     + (load_error.empty() ? s.error : load_error));
+        }
+        env_.adopt                 = nullptr;
+        env_.model->opt.timestep   = timestep;
         env_.model->opt.gravity[2] = gravity_z;
-        env_.data                 = mj_makeData(env_.model);
         mj_forward(env_.model, env_.data);
 
         scene_out_ = std::make_unique<BodyPosePublisher>(*this, env_.model, conf);
@@ -105,6 +121,30 @@ class SceneNode : public rclcpp::Node
          * object at the origin - rather than to where the MJCF put them. */
         reset_keyframe_ = declare_parameter<int>("reset_keyframe", -1);
 
+        const auto ctrl_names =
+          declare_parameter<std::vector<std::string>>("ctrl_actuators", std::vector<std::string>{});
+        ctrl_timeout_s_ = declare_parameter<double>("ctrl_timeout_s", 0.5);
+        for (const std::string &name : ctrl_names) {
+            const int id = mj_name2id(env_.model, mjOBJ_ACTUATOR, name.c_str());
+            if (id < 0) throw std::runtime_error("ctrl_actuators: no actuator named " + name);
+            ctrl_ids_.push_back(id);
+        }
+        if (!ctrl_ids_.empty()) {
+            ctrl_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
+              "~/ctrl", rclcpp::QoS(1), [this](std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+                  if (msg->data.size() != ctrl_ids_.size()) {
+                      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                           "~/ctrl: got %zu values for %zu actuators; ignored",
+                                           msg->data.size(), ctrl_ids_.size());
+                      return;
+                  }
+                  ctrl_values_   = msg->data;
+                  ctrl_received_ = now();
+              });
+            RCLCPP_INFO(get_logger(), "~/ctrl drives %zu actuators, zeroed after %.2f s of silence",
+                        ctrl_ids_.size(), ctrl_timeout_s_);
+        }
+
         reset_srv_ = create_service<std_srvs::srv::Trigger>(
           "~/reset",
           [this](const std_srvs::srv::Trigger::Request::SharedPtr,
@@ -131,13 +171,19 @@ class SceneNode : public rclcpp::Node
                     conf.frame_id.c_str());
     }
 
-    ~SceneNode() override { mj_kdl::cleanup(&env_); }
+    ~SceneNode() override
+    {
+        mj_kdl::cleanup(&env_);
+        mj_deleteData(world_data_);
+        mj_deleteModel(world_model_);
+    }
 
   private:
     void tick()
     {
         /* One publish period of sim time, so the stream tracks the wall clock. */
         const mjtNum target = env_.data->time + 1.0 / rate_hz_;
+        apply_ctrl();
         while (env_.data->time < target) {
             if (grabber_) grabber_->apply(env_.data);
             mj_step(env_.model, env_.data);
@@ -145,6 +191,16 @@ class SceneNode : public rclcpp::Node
 
         if (scene_out_->wants_update(env_.data->time)) scene_out_->publish(env_.data);
         publish_held();
+    }
+
+    void apply_ctrl()
+    {
+        if (ctrl_ids_.empty()) return;
+        const bool fresh = !ctrl_values_.empty()
+                           && (now() - ctrl_received_).seconds() <= ctrl_timeout_s_;
+        for (size_t i = 0; i < ctrl_ids_.size(); ++i) {
+            env_.data->ctrl[ctrl_ids_[i]] = fresh ? ctrl_values_[i] : 0.0;
+        }
     }
 
     /* What each hand actually holds, so the client can show it. Only the grabber knows: it
@@ -163,9 +219,17 @@ class SceneNode : public rclcpp::Node
         }
     }
 
+    mjModel          *world_model_ = nullptr; // adopted by env_, freed here
+    mjData           *world_data_  = nullptr;
     mj_kdl::Env       env_;
     double            rate_hz_ = 60.0;
     int               reset_keyframe_ = -1;
+
+    std::vector<int>                                                   ctrl_ids_;
+    std::vector<double>                                                ctrl_values_;
+    rclcpp::Time                                                       ctrl_received_;
+    double                                                             ctrl_timeout_s_ = 0.5;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr ctrl_sub_;
 
     std::unique_ptr<BodyPosePublisher>                          scene_out_;
     std::unique_ptr<Grabber>                                    grabber_;

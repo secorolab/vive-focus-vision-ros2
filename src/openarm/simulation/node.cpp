@@ -51,12 +51,15 @@ class OpenArmSimNode : public rclcpp::Node
         scene_out_ = std::make_unique<BodyPosePublisher>(*this, model_.get(), conf);
         if (declare_parameter<bool>("openarm.enabled", false)) {
             teleop_ = std::make_unique<OpenArmTeleop>(*this, model_.get(), data_.get());
+            if (declare_parameter<bool>("openarm.left.enabled", true))
+                left_teleop_ = std::make_unique<OpenArmTeleop>(*this, model_.get(), data_.get(), "left");
         }
         reset_srv_ = create_service<std_srvs::srv::Trigger>(
           "~/reset", [this](const std_srvs::srv::Trigger::Request::SharedPtr,
                             std_srvs::srv::Trigger::Response::SharedPtr response) {
               reset_home();
               if (teleop_) teleop_->reset();
+              if (left_teleop_) left_teleop_->reset();
               response->success = true;
               response->message = "OpenArm simulation reset; release grip before re-engaging";
           });
@@ -76,6 +79,7 @@ class OpenArmSimNode : public rclcpp::Node
     void tick()
     {
         if (teleop_) teleop_->tick(1.0 / rate_hz_);
+        if (left_teleop_) left_teleop_->tick(1.0 / rate_hz_);
         const double target = data_->time + 1.0 / rate_hz_;
         while (data_->time < target) mj_step(model_.get(), data_.get());
         if (scene_out_->wants_update(data_->time)) scene_out_->publish(data_.get());
@@ -84,7 +88,7 @@ class OpenArmSimNode : public rclcpp::Node
     std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model_{ nullptr, mj_deleteModel };
     std::unique_ptr<mjData, decltype(&mj_deleteData)> data_{ nullptr, mj_deleteData };
     std::unique_ptr<BodyPosePublisher> scene_out_;
-    std::unique_ptr<OpenArmTeleop> teleop_;
+    std::unique_ptr<OpenArmTeleop> teleop_, left_teleop_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_srv_;
     rclcpp::TimerBase::SharedPtr timer_;
     double rate_hz_ = 60.0;

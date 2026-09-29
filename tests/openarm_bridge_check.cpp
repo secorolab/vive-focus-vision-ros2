@@ -34,10 +34,10 @@ int main(int argc, char** argv) {
             "/openarm_test/teleop/right/delta",rclcpp::SensorDataQoS());
         auto gripper=node->create_publisher<std_msgs::msg::Float32>(
             "/openarm_test/teleop/right/gripper",rclcpp::SensorDataQoS());
-        std::string reported;
+        std::string reported, reason;
         auto reports=node->create_subscription<vive_vr_ros2::msg::TeleopStatus>(
             "/openarm_test/teleop/right/status",10,
-            [&](vive_vr_ros2::msg::TeleopStatus::SharedPtr msg){reported=msg->state;});
+            [&](vive_vr_ros2::msg::TeleopStatus::SharedPtr msg){reported=msg->state;reason=msg->stop_reason;});
         auto spin=[&]{for(int i=0;i<5;++i){rclcpp::spin_some(node);std::this_thread::sleep_for(std::chrono::milliseconds(2));}};
         auto press=[&](bool value){std_msgs::msg::Bool msg;msg.data=value;clutch->publish(msg);spin();};
         auto send=[&](double z, double age=0){
@@ -100,10 +100,12 @@ int main(int argc, char** argv) {
         send(-0.03,9);bridge.tick(1./60);spin();
         send(-0.04,3);bridge.tick(1./60);spin();
         check(reported=="engaged"||reported=="unreachable","delta dropped for a backwards stamp");
-        send(std::numeric_limits<double>::quiet_NaN());bridge.tick(1./60);
+        send(std::numeric_limits<double>::quiet_NaN());bridge.tick(1./60);spin();
+        check(reason=="invalid_target","invalid target reason missing");
         held.assign(d->ctrl,d->ctrl+m->nu);send(-0.02);bridge.tick(1./60);
         for(int i=0;i<m->nu;++i)check(d->ctrl[i]==held[i],"invalid delta failed to disengage");
-        press(false);press(true);send(1.0);bridge.tick(1./60);
+        press(false);press(true);send(1.0);bridge.tick(1./60);spin();
+        check(reason=="translation_limit","translation stop reason missing");
         held.assign(d->ctrl,d->ctrl+m->nu);send(-0.02);bridge.tick(1./60);
         for(int i=0;i<m->nu;++i)check(d->ctrl[i]==held[i],"oversized target failed to disengage");
         bridge.reset();press(true);send(-0.02);bridge.tick(1./60);
@@ -117,6 +119,11 @@ int main(int argc, char** argv) {
         auto cp=aligned_node->create_publisher<geometry_msgs::msg::PoseStamped>("/alignment_test/right/pose",rclcpp::SensorDataQoS());
         auto gp=aligned_node->create_publisher<std_msgs::msg::Bool>("/alignment_test/teleop/right/clutch",rclcpp::QoS(1).transient_local());
         auto dp=aligned_node->create_publisher<geometry_msgs::msg::TransformStamped>("/alignment_test/teleop/right/delta",rclcpp::SensorDataQoS());
+        geometry_msgs::msg::PoseStamped alignment_pose;
+        bool have_alignment_pose=false;
+        auto guide_sub=aligned_node->create_subscription<geometry_msgs::msg::PoseStamped>(
+            "/alignment_test/teleop/right/alignment_pose",rclcpp::SensorDataQoS(),
+            [&](geometry_msgs::msg::PoseStamped::SharedPtr msg){alignment_pose=*msg;have_alignment_pose=true;});
         std::string status;
         vive_vr_ros2::msg::TeleopStatus report;
         auto sub=aligned_node->create_subscription<vive_vr_ros2::msg::TeleopStatus>("/alignment_test/teleop/right/status",10,
@@ -134,19 +141,23 @@ int main(int argc, char** argv) {
             if(turned)q=wrong;
             msg.pose.orientation.w=q[0];msg.pose.orientation.x=q[1];msg.pose.orientation.y=q[2];msg.pose.orientation.z=q[3];
             const auto*p=d->xpos+3*tcp;
-            msg.pose.position.x=p[0]+(displaced?0.5:0.0);msg.pose.position.y=p[1];msg.pose.position.z=p[2];
+            msg.pose.position.x=p[0]+(displaced?2.0:0.0);msg.pose.position.y=p[1];msg.pose.position.z=p[2];
             cp->publish(msg);pump();
         };
         button(false);check(state()=="tracking_lost","missing tracking displayed ready");
         pose(true,false);check(state()=="align_pose","mismatched orientation displayed ready");
         button(true);check(state()=="release_grip","misaligned grip engaged");
-        // The pose gate is on position too: right orientation, half a metre away, is not ready.
-        button(false);pose(false,true);check(state()=="align_pose","displaced controller displayed ready");
+        // Relative engagement allows a comfortable hand position far from the robot.
+        button(false);pose(false,true);check(state()=="ready","relative controller not ready at two metres");
         check(report.position_error_m>0.4,"status did not report the position error");
-        check(report.position_tolerance_m>0,"status did not carry its tolerances");
-        button(true);check(state()=="release_grip","displaced grip engaged");
+        check(report.position_tolerance_m==0,"relative mode advertised a proximity gate");
+        button(true);check(state()=="waiting_delta","relative grip did not engage");
         button(false);pose(false,false);check(state()=="ready","aligned controller not ready");
         check(report.ready,"ready state did not set the ready flag");
+        check(have_alignment_pose,"orientation guide not published");
+        const auto &aq=alignment_pose.pose.orientation;
+        const mjtNum target_q[4]={aq.w,aq.x,aq.y,aq.z};
+        check(std::abs(mju_dot(target_q,d->xquat+4*tcp,4))>0.999,"guide orientation incorrect for identity pairing");
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         check(state()=="tracking_lost","stale controller displayed ready");
         pose(false,false);button(true);check(state()=="waiting_delta","aligned grip did not engage");
@@ -160,6 +171,7 @@ int main(int argc, char** argv) {
         // Slewing towards a legal target is engaged, not unreachable: the gap is still closing.
         check(state()=="engaged","90 degree target reported as unreachable while slewing");
         rotation(1.9);check(state()=="release_grip","excessive rotation accepted");
+        check(report.stop_reason=="rotation_limit","rotation stop reason missing");
         std::cout<<"PASS: alignment readiness, grip gating, stale tracking, 90-degree rotation and rotation bound\n";
         std::cout<<"PASS: release gating, delta motion, gripper, left hold, release, reclutch, timeout, stale and NaN rejection, reset\n";
     }catch(const std::exception&e){std::cerr<<e.what()<<'\n';result=1;}

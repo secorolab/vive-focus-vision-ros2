@@ -1,49 +1,82 @@
-<?xml version="1.0" ?>
-<!-- The OpenArm right-arm names on a generic seven-joint arm, so the servo is testable without
-     the OpenArm description. Link lengths are representative; the control law is what is tested. -->
+<!-- Two independent seven-joint arms for servo and dual-controller regression checks. -->
 <mujoco model="openarm test arm">
-  <compiler angle="radian"/>
-  <option gravity="0 0 0" integrator="implicitfast"/>
-
+  <compiler angle="radian" />
+  <option gravity="0 0 0" integrator="implicitfast" />
   <default>
-    <joint type="hinge" limited="true" damping="1"/>
-    <geom type="capsule" size="0.03" rgba="0.6 0.6 0.65 1"/>
-    <position ctrllimited="true" kp="80" kv="8"/>
+    <joint type="hinge" limited="true" damping="1" />
+    <geom type="capsule" size="0.03" rgba="0.6 0.6 0.65 1" />
+    <position ctrllimited="true" kp="80" kv="8" />
   </default>
-
   <worldbody>
     <body name="openarm_right_link1" pos="0 0 0.30">
-      <joint name="openarm_right_joint1" axis="0 0 1" range="-2.8 2.8"/>
-      <geom fromto="0 0 0 0 0 0.10"/>
+      <joint name="openarm_right_joint1" axis="0 0 1" range="-2.8 2.8" />
+      <geom fromto="0 0 0 0 0 0.10" />
       <body name="openarm_right_link2" pos="0 0 0.10">
-        <joint name="openarm_right_joint2" axis="0 1 0" range="-2.0 2.0"/>
-        <geom fromto="0 0 0 0 0 0.30"/>
+        <joint name="openarm_right_joint2" axis="0 1 0" range="-2.0 2.0" />
+        <geom fromto="0 0 0 0 0 0.30" />
         <body name="openarm_right_link3" pos="0 0 0.30">
-          <joint name="openarm_right_joint3" axis="0 0 1" range="-2.8 2.8"/>
-          <geom fromto="0 0 0 0 0 0.02"/>
+          <joint name="openarm_right_joint3" axis="0 0 1" range="-2.8 2.8" />
+          <geom fromto="0 0 0 0 0 0.02" />
           <body name="openarm_right_link4" pos="0 0 0.02">
-            <joint name="openarm_right_joint4" axis="0 1 0" range="-2.4 2.4"/>
-            <geom fromto="0 0 0 0 0 0.28"/>
+            <joint name="openarm_right_joint4" axis="0 1 0" range="-2.4 2.4" />
+            <geom fromto="0 0 0 0 0 0.28" />
             <body name="openarm_right_link5" pos="0 0 0.28">
-              <joint name="openarm_right_joint5" axis="0 0 1" range="-2.8 2.8"/>
-              <geom fromto="0 0 0 0 0 0.02"/>
+              <joint name="openarm_right_joint5" axis="0 0 1" range="-2.8 2.8" />
+              <geom fromto="0 0 0 0 0 0.02" />
               <body name="openarm_right_link6" pos="0 0 0.02">
-                <joint name="openarm_right_joint6" axis="0 1 0" range="-1.9 1.9"/>
-                <geom fromto="0 0 0 0 0 0.06"/>
+                <joint name="openarm_right_joint6" axis="0 1 0" range="-1.9 1.9" />
+                <geom fromto="0 0 0 0 0 0.06" />
                 <body name="openarm_right_link7" pos="0 0 0.06">
-                  <joint name="openarm_right_joint7" axis="0 0 1" range="-2.8 2.8"/>
-                  <geom fromto="0 0 0 0 0 0.04"/>
+                  <joint name="openarm_right_joint7" axis="0 0 1" range="-2.8 2.8" />
+                  <geom fromto="0 0 0 0 0 0.04" />
                   <body name="openarm_right_hand_tcp" pos="0 0 0.08">
-                    <inertial pos="0 0 0" mass="0.05" diaginertia="1e-4 1e-4 1e-4"/>
+                    <inertial pos="0 0 0" mass="0.05" diaginertia="1e-4 1e-4 1e-4" />
                     <body name="openarm_right_finger1" pos="0.02 0 0">
-                      <joint name="openarm_right_finger_joint1" type="slide" axis="1 0 0"
-                             range="0 0.044"/>
-                      <geom type="box" size="0.008 0.008 0.02"/>
+                      <joint name="openarm_right_finger_joint1" type="slide" axis="1 0 0" range="0 0.044" />
+                      <geom type="box" size="0.008 0.008 0.02" />
                     </body>
                     <body name="openarm_right_finger2" pos="-0.02 0 0">
-                      <joint name="openarm_right_finger_joint2" type="slide" axis="-1 0 0"
-                             range="0 0.044"/>
-                      <geom type="box" size="0.008 0.008 0.02"/>
+                      <joint name="openarm_right_finger_joint2" type="slide" axis="-1 0 0" range="0 0.044" />
+                      <geom type="box" size="0.008 0.008 0.02" />
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+    <body name="openarm_left_link1" pos="0 -0.6 0.30">
+      <joint name="openarm_left_joint1" axis="0 0 1" range="-2.8 2.8" />
+      <geom fromto="0 0 0 0 0 0.10" />
+      <body name="openarm_left_link2" pos="0 0 0.10">
+        <joint name="openarm_left_joint2" axis="0 1 0" range="-2.0 2.0" />
+        <geom fromto="0 0 0 0 0 0.30" />
+        <body name="openarm_left_link3" pos="0 0 0.30">
+          <joint name="openarm_left_joint3" axis="0 0 1" range="-2.8 2.8" />
+          <geom fromto="0 0 0 0 0 0.02" />
+          <body name="openarm_left_link4" pos="0 0 0.02">
+            <joint name="openarm_left_joint4" axis="0 1 0" range="-2.4 2.4" />
+            <geom fromto="0 0 0 0 0 0.28" />
+            <body name="openarm_left_link5" pos="0 0 0.28">
+              <joint name="openarm_left_joint5" axis="0 0 1" range="-2.8 2.8" />
+              <geom fromto="0 0 0 0 0 0.02" />
+              <body name="openarm_left_link6" pos="0 0 0.02">
+                <joint name="openarm_left_joint6" axis="0 1 0" range="-1.9 1.9" />
+                <geom fromto="0 0 0 0 0 0.06" />
+                <body name="openarm_left_link7" pos="0 0 0.06">
+                  <joint name="openarm_left_joint7" axis="0 0 1" range="-2.8 2.8" />
+                  <geom fromto="0 0 0 0 0 0.04" />
+                  <body name="openarm_left_hand_tcp" pos="0 0 0.08">
+                    <inertial pos="0 0 0" mass="0.05" diaginertia="1e-4 1e-4 1e-4" />
+                    <body name="openarm_left_finger1" pos="0.02 0 0">
+                      <joint name="openarm_left_finger_joint1" type="slide" axis="1 0 0" range="0 0.044" />
+                      <geom type="box" size="0.008 0.008 0.02" />
+                    </body>
+                    <body name="openarm_left_finger2" pos="-0.02 0 0">
+                      <joint name="openarm_left_finger_joint2" type="slide" axis="-1 0 0" range="0 0.044" />
+                      <geom type="box" size="0.008 0.008 0.02" />
                     </body>
                   </body>
                 </body>
@@ -54,22 +87,27 @@
       </body>
     </body>
   </worldbody>
-
   <actuator>
-    <position name="openarm_right_joint1_position" joint="openarm_right_joint1" ctrlrange="-2.8 2.8"/>
-    <position name="openarm_right_joint2_position" joint="openarm_right_joint2" ctrlrange="-2.0 2.0"/>
-    <position name="openarm_right_joint3_position" joint="openarm_right_joint3" ctrlrange="-2.8 2.8"/>
-    <position name="openarm_right_joint4_position" joint="openarm_right_joint4" ctrlrange="-2.4 2.4"/>
-    <position name="openarm_right_joint5_position" joint="openarm_right_joint5" ctrlrange="-2.8 2.8"/>
-    <position name="openarm_right_joint6_position" joint="openarm_right_joint6" ctrlrange="-1.9 1.9"/>
-    <position name="openarm_right_joint7_position" joint="openarm_right_joint7" ctrlrange="-2.8 2.8"/>
-    <position name="openarm_right_finger_joint1_position" joint="openarm_right_finger_joint1"
-              ctrlrange="0 0.044" kp="100" kv="5"/>
-    <position name="openarm_right_finger_joint2_position" joint="openarm_right_finger_joint2"
-              ctrlrange="0 0.044" kp="100" kv="5"/>
+    <position name="openarm_right_joint1_position" joint="openarm_right_joint1" ctrlrange="-2.8 2.8" />
+    <position name="openarm_right_joint2_position" joint="openarm_right_joint2" ctrlrange="-2.0 2.0" />
+    <position name="openarm_right_joint3_position" joint="openarm_right_joint3" ctrlrange="-2.8 2.8" />
+    <position name="openarm_right_joint4_position" joint="openarm_right_joint4" ctrlrange="-2.4 2.4" />
+    <position name="openarm_right_joint5_position" joint="openarm_right_joint5" ctrlrange="-2.8 2.8" />
+    <position name="openarm_right_joint6_position" joint="openarm_right_joint6" ctrlrange="-1.9 1.9" />
+    <position name="openarm_right_joint7_position" joint="openarm_right_joint7" ctrlrange="-2.8 2.8" />
+    <position name="openarm_right_finger_joint1_position" joint="openarm_right_finger_joint1" ctrlrange="0 0.044" kp="100" kv="5" />
+    <position name="openarm_right_finger_joint2_position" joint="openarm_right_finger_joint2" ctrlrange="0 0.044" kp="100" kv="5" />
+    <position name="openarm_left_joint1_position" joint="openarm_left_joint1" ctrlrange="-2.8 2.8" />
+    <position name="openarm_left_joint2_position" joint="openarm_left_joint2" ctrlrange="-2.0 2.0" />
+    <position name="openarm_left_joint3_position" joint="openarm_left_joint3" ctrlrange="-2.8 2.8" />
+    <position name="openarm_left_joint4_position" joint="openarm_left_joint4" ctrlrange="-2.4 2.4" />
+    <position name="openarm_left_joint5_position" joint="openarm_left_joint5" ctrlrange="-2.8 2.8" />
+    <position name="openarm_left_joint6_position" joint="openarm_left_joint6" ctrlrange="-1.9 1.9" />
+    <position name="openarm_left_joint7_position" joint="openarm_left_joint7" ctrlrange="-2.8 2.8" />
+    <position name="openarm_left_finger_joint1_position" joint="openarm_left_finger_joint1" ctrlrange="0 0.044" kp="100" kv="5" />
+    <position name="openarm_left_finger_joint2_position" joint="openarm_left_finger_joint2" ctrlrange="0 0.044" kp="100" kv="5" />
   </actuator>
-
   <keyframe>
-    <key name="home" qpos="0 0.3 0 0.6 0 0.3 0 0.02 0.02" ctrl="0 0.3 0 0.6 0 0.3 0 0.02 0.02"/>
+    <key name="home" qpos="0 0.3 0 0.6 0 0.3 0 0.02 0.02 0 0.3 0 0.6 0 0.3 0 0.02 0.02" ctrl="0 0.3 0 0.6 0 0.3 0 0.02 0.02 0 0.3 0 0.6 0 0.3 0 0.02 0.02" />
   </keyframe>
 </mujoco>

@@ -72,6 +72,12 @@ def generate_launch_description():
             default_value="",
             description="scenery to draw and not simulate: a .glb in scene_dir, by file name",
         ),
+        DeclareLaunchArgument(
+            "ctrl_actuators",
+            default_value="",
+            description="actuators SceneNode takes from ~/ctrl, e.g. \"[wheel_left, wheel_right]\"; "
+                        "empty leaves every ctrl alone",
+        ),
         DeclareLaunchArgument("env_yaw_deg", default_value="0.0"),
         DeclareLaunchArgument("env_scale", default_value="1.0"),
         DeclareLaunchArgument("container_name", default_value="vive_container"),
@@ -122,6 +128,9 @@ def launch_setup(context, *unused_args, **unused_kwargs):
     env_glb = arg("env_glb")
     base = f"http://{host_ip}:{http_port}"
 
+    ctrl = [a.strip() for a in arg("ctrl_actuators").strip("[] ").split(",") if a.strip()]
+    ctrl_params = {"ctrl_actuators": ctrl} if ctrl else {}
+
     scene = LoadComposableNodes(
         target_container=arg("container_name"),
         composable_node_descriptions=[
@@ -138,6 +147,7 @@ def launch_setup(context, *unused_args, **unused_kwargs):
                         "env_url": f"{base}/{env_glb}" if env_glb else "",
                         "env_yaw_deg": float(arg("env_yaw_deg")),
                         "env_scale": float(arg("env_scale")),
+                        **ctrl_params,
                     },
                 ],
             ),

@@ -15,22 +15,24 @@ import yaml
 
 
 def main():
+    arm = sys.argv[1] if len(sys.argv) > 1 else 'right'
+    filename = 'controller_alignment.json' if arm == 'right' else 'controller_alignment_left.json'
     rclpy.init()
     node=rclpy.create_node('alignment_capture_test')
     sensor=QoSProfile(depth=1,reliability=ReliabilityPolicy.BEST_EFFORT)
     latched=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
-    c=node.create_publisher(PoseStamped,'/vive_vr/right/pose',sensor)
-    t=node.create_publisher(PoseStamped,'/vive_vr/sim/right/ee_pose',sensor)
-    grip=node.create_publisher(Bool,'/vive_vr/teleop/right/clutch',latched)
+    c=node.create_publisher(PoseStamped,f'/vive_vr/{arm}/pose',sensor)
+    t=node.create_publisher(PoseStamped,f'/vive_vr/sim/{arm}/ee_pose',sensor)
+    grip=node.create_publisher(Bool,f'/vive_vr/teleop/{arm}/clutch',latched)
     process=None
     try:
         with tempfile.TemporaryDirectory(prefix='alignment-test-') as directory:
             folder=Path(directory)
             (folder/'teleop.yaml').write_text(yaml.safe_dump(
-                {'vive_teleop':{'ros__parameters':{'teleop':{'right':{}}}}}))
+                {'vive_teleop':{'ros__parameters':{'teleop':{arm:{}}}}}))
             script=Path(__file__).resolve().parents[1]/'scripts/openarm_align.py'
             process=subprocess.Popen([sys.executable,str(script),'--output',str(folder),
-                                      '--delay','0','--timeout','6'],stdout=subprocess.PIPE,
+                                      '--delay','0','--timeout','6','--arm',arm],stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT,text=True)
             start=time.monotonic()
             while process.poll() is None and time.monotonic()-start<8:
@@ -42,18 +44,18 @@ def main():
                     msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w=quat
                     pub.publish(msg)
                 if elapsed<0.8:
-                    assert not (folder/'controller_alignment.json').exists(), 'captured with clutch held'
+                    assert not (folder/filename).exists(), 'captured with clutch held'
                 rclpy.spin_once(node,timeout_sec=0.02)
             if process.poll() is None:raise RuntimeError('alignment capture timed out')
             output=process.communicate()[0]
             assert process.returncode==0,output
-            record=json.loads((folder/'controller_alignment.json').read_text())
+            record=json.loads((folder/filename).read_text())
             assert record['samples']>=15
             assert abs(abs(record['tool_from_controller_rpy'][0])-180)<1e-6,record
             assert abs(record['tool_from_controller_rpy'][1])<1e-6,record
             assert abs(record['tool_from_controller_rpy'][2])<1e-6,record
             stored=yaml.safe_load((folder/'teleop.yaml').read_text())
-            assert stored['vive_teleop']['ros__parameters']['teleop']['right']['tool_from_controller_rpy']==record['tool_from_controller_rpy']
+            assert stored['vive_teleop']['ros__parameters']['teleop'][arm]['tool_from_controller_rpy']==record['tool_from_controller_rpy']
             print('PASS: released-grip capture, averaging, saved alignment and updated configuration')
     finally:
         if process is not None and process.poll() is None:

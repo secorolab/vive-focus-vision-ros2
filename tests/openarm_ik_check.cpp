@@ -4,6 +4,7 @@
 #include "vive_vr_ros2/openarm_ik.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -110,11 +111,15 @@ int main(int argc, char **argv)
         reset(m, d);
         reset(m, scratch);
 
-        // The commanded configuration starts from the measured one, and nothing else reads physics.
+        // Sync adopts feedback within the servo's 0.01-rad mechanical-stop margin.
+        // The V1 home keyframe places joint 4 exactly at its lower stop.
         ik.sync(d);
         for (int i = 0; i < 7; ++i) {
-            check(std::abs(ik.command()[i] - d->qpos[ik.qpos[i]]) < 1e-9,
-                  "sync did not adopt the measured joints");
+            const double expected = std::clamp(d->qpos[ik.qpos[i]],
+                m->jnt_range[2 * ik.joints[i]] + 0.01,
+                m->jnt_range[2 * ik.joints[i] + 1] - 0.01);
+            check(std::abs(ik.command()[i] - expected) < 1e-9,
+                  "sync did not adopt measured joints within the stop margin");
         }
         const std::vector<double> untouched(d->qpos, d->qpos + m->nq);
 

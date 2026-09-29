@@ -1,7 +1,7 @@
 # Teleoperation {#page_teleop}
 
 > **Built as `vive_vr_ros2::TeleopNode`.** This component publishes controller deltas.
-> The separate [OpenArm simulation](openarm_sim.md) consumes them with right-arm IK;
+> The separate [OpenArm simulation](openarm_sim.md) consumes them with dual-arm IK;
 > the generic scene viewer does not. See [Known limits](limits.md#no-teleop).
 
 ## What this component is responsible for

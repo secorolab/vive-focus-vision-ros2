@@ -19,7 +19,7 @@ namespace VrRos
     /// Joy layout (sensor_msgs/Joy carries no schema, so this is the contract). The names are
     /// the ones printed in the Focus Vision manual, so that a binding can be discussed without
     /// translating:
-    ///   buttons = [trigger, grip, A|X, B|Y, thumbstick_click, menu]
+    ///   buttons = [trigger, grip, A|X, B|Y, thumbstick_click, menu, world_locked]
     ///   axes    = [thumbstick_x, thumbstick_y, trigger, grip]
     /// menu exists on the left controller only and reads 0 on the right; the VIVE button is
     /// reserved by the runtime and is not available to the application.
@@ -135,7 +135,7 @@ namespace VrRos
                .Append(',').Append(F(triggerValue)).Append(',').Append(F(gripValue)).Append(']');
             _sb.Append(",\"buttons\":[").Append(B(trigger)).Append(',').Append(B(grip))
                .Append(',').Append(B(aOrX)).Append(',').Append(B(bOrY)).Append(',')
-               .Append(B(thumbstickClick)).Append(',').Append(B(menu)).Append("]}}");
+               .Append(B(thumbstickClick)).Append(',').Append(B(menu)).Append(',').Append(B(VrLocomotion.WorldLocked)).Append("]}}");
             bridge.Publish(_sb.ToString());
         }
 
