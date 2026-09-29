@@ -198,7 +198,6 @@ namespace VrRos
                 _needNeutralStick=true;
                 PlaceLockLabel();
                 UpdateLockLabel();
-                _lockLabel.color=WorldLocked ? Color.green : Color.white;
                 if (_lockLabel!=null) Debug.Log(_lockLabel.text);
             }
             _lockMenuWasDown=down;

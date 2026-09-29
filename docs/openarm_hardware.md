@@ -138,7 +138,7 @@ This service is **not an emergency stop**. It depends on ROS and a running proce
 ## Guards and timing
 
 - Hardware loop: 100 Hz, non-blocking receive. A write-cycle gap over 100 ms latches a fault.
-- Position frames are paced, with an 8-ms maximum batch duration per arm. Scheduling
+- Position frames are paced, with a 30-ms maximum batch duration per arm. Scheduling
   delays cannot produce a catch-up burst; a missed batch deadline latches a fault.
 - Every motor must have replied within 100 ms. Missing replies, malformed packets, motor
   error/disabled status during operation, nonfinite/out-of-range states, and CAN bus or

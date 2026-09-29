@@ -127,6 +127,9 @@ public:
         command_ = position_; // Hold exactly at activation; return-to-zero is explicit.
         arm_->enable_all();
         active_ = true;
+        // Every activation, not only the first, is followed by other components' slow activation.
+        first_read_ = true;
+        first_write_ = true;
         try {
             // Allow the enable burst to drain before the first position batch.
             std::this_thread::sleep_for(std::chrono::milliseconds(2));

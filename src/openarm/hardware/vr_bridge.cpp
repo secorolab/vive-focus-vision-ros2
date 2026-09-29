@@ -335,8 +335,14 @@ private:
         const double previous=arm.gripper_sent ? arm.gripper_last : measured;
         const double lower=model_->jnt_range[axis.joint*2], upper=model_->jnt_range[axis.joint*2+1];
         const double goal=arm.gripper_direction>0 ? upper : lower;
-        const double next=smooth_bounded_step(goal,previous,arm.gripper_velocity,
+        double next=smooth_bounded_step(goal,previous,arm.gripper_velocity,
             get_parameter("openarm.finger_speed_m_s").as_double(),0.075,std::clamp(dt,0.0,0.02));
+        // Fingers stalled on an object hold a bounded squeeze instead of winding up into a disarm.
+        constexpr double kMaxGripperLead=0.004;
+        if (std::abs(next-measured)>kMaxGripperLead) {
+            next=std::clamp(next,measured-kMaxGripperLead,measured+kMaxGripperLead);
+            arm.gripper_velocity=0;
+        }
         if (!valid_recovery_command(next,measured,previous,lower,upper,0.008)) {
             disarm("gripper following error or joint limit"); return;
         }

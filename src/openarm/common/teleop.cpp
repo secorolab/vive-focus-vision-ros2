@@ -235,11 +235,14 @@ void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
     const double angle = 2 * std::acos(std::clamp(std::abs(quat[0]), 0.0, 1.0));
     /* The first delta of a press is against a reference captured at it: anything but a
      * near-identity one belongs to the previous press. */
-    if ((stop_at_motion_bounds_ && (mju_norm3(p) > radius_ || angle > rotation_limit_)) ||
+    const bool over_distance = stop_at_motion_bounds_ && mju_norm3(p) > radius_;
+    const bool over_rotation = stop_at_motion_bounds_ && angle > rotation_limit_;
+    if (over_distance || over_rotation ||
         (!have_target_ && (mju_norm3(p) > 0.025 || angle > 0.15))) {
-        hold(mju_norm3(p) > radius_ ? "translation_limit" :
-             angle > rotation_limit_ ? "rotation_limit" : "reference_mismatch");
-        RCLCPP_WARN(node_.get_logger(), "%s target exceeded motion bounds; release and re-grip", arm_.c_str());
+        const char *reason = over_distance ? "translation_limit" :
+                             over_rotation ? "rotation_limit" : "reference_mismatch";
+        hold(reason);
+        RCLCPP_WARN(node_.get_logger(), "%s target held (%s); release and re-grip", arm_.c_str(), reason);
         return;
     }
     // Hardware may cap a large hand displacement without dropping the clutch.
