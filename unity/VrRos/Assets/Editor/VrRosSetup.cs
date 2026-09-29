@@ -271,6 +271,12 @@ public static class VrRosSetup
         sceneRoot.transform.SetParent(root.transform, false);
         var loader = sceneRoot.AddComponent<SceneLoader>();
 
+        // Tints the gripper while the operator lines the controller up with it.
+        var indicator = root.AddComponent<VrTeleopIndicator>();
+        indicator.bridge = bridge;
+        indicator.config = cfg;
+        indicator.scene = loader;
+
         /* Only the fallback: at runtime VrConfig reads vr_config.json from the device, so the
          * address can change without rebuilding. VR_HOST just seeds what ships in the APK. */
         string host = Environment.GetEnvironmentVariable("VR_HOST");

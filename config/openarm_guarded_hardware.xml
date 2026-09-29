@@ -1,0 +1,5 @@
+<library path="openarm_guarded_hardware">
+  <class name="vive_vr_ros2/GuardedOpenArm" type="vive_vr_ros2::GuardedOpenArm" base_class_type="hardware_interface::SystemInterface">
+    <description>OpenArm V1 measured-pose startup, CAN freshness checks and bounded position commands.</description>
+  </class>
+</library>

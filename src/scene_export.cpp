@@ -320,6 +320,18 @@ void add_sky_dome(const mjModel *m, int tex, vive_vr_ros2::GlbBuilder *builder, 
     builder->add_mesh_node(std::move(sky));
 }
 
+// MuJoCo (w, x, y, z) conjugated by the Z-up -> Y-up turn about X, returned as glTF xyzw.
+std::array<float, 4> gltf_rotation(const mjtNum *q)
+{
+    mjtNum rq[4] = { std::cos(-mjPI / 4), std::sin(-mjPI / 4), 0, 0 };
+    mjtNum rq_inv[4], tmp[4], out[4];
+    mju_negQuat(rq_inv, rq);
+    mju_mulQuat(tmp, rq, q);
+    mju_mulQuat(out, tmp, rq_inv);
+    return { static_cast<float>(out[1]), static_cast<float>(out[2]), static_cast<float>(out[3]),
+             static_cast<float>(out[0]) };
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -364,6 +376,8 @@ int main(int argc, char **argv)
     std::set<int>         not_2d;         // referenced, but a cube or skybox: not a surface map
     std::set<int>         no_uvs;         // referenced by geometry that carries no coordinates
     std::map<int, int>    skipped_types; // geom type -> count
+    std::map<std::pair<int, int>, int> shared_mesh; // (mesh asset, material) -> shared mesh
+    int                                instanced_geoms = 0;
 
     int excluded_bodies = 0;
 
@@ -380,6 +394,7 @@ int main(int argc, char **argv)
 
         /* One primitive per distinct colour so a body is a single mesh with few draw calls. */
         std::map<int, vive_vr_ros2::Primitive> by_material;
+        std::vector<vive_vr_ros2::Instance>    instances;
 
         const int geom_begin = model->body_geomadr[b];
         const int geom_end   = geom_begin + model->body_geomnum[b];
@@ -468,11 +483,53 @@ int main(int argc, char **argv)
             }
 
             const int material = builder.add_material(factor, tex_index, metallic, roughness);
-            auto     &prim     = by_material[material];
-            prim.material      = material;
+            const mjtNum *gp   = model->geom_pos + 3 * g;
+            const mjtNum *gq   = model->geom_quat + 4 * g;
 
-            const mjtNum *gp = model->geom_pos + 3 * g;
-            const mjtNum *gq = model->geom_quat + 4 * g;
+            // Shared, not baked per body: a shop of repeated scanned products ran to gigabytes.
+            if (model->geom_type[g] == mjGEOM_MESH) {
+                const auto key = std::make_pair(model->geom_dataid[g], material);
+                auto       it  = shared_mesh.find(key);
+                if (it == shared_mesh.end()) {
+                    vive_vr_ros2::Primitive shape;
+                    shape.material     = material;
+                    const size_t count = tri.positions.size() / 3;
+                    for (size_t v = 0; v < count; ++v) {
+                        shape.positions.insert(shape.positions.end(),
+                                               { static_cast<float>(tri.positions[3 * v]),
+                                                 static_cast<float>(tri.positions[3 * v + 2]),
+                                                 static_cast<float>(-tri.positions[3 * v + 1]) });
+                        shape.normals.insert(shape.normals.end(),
+                                             { static_cast<float>(tri.normals[3 * v]),
+                                               static_cast<float>(tri.normals[3 * v + 2]),
+                                               static_cast<float>(-tri.normals[3 * v + 1]) });
+                        if (tex_index >= 0 && 2 * v + 1 < tri.uvs.size()) {
+                            shape.uvs.insert(shape.uvs.end(), { tri.uvs[2 * v], tri.uvs[2 * v + 1] });
+                        }
+                    }
+                    shape.indices = tri.indices;
+                    const char *mname = mj_id2name(model, mjOBJ_MESH, model->geom_dataid[g]);
+                    std::vector<vive_vr_ros2::Primitive> prims;
+                    prims.push_back(std::move(shape));
+                    it = shared_mesh
+                           .emplace(key, builder.add_shared_mesh(mname ? mname : "mesh",
+                                                                 std::move(prims)))
+                           .first;
+                }
+                vive_vr_ros2::Instance inst;
+                inst.name        = bname + "/" + std::to_string(g - geom_begin);
+                inst.mesh        = it->second;
+                inst.translation = { static_cast<float>(gp[0]), static_cast<float>(gp[2]),
+                                     static_cast<float>(-gp[1]) };
+                inst.rotation    = gltf_rotation(gq);
+                instances.push_back(std::move(inst));
+                ++exported_geoms;
+                ++instanced_geoms;
+                continue;
+            }
+
+            auto &prim    = by_material[material];
+            prim.material = material;
             const auto    base = static_cast<uint32_t>(prim.positions.size() / 3);
 
             const size_t vertices = tri.positions.size() / 3;
@@ -511,7 +568,7 @@ int main(int argc, char **argv)
             ++exported_geoms;
         }
 
-        if (by_material.empty()) continue;
+        if (by_material.empty() && instances.empty()) continue;
 
         vive_vr_ros2::MeshGroup mesh;
         mesh.name = body_name(model, b);
@@ -522,21 +579,16 @@ int main(int argc, char **argv)
         const mjtNum *bq = pose_data->xquat + 4 * b; // (w, x, y, z)
         mesh.translation  = { static_cast<float>(bp[0]), static_cast<float>(bp[2]),
                               static_cast<float>(-bp[1]) };
-        /* Rotating the pose by the same -90 degrees about X: for a quaternion that is
-         * q_gltf = r * q * r^-1 with r the half-turn's quaternion, which for this axis reduces
-         * to the same component shuffle used for the vertices. */
-        mjtNum rq[4] = { std::cos(-mjPI / 4), std::sin(-mjPI / 4), 0, 0 };
-        mjtNum rq_inv[4], tmp[4], out[4];
-        mju_negQuat(rq_inv, rq);
-        mju_mulQuat(tmp, rq, bq);
-        mju_mulQuat(out, tmp, rq_inv);
-        mesh.rotation = { static_cast<float>(out[1]), static_cast<float>(out[2]),
-                          static_cast<float>(out[3]), static_cast<float>(out[0]) };
+        mesh.rotation     = gltf_rotation(bq);
         for (auto &[material, prim] : by_material) {
             (void)material;
             mesh.primitives.push_back(std::move(prim));
         }
         body_node[b] = builder.add_mesh_node(std::move(mesh));
+        for (auto &inst : instances) {
+            inst.parent = body_node[b];
+            builder.add_instance(std::move(inst));
+        }
     }
 
 
@@ -633,6 +685,10 @@ int main(int argc, char **argv)
 
     std::printf("%s: %ld bodies, %ld geoms exported\n", opt.mjcf.c_str(),
                 static_cast<long>(model->nbody), static_cast<long>(exported_geoms));
+    if (instanced_geoms) {
+        std::printf("  %d mesh geom(s) placed as instances of %zu shared mesh(es)\n",
+                    instanced_geoms, shared_mesh.size());
+    }
     if (ground_planes) {
         std::printf("  skipped %d unbounded ground plane(s); the client draws the floor\n",
                     ground_planes);

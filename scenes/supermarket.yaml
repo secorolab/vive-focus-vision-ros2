@@ -1,0 +1,11 @@
+name: supermarket
+description: >
+  Five-aisle supermarket built from the Dual-Arm Supermarket shelving and scanned products, with
+  chilled cabinets, produce and checkouts, and a TIAGo that patrols it when tiago_patrol.py runs.
+generator: scripts/make_supermarket.py
+# Downloads about 200 MB from GitHub on first build.
+heavy: true
+# Inside the entrance, looking down the shop.
+spawn:
+  xyz: [6.8, -0.65, 0.0]
+  yaw_deg: 180.0

@@ -27,6 +27,21 @@ vive_scene:
     frame_id: world
     rate_hz: 60.0
 
+    # How both OpenArm arms follow their controllers; retune in the generated teleop.yaml.
+    openarm.joint_speed_rad_s: 1.5
+    openarm.max_linear_speed_m_s: 0.5
+    openarm.max_angular_speed_rad_s: 2.0
+    # Time constant with which the tool closes its pose error; smaller is tighter and twitchier.
+    openarm.tracking_time_constant_s: 0.12
+    # Least-squares damping, applied only as a singularity is approached.
+    openarm.damping: 0.05
+    # How hard the unused seventh degree of freedom drifts the elbow back towards mid-range.
+    openarm.posture_gain_hz: 0.5
+    # Match wrist orientation; absolute controller position is free by default.
+    openarm.alignment_tolerance_rad: 0.20
+    openarm.require_position_alignment: false
+    openarm.alignment_tolerance_m: 0.15
+
 vive_input:
   ros__parameters:
     world_frame: world
@@ -79,4 +94,11 @@ vive_teleop:
         # Controller axes onto tool axes, degrees. Identity is wrong for any real gripper -
         # OpenXR's grip pose puts -Z toward the thumb and a tool frame puts +Z along the
         # approach - but the right value is the one observed, not the one the conventions imply.
+        tool_from_controller_rpy: [0.0, 0.0, 0.0]
+
+      left:
+        hand: left
+        clutch_button: 1
+        gripper_axis: 2
+        ee_pose_topic: ""
         tool_from_controller_rpy: [0.0, 0.0, 0.0]

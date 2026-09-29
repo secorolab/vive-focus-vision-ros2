@@ -33,6 +33,7 @@ python3 -m venv --system-site-packages venv && source venv/bin/activate
 
 source /opt/ros/jazzy/setup.bash
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_SCENES=ON
+source install/setup.bash
 ```
 
 `BUILD_SCENES=ON` exports the worlds in `scenes/` — a Kinova arm on a table, and a RoboCasa
@@ -52,10 +53,142 @@ ros2 launch vive_vr_ros2 tracking.launch.py
 And the headset half, on any machine with the Unity editor installed:
 
 ```bash
+cd ~/work/p/vrws/src/vive-vr-ros2
+python3 scripts/fetch_vive_plugin.py
 ./scripts/build_apk.sh --setup --install --logcat    # build, install, launch, tail the log
 ```
 
-### Headset settings
+## OpenArm V1 teleoperation
+
+Simulation and physical control have independent application code, configuration and
+launch entry points: **`openarm_virtual.launch.py`** for simulation and
+**`openarm_real.launch.py`** for the physical robot. Both use the existing VR app.
+See [switching modes, separate builds and start commands](docs/openarm_modes.md).
+
+The simulation application drives **both arms in MuJoCo** from their matching controllers. A
+resolved-rate servo over the Orocos KDL Jacobian moves all seven arm joints to follow the
+gripper position and orientation independently for each arm. This is a motion-test simulation with gravity and contacts disabled,
+not physical robot control or a grasping simulation. Your elbow is not tracked, so the robot
+can use a different elbow posture to reach the same gripper pose.
+
+The commands below use **Zsh**, `~/vive_vr_ws` for the ROS workspace, and
+`~/openarm_ws` for the OpenArm description workspace. The source checkout is
+`~/vive_vr_ws/src/vive-vr-ros2` (a symlink to a Desktop checkout also works).
+For Bash, use `setup.bash` instead of `setup.zsh`. Install the base dependencies using
+[Installation](docs/install.md) first. The helper expects the OpenArm V1 description at
+`~/openarm_ws/src/openarm_description`; see [OpenArm setup](docs/openarm_sim.md) for path overrides.
+An existing headset app still runs the PC-side changes; rebuild the APK to also pick up the
+clock fix in [Known limits](docs/limits.md), which recorded data needs but the arm no longer does.
+
+### Build and prepare once
+
+```bash
+source /opt/ros/jazzy/setup.zsh
+source ~/openarm_ws/install/setup.zsh
+source ~/vive_vr_ws/install/setup.zsh
+cd ~/vive_vr_ws
+colcon build --packages-select vive_vr_ros2 \
+  --cmake-args -DBUILD_SCENES=OFF -DBUILD_OPENARM_SIM=ON
+source ~/vive_vr_ws/install/setup.zsh
+
+cd ~/vive_vr_ws/src/vive-vr-ros2
+python3 scripts/openarm_sim.py prepare
+```
+
+`prepare` generates the robot models, scene export and configuration under
+`~/vive_vr_ws/models/openarm_v1`, outside the source checkout. It preserves a saved controller
+alignment. Rebuild after C++ changes; re-run `prepare` when the generated model/configuration
+needs updating. The OpenArm source description is not modified.
+
+### Start and align with one terminal
+
+Stop any previous simulation or tracking launch with **Ctrl+C**, then:
+
+```bash
+source /opt/ros/jazzy/setup.zsh
+source ~/openarm_ws/install/setup.zsh
+source ~/vive_vr_ws/install/setup.zsh
+export ROS_DOMAIN_ID=42
+cd ~/vive_vr_ws/src/vive-vr-ros2
+
+python3 scripts/openarm_sim.py launch --teleop --align --delay 10
+```
+
+1. Put on the headset during the 10-second delay and open the VR app.
+2. Keep the right side grip released. Hold your hand down beside you, matching the hanging
+   robot gripper, with your chosen controller tip direction pointing down.
+3. Hold still for at least one second. The script captures alignment and automatically restarts
+   the stack. Wait for the headset to reconnect and the robot to reappear.
+4. Rotate the white controller outline into the cyan target until it turns green, then hold the right side grip.
+   Start with a small hand movement and wrist rotation. Release the grip to hold position.
+
+Keep the terminal open while using VR. This one launch runs the robot simulation, ROS bridge,
+discovery server and scene server. **Ctrl+C stops them all.**
+
+To enable the left hand, stop the launch and calibrate it once:
+
+```bash
+python3 scripts/openarm_sim.py configure
+python3 scripts/openarm_sim.py launch --teleop --align --arm left --delay 10
+```
+
+Keep the **left** grip released and hold that controller in the same comfortable hanging-tool
+pose during capture. Each arm has its own calibration, grip reference, trigger and visual guide.
+Your right calibration is preserved. Both arms are blocked during calibration, and neither
+controller can command the other arm. Rebuild ROS and the APK after updating the source.
+`configure` updates controller settings on an existing model without reimporting meshes.
+
+For later sessions with the same controller grip and orientation pairing, reuse the saved
+alignment instead of capturing again:
+
+```bash
+python3 scripts/openarm_sim.py launch --teleop
+```
+
+| Input | Effect while the side grip is held |
+|---|---|
+| Move either hand | Move the gripper target at 1:1 translation scale. |
+| Rotate the wrist | Rotate the gripper target; 90-degree turns fit within the 100-degree bound per press. |
+| Pull/release the index trigger | Close/open the gripper after the initial trigger sample is captured. |
+| Release the side grip | Hold the arm; re-grip starts a new relative movement. |
+
+Robot reach, joint limits and speed limits still apply. The generated configuration bounds
+translation to 1 m per press. Engagement requires a saved alignment and a fresh controller pose
+within about 11 degrees of the calibrated gripper orientation. Your hand position is free;
+you do not need to reach the robot or the floor. Match the white outline to the cyan one
+until the target turns green, then hold that side grip. VR shows only hand indicators, with
+no permanent information panel. A temporary message explains how to recover from a movement
+limit or tracking pause and disappears when you resume. Past its reach the arm holds the closest pose
+it can and keeps following; move back towards it and it picks you up again. Motion is relative
+to each grip press, not an absolute hand-to-robot calibration.
+
+### Connection and diagnostics
+
+The headset and PC must be able to reach each other on the local network. If the app stays on
+“searching for PC,” check that the launch terminal is still running and reports
+`Rosbridge WebSocket server started on port 9090`. Discovery uses UDP 9091; scene downloads
+use TCP 8000. Stop duplicate launches before starting another.
+
+If automatic address selection chooses the wrong network interface, append
+`--host-ip YOUR_PC_LAN_IP` to the launch command. This selects the scene download address;
+the headset's ROS bridge address is discovered separately or set in `vr_config.json`.
+Use the same `ROS_DOMAIN_ID` in any additional ROS terminals.
+
+From another sourced terminal, these commands inspect input or reset the simulated robot:
+
+```bash
+python3 scripts/openarm_sim.py inputs
+python3 scripts/openarm_sim.py reset
+```
+
+Release the side grip before resetting. For configuration, manual alignment, model details
+and test commands, see [OpenArm simulation](docs/openarm_sim.md).
+
+## Headset settings
+
+Guarded physical OpenArm bring-up, low-speed live VR testing, and read-only preview are
+described in [OpenArm hardware](docs/openarm_hardware.md). Live commands require explicit
+arming; the guarded driver starts by holding measured positions without homing.
 
 Everything the client can be told without rebuilding the APK lives in one file, on the headset:
 
@@ -91,13 +224,18 @@ in [Configuration](docs/configuration.md#headset-settings).
 - [First run on the headset](docs/bringup.md) — the on-device checklist
 - [Testing](docs/testing.md) — what is verified, how, and what is not
 - [Design notes](docs/design.md) — why the system is shaped this way, and what was rejected
+- [OpenArm simulation](docs/openarm_sim.md) — dual-arm IK, alignment, controls and tests
 - [Teleoperation](docs/teleop.md) — the clutch, the delta stream, and why it needs no calibration
 - [Known limits](docs/limits.md) — what is missing or approximate
 
 ## Status
 
-The PC side works and is verified by running it. **Nothing has run on the headset yet** — see
-[Testing](docs/testing.md) for which claims rest on evidence, and
-[First run](docs/bringup.md) for the on-device checklist.
+The Focus Vision client has connected to the PC, downloaded the OpenArm scene, streamed
+controller data and supplied a saved controller/tool alignment. Automated checks cover IK,
+alignment math and capture, clutch gating, limits, timeouts and calibration-launch cleanup.
+Full headset motion testing across the workspace remains to be completed; contact-based grasping remains outside the simulation bridge. The separate guarded hardware
+path is experimental; see [hardware testing](docs/openarm_hardware.md) for its limits.
+See [OpenArm verification](docs/openarm_sim.md#verification-and-next-work) and
+[Testing](docs/testing.md) for the scope of the checks.
 
 MIT licensed.
