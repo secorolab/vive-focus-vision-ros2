@@ -59,6 +59,8 @@ namespace VrRos
 
         private void Start()
         {
+            var cameras = gameObject.AddComponent<VrCameraPanels>();
+            cameras.bridge = this;
             if (config != null && config.Active != null)
             {
                 host = config.Active.host;
