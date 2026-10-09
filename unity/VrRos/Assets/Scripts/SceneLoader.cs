@@ -189,12 +189,26 @@ namespace VrRos
             // Transient-local redelivers on every reconnect; only reload when something changed.
             float viewYaw = (float?)payload["view_yaw_deg"] ?? 0f;
             if (float.IsNaN(viewYaw) || float.IsInfinity(viewYaw)) viewYaw = 0f;
-            string key = $"{url}|{(string)env?["url"]}|{viewYaw}";
+            // Older real launches identify their viewing orbit with 90 degrees and
+            // this controlled OpenArm model. Keep that installed launch compatible.
+            bool legacyReal = Mathf.Approximately(viewYaw, 90f)
+                && ((string)manifest?["model"] ?? "").EndsWith("/openarm_v1_controlled.xml");
+            bool operatorView = (bool?)payload["operator_view"] ?? legacyReal;
+            string key = $"{url}|{(string)env?["url"]}|{viewYaw}|{operatorView}";
             if (key == _loadedUrl) return;
             _loadedUrl = key;
 
             if (locomotion != null) locomotion.SetViewYaw(viewYaw);
-            ApplySceneSpawn(manifest);
+            if (operatorView && locomotion != null)
+            {
+                locomotion.SetViewYaw(0f);
+                locomotion.SetRobotBodyView(true);
+            }
+            else
+            {
+                if (locomotion != null) locomotion.SetRobotBodyView(false);
+                ApplySceneSpawn(manifest);
+            }
 
             /* Fire and forget, but not silently: an unobserved Task swallows its exception, and
              * a scene that simply never appears is the least debuggable failure there is. */

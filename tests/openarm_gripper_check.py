@@ -48,7 +48,7 @@ names = [f'openarm_{side}_joint{i}' for side in ('right','left') for i in range(
 
 left_gripper_commands=[]
 subs.append(node.create_subscription(JointTrajectory, '/left_gripper_controller/joint_trajectory', left_gripper_commands.append, 10))
-buttons=[0,0,0]
+pressed=False
 stick=0.0
 locked=True
 joy_on=True
@@ -65,7 +65,7 @@ def pump(seconds, healthy=True, feedback_on=True, delta_on=True, health_on=True,
         if health_on:
             for pub in health: pub.publish(Bool(data=healthy))
         if joy_on:
-            j=Joy(); j.header.stamp=node.get_clock().now().to_msg(); j.buttons=[0,0,0,0,0,0,int(locked)]; j.axes=[0.0,stick,0.0,0.0]; joy.publish(j)
+            j=Joy(); j.header.stamp=node.get_clock().now().to_msg(); j.buttons=[int(pressed),0,0,0,0,0,int(locked)]; j.axes=[0.0,stick,0.0,0.0]; joy.publish(j)
             neutral=Joy(); neutral.header.stamp=j.header.stamp
             neutral.buttons=[0,0,0,0,0,0,int(locked)]; neutral.axes=[0.0]*4
             neutral_joy['left' if joy.topic_name.endswith('/right/joy') else 'right'].publish(neutral)
@@ -85,37 +85,40 @@ def arm():
     assert f.done() and f.result().success, f.result()
 
 try:
-    stick=-1.0; pump(1.5); arm(); pump(0.15)
-    assert not gripper_commands, 'deflected stick started on enable'
-    stick=0.0; pump(0.1); stick=-1.0; pump(0.3)
-    assert len(gripper_commands)>3
+    pressed=True; pump(1.5); arm(); pump(0.15)
+    assert not gripper_commands, 'held trigger started on enable'
+    pressed=False; pump(0.2)
+    assert not gripper_commands, 'initial release closed gripper'
+    stick=-1.0; pump(0.1); stick=1.0; pump(0.1)
+    assert not gripper_commands, 'stick still controls gripper'
+    pressed=True; pump(0.3)
     values=[m.points[0].positions[0] for m in gripper_commands]
-    assert values[-1]<values[0]<=0.01
-    assert all(0<=a-b<=0.000300001 for a,b in zip(values,values[1:]))
+    assert len(values)>3 and values[-1]>values[0]>=0.01
+    assert all(0<=b-a<=0.000300001 for a,b in zip(values,values[1:]))
     assert not commands and not left_commands and not left_gripper_commands
-    stick=0.0; pump(0.1); count=len(gripper_commands); pump(0.15)
-    assert len(gripper_commands)==count, 'neutral did not stop'
-    stick=1.0; pump(0.3); before=gripper_commands[-1].points[0].positions[0]; pump(0.15)
-    assert gripper_commands[-1].points[0].positions[0]>before
+    pressed=False; pump(0.3); before=gripper_commands[-1].points[0].positions[0]; pump(0.2)
+    assert gripper_commands[-1].points[0].positions[0]<before
+    pressed=True; pump(0.3)
     joy_on=False; pump(0.4); count=len(gripper_commands); pump(0.1)
-    assert len(gripper_commands)==count
+    assert len(gripper_commands)==count, 'missing input did not hold'
     joy_on=True; pump(0.15)
-    assert len(gripper_commands)==count, 'stick resumed without neutral'
-    stick=0.0; pump(0.1); stick=-1.0; pump(0.2)
+    assert len(gripper_commands)==count, 'held trigger resumed after input loss'
+    pressed=False; pump(0.1)
+    assert len(gripper_commands)==count, 'release after input loss closed gripper'
+    pressed=True; pump(0.2)
     assert len(gripper_commands)>count
     pose_on=False; pump(0.4); count=len(gripper_commands); pose_on=True; pump(0.2)
     assert len(gripper_commands)==count
-    stick=0.0; pump(0.1); stick=1.0; pump(0.2)
+    pressed=False; pump(0.1); pressed=True; pump(0.2)
     locked=False; pump(0.2); count=len(gripper_commands); locked=True; pump(0.2)
     assert len(gripper_commands)==count, 'unlock did not disarm'
-    stick=0.0; arm(); pump(0.1)
+    pressed=False; arm(); pump(0.1)
     joy=node.create_publisher(Joy, '/vive_vr/left/joy', qos_profile_sensor_data)
-    pump(0.4); stick=-1.0; pump(0.2)
-    assert left_gripper_commands[-1].points[0].positions[0]<0.01
-    stick=0.0; pump(0.1); before=left_gripper_commands[-1].points[0].positions[0]
-    stick=1.0; pump(0.3)
-    assert left_gripper_commands[-1].points[0].positions[0]>before
-    print('Stick direction, neutral stop, lock, freshness and isolation checks passed')
+    pump(0.4); pressed=True; pump(0.3)
+    assert left_gripper_commands[-1].points[0].positions[0]>0.01
+    pressed=False; pump(0.3); before=left_gripper_commands[-1].points[0].positions[0]; pump(0.2)
+    assert left_gripper_commands[-1].points[0].positions[0]<before
+    print('Trigger hold/release, reset, lock, freshness and isolation checks passed')
 
 finally:
     proc.terminate()

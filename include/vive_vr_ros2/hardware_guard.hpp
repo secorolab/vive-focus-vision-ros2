@@ -6,6 +6,14 @@
 #include <string>
 
 namespace vive_vr_ros2 {
+// After a reset, observe release then a press before release may command closing.
+inline int trigger_gripper_direction(bool pressed, bool &ready, int previous) {
+    if (!pressed) {
+        ready=true;
+        return previous==0 ? 0 : -1;
+    }
+    return ready ? 1 : 0;
+}
 // Space actual sends, including after scheduler delays: never catch up in bursts.
 // An incomplete batch faults; no retry or stale command queue is retained.
 template<class Now, class Wait, class Send>

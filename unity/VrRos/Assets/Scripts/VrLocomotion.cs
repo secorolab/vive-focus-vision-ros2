@@ -73,6 +73,25 @@ namespace VrRos
             MoveToSpawn();
         }
 
+        public bool RobotBodyView { get; private set; }
+        // Approximate body camera location in ROS coordinates, not a measured extrinsic.
+        public Vector3 RobotEyeRos = new Vector3(-.10f, 0f, 1.0f);
+
+        public void SetRobotBodyView(bool enabled)
+        {
+            RobotBodyView = enabled;
+            if (enabled) MoveToRobotEye();
+        }
+
+        private void MoveToRobotEye()
+        {
+            if (rig == null || head == null) return;
+            // Match the current eyes, including tracked height, to the robot eye.
+            rig.rotation = Quaternion.identity;
+            rig.position += FrameConv.RosToUnity(RobotEyeRos.x, RobotEyeRos.y, RobotEyeRos.z)
+                            - head.transform.position;
+        }
+
         private float _viewYawDegrees;
 
         public void SetViewYaw(float degrees)
@@ -83,6 +102,7 @@ namespace VrRos
 
         private void MoveToSpawn()
         {
+            if (RobotBodyView) { MoveToRobotEye(); return; }
             /* The spawn point is given in ROS coordinates, because that is the frame the scene
              * and every published pose are in. */
             Vector3 p = _sceneSpawn ?? config.Active.spawnPosition;
@@ -103,6 +123,7 @@ namespace VrRos
         public void Recenter()
         {
             if (config == null || config.Active == null) return;
+            if (RobotBodyView) { MoveToRobotEye(); return; }
             MoveToSpawn();
 
             // Shift the offset by however far the eyes are from where they should be.
@@ -118,7 +139,7 @@ namespace VrRos
         {
             EnsureLockLabel();
             PollWorldLock();
-            if (head == null || WorldLocked) return;
+            if (head == null || WorldLocked || RobotBodyView) return;
             if (_needNeutralStick) {
                 foreach (var hand in new[] { XRNode.LeftHand, XRNode.RightHand }) {
                     var device = InputDevices.GetDeviceAtXRNode(hand);
@@ -182,8 +203,9 @@ namespace VrRos
         private void UpdateLockLabel()
         {
             if (_lockLabel==null) return;
-            _lockLabel.text=WorldLocked ? "WORLD LOCKED\nStick up: open | down: close | center: stop\nEnable robot to show wrist alignment guides" :
-                "WORLD FREE - robot control disabled\nTap LEFT MENU to lock (do not hold)\nThen enable robot; rear trigger toggles arm following";
+            string gripperHint = RobotBodyView ? "Rear trigger: hold open | release close" : "Stick up: open | down: close | center: stop";
+            _lockLabel.text=WorldLocked ? "WORLD LOCKED\n" + gripperHint + "\nEnable robot to show wrist alignment guides" :
+                "WORLD FREE - robot control disabled\nTap LEFT MENU to lock (do not hold)\nThen enable robot; side grip toggles arm following";
             _lockLabel.color=WorldLocked ? Color.green : Color.white;
         }
 
