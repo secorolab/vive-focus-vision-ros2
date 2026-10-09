@@ -149,3 +149,26 @@ cd ~/Desktop/vive-focus-vision-ros2
 Stop the previous preview service before starting this. This configuration's
 future policy playback rate must match 10 Hz. Do not mix 10 and 15 Hz episodes
 within one session. The original 30-camera/15-recording option remains available.
+
+### Testing 30 Hz recording
+
+For 30 Hz episodes, capture both cameras at 60 FPS so nearest-frame selection has
+headroom. Stop the previous camera service first, then run:
+
+```zsh
+source /opt/ros/jazzy/setup.zsh
+source ~/openarm_ws/install/setup.zsh
+source ~/vive_vr_ws/install/setup.zsh
+cd ~/Desktop/vive-focus-vision-ros2
+/usr/bin/python3 scripts/openarm_cameras.py --fps 60 --record-fps 30 \
+  --record-root ~/robot_ai/episodes/right_cube_30hz \
+  --task "Put the cube in the basket"
+```
+
+This increases camera/recording load, not motor update rate or movement speed.
+The headset preview still requests up to 15 FPS. Existing 10 Hz episodes stay in
+their original dataset; do not relabel them as 30 Hz. `/status` reports requested
+and measured camera FPS. Validate a short recorded episode before collecting a
+larger dataset: repeated images, stale feedback and synchronization failures still
+stop recording. A short benchmark does not establish stability during extended
+teleoperation. Future policy target timing must match the dataset rate.

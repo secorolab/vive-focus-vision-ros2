@@ -27,6 +27,27 @@ def feed(signals, cameras, at=None):
 
 
 class Checks(unittest.TestCase):
+    def test_30hz_timestamps_and_duplicate_rejection(self):
+        with tempfile.TemporaryDirectory() as tmp, patch('threading.Thread.start'), patch('openarm_episode.time.monotonic', return_value=100.0) as clock:
+            cams = {'main':Camera(), 'right':Camera()}
+            r = Recorder(tmp, cams, 'test', sys.executable, fps=30)
+            feed(r.signals, cams, 99.9)
+            r.begin()
+            try:
+                for i in range(60):
+                    clock.return_value = 100+i/30
+                    feed(r.signals, cams, r.next_frame-.1)
+                    r.capture()
+                r.file.flush()
+                rows = [json.loads(line) for line in (r.path/'frames.jsonl').read_text().splitlines()]
+                self.assertEqual(len(rows), 60)
+                self.assertEqual([x['timestamp'] for x in rows], [i/30 for i in range(60)])
+                with self.assertRaisesRegex(ValueError, 'repeated camera frame'):
+                    r.capture()
+            finally:
+                r.file.close()
+                r.lock_file.close()
+
     def test_stale_and_faulted_feedback_rejected(self):
         s = Signals(); now = time.monotonic(); feed(s, {}, now)
         self.assertEqual(len(s.sample(now, now)['state'].values), 8)

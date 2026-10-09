@@ -74,8 +74,12 @@ class Camera:
     def status(self):
         frame = self.latest
         age = time.monotonic()-frame[0] if frame else None
+        history = self.history_snapshot()
+        span = history[-1][0]-history[0][0] if len(history)>1 else 0
+        measured_fps = (len(history)-1)/span if span>0 else None
         return dict(label=self.name, live=age is not None and age < .5 and not self.error,
-                    age_s=age, error=self.error, width=640, height=480)
+                    age_s=age, error=self.error, width=640, height=480,
+                    requested_fps=self.fps, measured_fps=measured_fps)
 
 
 PAGE = b'''<!doctype html><meta name="viewport" content="width=device-width"><title>OpenArm cameras</title>
@@ -145,12 +149,14 @@ def main():
     parser.add_argument('--right', help='Right wrist RGB device; defaults to the single connected D405')
     parser.add_argument('--port', type=int, default=8081)
     parser.add_argument('--bind', default='0.0.0.0', help='Listen address; LAN access is needed by headset')
-    parser.add_argument('--fps', type=int, choices=[15,30], default=30)
-    parser.add_argument('--record-fps', type=int, choices=[10,15], default=15)
+    parser.add_argument('--fps', type=int, choices=[15,30,60], default=30)
+    parser.add_argument('--record-fps', type=int, choices=[10,15,30], default=15)
     parser.add_argument('--record-root', help='Enable right-arm recording into this local session directory')
     parser.add_argument('--task', default='Put the cube in the basket')
     parser.add_argument('--lerobot-python', default=os.path.expanduser('~/robot_ai/lerobot_env/bin/python'))
     args=parser.parse_args()
+    if args.record_root and args.fps <= args.record_fps:
+        parser.error('Camera FPS must exceed recording FPS; use 15/10, 30/15, or 60/30 for --fps/--record-fps')
     try:
         main_device=args.main or discover('455f',0)
         wrist_device=args.wrist
@@ -167,7 +173,6 @@ def main():
     recorder = None
     close_ros = None
     if args.record_root:
-        if args.fps <= args.record_fps: parser.error('Camera FPS must exceed recording FPS; use --fps 15 --record-fps 10 or --fps 30 --record-fps 15')
         os.environ['ROS_DOMAIN_ID'] = '84'
         os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = 'LOCALHOST'
         from openarm_episode import Recorder
