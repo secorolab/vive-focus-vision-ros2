@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Main + left-wrist RealSense color preview for VR. No ROS, recording or motor control."""
+"""RealSense VR preview with optional read-only right-arm episode recording."""
+from collections import deque
 import argparse
+import os
+import queue
 import json
 from pathlib import Path
 import threading
@@ -21,6 +24,8 @@ class Camera:
     def __init__(self, name, device, fps=15, model=None, index=0):
         self.name, self.device, self.fps = name, device, fps
         self.model, self.index = model, index
+        self.history = deque(maxlen=60)
+        self.history_lock = threading.Lock()
         self.latest = None
         self.error = 'Camera not connected' if not device else 'Opening camera'
         self.stop = threading.Event()
@@ -54,6 +59,7 @@ class Camera:
                     okay, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
                     if not okay: raise RuntimeError('JPEG encoding failed')
                     self.latest = (at, jpeg.tobytes())
+                    with self.history_lock: self.history.append(self.latest)
                     self.error = ''
             except Exception as exc:
                 self.error = str(exc)
@@ -61,6 +67,9 @@ class Camera:
             finally:
                 cap.release()
             self.stop.wait(2)
+
+    def history_snapshot(self):
+        with self.history_lock: return list(self.history)
 
     def status(self):
         frame = self.latest
@@ -73,7 +82,7 @@ PAGE = b'''<!doctype html><meta name="viewport" content="width=device-width"><ti
 <style>body{font:18px system-ui;background:#121820;color:#eee;margin:30px}main{display:flex;gap:20px;flex-wrap:wrap}img{width:min(640px,90vw)}p{color:#9cd}</style>
 <h1>OpenArm camera preview</h1><p>Live color views only. No recording or robot control.</p><main>
 <section><h2>Main camera (D455f)</h2><img id="main"><p id="main-status"></p></section>
-<section><h2>Left wrist (D405)</h2><img id="wrist"><p id="wrist-status"></p></section><section><h2>Right wrist</h2><img id="right"><p id="right-status"></p></section></main>
+<section><h2>Left wrist</h2><img id="wrist"><p id="wrist-status"></p></section><section><h2>Right wrist (D405)</h2><img id="right"><p id="right-status"></p></section></main>
 <script>
 for(const key of ['main','wrist','right']) {const im=document.getElementById(key);
 const next=()=>setTimeout(()=>im.src='/cameras/'+key+'.jpg?t='+Date.now(),125);
@@ -84,11 +93,14 @@ catch(e){for(const key of ['main','wrist','right'])document.getElementById(key+'
 </script>'''
 
 
-def make_handler(cameras):
+def make_handler(cameras, recorder=None):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             route = urlsplit(self.path).path
             if route == '/': data, mime = PAGE, 'text/html; charset=utf-8'
+            elif route == '/recording/status':
+                data = json.dumps(recorder.status() if recorder else dict(state='disabled')).encode()
+                mime = 'application/json'
             elif route == '/status':
                 data = json.dumps(dict(version=1,cameras={k:c.status() for k,c in cameras.items()})).encode()
                 mime = 'application/json'
@@ -106,6 +118,22 @@ def make_handler(cameras):
             self.end_headers()
             try: self.wfile.write(data)
             except (BrokenPipeError, ConnectionResetError): pass
+        def do_POST(self):
+            if self.path != '/recording/command' or recorder is None:
+                self.send_error(404); return
+            # A cross-origin web page cannot issue recording commands through a form.
+            if self.headers.get('Content-Type') != 'application/json' or self.headers.get('Origin'):
+                self.send_error(403); return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 256: raise ValueError('Invalid command length')
+                payload = json.loads(self.rfile.read(length))
+                recorder.command(payload['action'])
+            except (ValueError, KeyError, TypeError, queue.Full):
+                self.send_error(400); return
+            self.send_response(202)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
         def log_message(self, *args): pass
     return Handler
 
@@ -113,30 +141,47 @@ def make_handler(cameras):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--main', help='D455f RGB device (stable /dev/v4l/by-id/... recommended)')
-    parser.add_argument('--wrist', help='D405 RGB device (stable /dev/v4l/by-id/... recommended)')
-    parser.add_argument('--right', help='Optional right-wrist RGB device; use a stable by-id path')
+    parser.add_argument('--wrist', '--left', dest='wrist', help='Optional LEFT wrist device; never auto-assigned')
+    parser.add_argument('--right', help='Right wrist RGB device; defaults to the single connected D405')
     parser.add_argument('--port', type=int, default=8081)
     parser.add_argument('--bind', default='0.0.0.0', help='Listen address; LAN access is needed by headset')
-    parser.add_argument('--fps', type=int, choices=[15,30], default=15)
+    parser.add_argument('--fps', type=int, choices=[15,30], default=30)
+    parser.add_argument('--record-fps', type=int, choices=[10,15], default=15)
+    parser.add_argument('--record-root', help='Enable right-arm recording into this local session directory')
+    parser.add_argument('--task', default='Put the cube in the basket')
+    parser.add_argument('--lerobot-python', default=os.path.expanduser('~/robot_ai/lerobot_env/bin/python'))
     args=parser.parse_args()
     try:
         main_device=args.main or discover('455f',0)
-        wrist_device=args.wrist or discover('405',4)
+        wrist_device=args.wrist
+        right_device=args.right or (None if args.wrist else discover('405',4))
     except ValueError as exc: parser.error(str(exc))
-    devices = [str(Path(p).resolve()) for p in (main_device, wrist_device, args.right) if p]
+    devices = [str(Path(p).resolve()) for p in (main_device, wrist_device, right_device) if p]
     if len(devices) != len(set(devices)): parser.error('Each camera must use a different device')
     if main_device and wrist_device and Path(main_device).resolve()==Path(wrist_device).resolve():
         parser.error('Main and wrist must be different devices')
     cv2.setNumThreads(1)
     cameras={'main':Camera('Main camera (D455f)',main_device,args.fps,'455f',0),
-             'wrist':Camera('Left wrist (D405)',wrist_device,args.fps,'405',4),
-             'right':Camera('Right wrist',args.right,args.fps)}
-    server = ThreadingHTTPServer((args.bind,args.port),make_handler(cameras))
+             'wrist':Camera('Left wrist',wrist_device,args.fps),
+             'right':Camera('Right wrist (D405)',right_device,args.fps,None if args.wrist else '405',4)}
+    recorder = None
+    close_ros = None
+    if args.record_root:
+        if args.fps <= args.record_fps: parser.error('Camera FPS must exceed recording FPS; use --fps 15 --record-fps 10 or --fps 30 --record-fps 15')
+        os.environ['ROS_DOMAIN_ID'] = '84'
+        os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = 'LOCALHOST'
+        from openarm_episode import Recorder
+        from openarm_recording_ros import start
+        recorder = Recorder(args.record_root, cameras, args.task, args.lerobot_python, fps=args.record_fps)
+        close_ros = start(recorder.signals)
+    server = ThreadingHTTPServer((args.bind,args.port),make_handler(cameras, recorder))
     server.daemon_threads = True
-    print(f'Main: {main_device}\nLeft wrist: {wrist_device}\nPreview: http://localhost:{args.port}\nKeep this running while using VR. Ctrl+C stops cameras only.',flush=True)
+    print(f'Main: {main_device}\nLeft wrist: {wrist_device}\nRight wrist: {right_device}\nPreview: http://localhost:{args.port}\nKeep this running while using VR. Ctrl+C stops cameras only.',flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally:
+        if recorder: recorder.close()
+        if close_ros: close_ros()
         for camera in cameras.values(): camera.stop.set()
         server.server_close()
         for camera in cameras.values(): camera.thread.join(timeout=2)

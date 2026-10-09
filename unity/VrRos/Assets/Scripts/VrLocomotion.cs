@@ -203,8 +203,9 @@ namespace VrRos
         private void UpdateLockLabel()
         {
             if (_lockLabel==null) return;
-            _lockLabel.text=WorldLocked ? "WORLD LOCKED\nStick up: open | down: close | center: stop\nEnable robot to show wrist alignment guides" :
-                "WORLD FREE - robot control disabled\nTap LEFT MENU to lock (do not hold)\nThen enable robot; rear trigger toggles arm following";
+            string gripperHint = RobotBodyView ? "Rear trigger: hold open | release close" : "Stick up: open | down: close | center: stop";
+            _lockLabel.text=WorldLocked ? "WORLD LOCKED\n" + gripperHint + "\nEnable robot to show wrist alignment guides" :
+                "WORLD FREE - robot control disabled\nTap LEFT MENU to lock (do not hold)\nThen enable robot; side grip toggles arm following";
             _lockLabel.color=WorldLocked ? Color.green : Color.white;
         }
 

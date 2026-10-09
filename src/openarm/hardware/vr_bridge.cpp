@@ -289,26 +289,18 @@ private:
     }
     void gripper_buttons(Arm &arm, const sensor_msgs::msg::Joy &msg) {
         if (!fresh_input(msg.header.stamp,arm.joy_stamp) || msg.buttons.size()<7 ||
-            msg.axes.size()<2 || !std::isfinite(msg.axes[1]) || std::abs(msg.axes[1])>1.0 ||
+            (msg.buttons[0]!=0 && msg.buttons[0]!=1) ||
             msg.buttons[6]!=1) {
             arm.joy_at={}; arm.gripper_ready=false; arm.gripper_direction=0;
-            if (armed_) disarm("world unlocked or invalid stick input; lock world before enabling");
+            if (armed_) disarm("world unlocked or invalid trigger input; lock world before enabling");
             return;
         }
         arm.joy_at=Clock::now();
         if (!armed_ || homing_ || !live_ || !hand_fresh(arm)) {
             arm.gripper_ready=false; arm.gripper_direction=0; return;
         }
-        const double stick=msg.axes[1];
-        if (std::abs(stick)<=0.2) {
-            arm.gripper_direction=0;
-            arm.gripper_ready=true;
-            return;
-        }
-        if (arm.gripper_ready) {
-            if (stick>=0.5) arm.gripper_direction=1;
-            else if (stick<=-0.5) arm.gripper_direction=-1;
-        }
+        arm.gripper_direction=trigger_gripper_direction(
+            msg.buttons[0]==1,arm.gripper_ready,arm.gripper_direction);
     }
 
     void publish_gripper(Arm &arm) {
@@ -345,6 +337,9 @@ private:
             arm.gripper_velocity=0;
         }
         if (!valid_recovery_command(next,measured,previous,lower,upper,0.008)) {
+            RCLCPP_ERROR(get_logger(),
+                "Gripper guard %s: measured=%.6f previous=%.6f next=%.6f limits=[%.6f, %.6f] m",
+                axis.name.c_str(), measured, previous, next, lower, upper);
             disarm("gripper following error or joint limit"); return;
         }
         arm.gripper_last=next; arm.gripper_sent=true; publish_gripper(arm);

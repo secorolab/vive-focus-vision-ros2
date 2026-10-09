@@ -67,7 +67,9 @@ namespace VrRos
             while (true)
             {
                 string host = bridge.host;
-                using (var request = UnityWebRequestTexture.GetTexture($"http://{host}:8081/cameras/{keys[index]}.jpg"))
+                float started = Time.realtimeSinceStartup;
+                bool success = false;
+                using (var request = UnityWebRequestTexture.GetTexture($"http://{host}:8081/cameras/{keys[index]}.jpg", true))
                 {
                     request.timeout = 2;
                     yield return request.SendWebRequest();
@@ -78,9 +80,14 @@ namespace VrRos
                         if (images[index].texture != null) Destroy(images[index].texture);
                         images[index].texture = texture;
                         received[index] = Time.unscaledTime;
+                        success = true;
                     }
                 }
-                yield return new WaitForSecondsRealtime(.125f);
+                // Pace the whole request, not an extra pause after every download.
+                // One request per camera stays in flight; offline cameras back off.
+                float delay = success ? Mathf.Max(0f, 1f / 15f - (Time.realtimeSinceStartup - started)) : 1f;
+                if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
+                else yield return null;
             }
         }
 

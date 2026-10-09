@@ -65,6 +65,26 @@ launch entry points: **`openarm_virtual.launch.py`** for simulation and
 **`openarm_real.launch.py`** for the physical robot. Both use the existing VR app.
 See [switching modes, separate builds and start commands](docs/openarm_modes.md).
 
+### Physical robot CAN transmit queues
+
+On this dual-arm setup, `can0` is right and `can1` is left. Before starting the
+real-robot launch, include these settings in the CAN setup:
+
+```bash
+sudo ip link set can0 txqueuelen 32
+sudo ip link set can1 txqueuelen 32
+```
+
+Stop the robot launch before changing CAN settings. The default 10-frame queues
+were present during `CAN errno=105 no_buffer=1` faults; a modest increase to 32
+improved the subsequent operator test. This is a setup-specific mitigation, not
+a cure for wiring, USB, or bus faults. Repeat it after an adapter reconnect that
+recreates the interfaces. Keep the feedback watchdogs and joint limits enabled;
+a latched driver fault requires stopping and restarting the launch after addressing
+the cause.
+
+### Simulation setup
+
 The simulation application drives **both arms in MuJoCo** from their matching controllers. A
 resolved-rate servo over the Orocos KDL Jacobian moves all seven arm joints to follow the
 gripper position and orientation independently for each arm. This is a motion-test simulation with gravity and contacts disabled,

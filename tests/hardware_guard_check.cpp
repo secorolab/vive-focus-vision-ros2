@@ -5,6 +5,23 @@
 using namespace vive_vr_ros2;
 void check(bool condition) { if (!condition) throw std::runtime_error("hardware guard check failed"); }
 int main() {
+    bool ready=false;
+    int direction=0;
+    auto trigger=[&](bool pressed) {
+        direction=trigger_gripper_direction(pressed,ready,direction);
+        return direction;
+    };
+    check(trigger(true)==0); // Held during enable must not start motion.
+    check(trigger(false)==0); // Initial release holds, never auto-closes.
+    check(trigger(false)==0);
+    check(trigger(true)==1);
+    check(trigger(true)==1);
+    check(trigger(false)==-1);
+    check(trigger(false)==-1);
+    check(trigger(true)==1); // Reopen during closing.
+    ready=false; direction=0; // Tracking loss/disarm resets the cycle.
+    check(trigger(false)==0);
+    check(trigger(true)==1);
     double pos=0.01, velocity=0;
     for (int i=0;i<400;++i) {
         const double old_velocity=velocity, old_pos=pos;

@@ -166,11 +166,12 @@ Lock freezes joystick translation, turning, height buttons and recentering, whil
 normal head tracking continues. Its label stays at the location where lock was toggled.
 Lock before enabling real VR. Unlocking disarms real control; center both sticks,
 lock again and explicitly enable to resume. Old APKs cannot supply the lock flag.
-Each hand's stick up opens its gripper, down closes it, and center stops/holds.
-A 0.2 neutral deadzone and 0.5 engagement threshold reject small accidental deflections.
-Rear triggers toggle arm following; A/X do not control physical grippers. After enabling or input
-loss, center the stick before issuing another command.
-For the real robot, press the rear trigger once to engage arm following and again to
+Each hand's rear index trigger opens its gripper while held and closes it when released.
+Side grips toggle arm following; A/X and sticks do not control physical grippers. After enabling or input
+loss, release the trigger, then press it to open. The initial release holds position;
+closing on release starts only after that fresh press. Tracking loss or unlocking
+holds the gripper rather than treating missing input as a release.
+For the real robot, press the side grip once to engage arm following and again to
 stop; releasing it does not stop an engaged arm. Align before engaging. Simulation
 retains hold-to-move.
 
@@ -220,7 +221,7 @@ repeatedly widening limits or resetting zero at an arbitrary pose.
 
 The real input node uses `teleop.toggle_clutch=true`. Pose or button-stream loss
 drops the toggle. Arming/disarming and homing reset it; release the button and press
-again to engage. A new engagement captures a fresh hand reference. Gripper sticks operate independently of the arm toggle.
+again to engage. A new engagement captures a fresh hand reference. Gripper triggers operate independently of the arm toggle.
 
 Left gripper gains are now `kp=15`, `kd=0.20` to test reduction of the measured
 +0.75 mm residual; right remains `kp=10`, `kd=0.15`. The left closing force increases,
