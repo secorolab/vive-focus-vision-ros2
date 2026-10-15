@@ -16,13 +16,15 @@ import yaml
 
 def main():
     arm = sys.argv[1] if len(sys.argv) > 1 else 'right'
+    mode = sys.argv[2] if len(sys.argv) > 2 else 'sim'
+    prefix = 'hardware' if mode == 'real' else 'sim'
     filename = 'controller_alignment.json' if arm == 'right' else 'controller_alignment_left.json'
     rclpy.init()
     node=rclpy.create_node('alignment_capture_test')
     sensor=QoSProfile(depth=1,reliability=ReliabilityPolicy.BEST_EFFORT)
     latched=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
     c=node.create_publisher(PoseStamped,f'/vive_vr/{arm}/pose',sensor)
-    t=node.create_publisher(PoseStamped,f'/vive_vr/sim/{arm}/ee_pose',sensor)
+    t=node.create_publisher(PoseStamped,f'/vive_vr/{prefix}/{arm}/ee_pose',sensor)
     grip=node.create_publisher(Bool,f'/vive_vr/teleop/{arm}/clutch',latched)
     process=None
     try:
@@ -32,7 +34,7 @@ def main():
                 {'vive_teleop':{'ros__parameters':{'teleop':{arm:{}}}}}))
             script=Path(__file__).resolve().parents[1]/'scripts/openarm_align.py'
             process=subprocess.Popen([sys.executable,str(script),'--output',str(folder),
-                                      '--delay','0','--timeout','6','--arm',arm],stdout=subprocess.PIPE,
+                                      '--delay','0','--timeout','6','--arm',arm,'--mode',mode],stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT,text=True)
             start=time.monotonic()
             while process.poll() is None and time.monotonic()-start<8:

@@ -51,6 +51,8 @@ namespace VrRos
         private string _state = "";
         private bool _ready;
         private string _recoveryReason = "";
+        private string _calibrationMessage = "";
+        private float _calibrationAt = -100f, _calibrationProgress;
         private GameObject _recoveryPanel;
         private TextMeshProUGUI _recoveryTitle, _recoveryText;
         private float _worst;
@@ -105,6 +107,15 @@ namespace VrRos
             _block = new MaterialPropertyBlock();
             BuildGuide();
             if (bridge == null) return;
+            bridge.Subscribe($"{outNs}/teleop/{arm}/calibration_progress", "std_msgs/msg/String", msg =>
+            {
+                try {
+                    var progress = JObject.Parse((string)msg["data"]);
+                    _calibrationMessage = (string)progress["message"] ?? "";
+                    _calibrationProgress = Mathf.Clamp01((float?)progress["progress"] ?? 0f);
+                    _calibrationAt = Time.unscaledTime;
+                } catch (System.Exception) { /* Ignore malformed status messages. */ }
+            });
             bridge.Subscribe($"{outNs}/teleop/{arm}/status", "vive_vr_ros2/msg/TeleopStatus",
                              OnStatus);
             bridge.Subscribe($"{outNs}/{arm}/pose", "geometry_msgs/msg/PoseStamped", msg =>
@@ -201,6 +212,17 @@ namespace VrRos
         private void RefreshRecovery(bool live, bool loaded)
         {
             if (_recoveryPanel == null) return;
+            if (_head != null && bridge != null && bridge.IsConnected
+                && Time.unscaledTime - _calibrationAt < 2f) {
+                _recoveryPanel.SetActive(true);
+                _recoveryPanel.transform.position = _head.transform.TransformPoint(
+                    new Vector3(0f, arm == "left" ? 0.20f : -0.04f, 1.3f));
+                _recoveryPanel.transform.rotation = _head.transform.rotation;
+                _recoveryTitle.color = Color.cyan;
+                _recoveryTitle.text = $"{arm.ToUpperInvariant()} WRIST CALIBRATION — {_calibrationProgress * 100f:0}%";
+                _recoveryText.text = _calibrationMessage;
+                return;
+            }
             bool unreachable = live && _state == "unreachable";
             bool show = _head != null && (_recoveryReason.Length > 0 || (live && _state == "release_grip"));
             _recoveryPanel.SetActive(show);

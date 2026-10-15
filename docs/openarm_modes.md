@@ -236,12 +236,26 @@ limits remain unchanged.
 
 ### Real-robot VR orientation
 
-`config/openarm_real.yaml` sets `view_yaw_deg: 90.0`: the headset spawn is
-orbited around the robot/world origin, making the robot appear turned 90 degrees
-to the right relative to the tracking space. Both spawn position and heading
-rotate together; robot joint coordinates, IK, and controller-to-tool calibration
-remain unchanged. Controller poses use the rotated rig, keeping wrist indicators
-and hand movement consistent with the displayed robot. Simulation defaults to
-zero. Set this value to `0.0` to restore the previous view, or `-90.0` for the
-opposite orientation. Restart the real launch and reopen the updated headset app
-after changing it. This requires an APK built with scene `view_yaw_deg` support.
+The real launch uses the robot operator view. Its saved viewing angle is applied
+around the OpenArm base at ROS world zero. Both the headset rig position and
+heading orbit together, so the displayed base stays in place and the robot turns
+about it. Published controller poses use that same rig transform; robot geometry,
+end-effector guides, and controller-to-tool alignment remain in one ROS frame.
+This does not move the physical robot or change motor calibration.
+
+### Adjusting the real robot viewing direction
+
+While the world is unlocked in the real robot operator view, release and press
+the left rear trigger to start turning the displayed robot right about its base
+at 15 degrees per second. Release and press again to stop at any angle. Tap the
+left menu button to stop, lock the world, and save the angle on the headset; it
+is restored on the next app launch. Losing controller tracking also stops the
+adjustment. This changes the VR viewing frame, not the physical robot pose or
+calibration. Head tracking stays active. While locked, the rear trigger retains
+its gripper function.
+
+While unlocked, hold the right rear trigger and move the controller to translate
+the robot view one-to-one in any direction. Release to leave it there; repeat
+to move farther. This stops automatic rotation. Locking saves the position and
+angle. Tracking loss stops placement and requires a release before resuming.
+Only the VR placement changes, never the physical base or motor calibration.
