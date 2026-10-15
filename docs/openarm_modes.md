@@ -166,11 +166,12 @@ Lock freezes joystick translation, turning, height buttons and recentering, whil
 normal head tracking continues. Its label stays at the location where lock was toggled.
 Lock before enabling real VR. Unlocking disarms real control; center both sticks,
 lock again and explicitly enable to resume. Old APKs cannot supply the lock flag.
-Each hand's stick up opens its gripper, down closes it, and center stops/holds.
-A 0.2 neutral deadzone and 0.5 engagement threshold reject small accidental deflections.
-Rear triggers toggle arm following; A/X do not control physical grippers. After enabling or input
-loss, center the stick before issuing another command.
-For the real robot, press the rear trigger once to engage arm following and again to
+Each hand's rear index trigger opens its gripper while held and closes it when released.
+Side grips toggle arm following; A/X and sticks do not control physical grippers. After enabling or input
+loss, release the trigger, then press it to open. The initial release holds position;
+closing on release starts only after that fresh press. Tracking loss or unlocking
+holds the gripper rather than treating missing input as a release.
+For the real robot, press the side grip once to engage arm following and again to
 stop; releasing it does not stop an engaged arm. Align before engaging. Simulation
 retains hold-to-move.
 
@@ -220,7 +221,7 @@ repeatedly widening limits or resetting zero at an arbitrary pose.
 
 The real input node uses `teleop.toggle_clutch=true`. Pose or button-stream loss
 drops the toggle. Arming/disarming and homing reset it; release the button and press
-again to engage. A new engagement captures a fresh hand reference. Gripper sticks operate independently of the arm toggle.
+again to engage. A new engagement captures a fresh hand reference. Gripper triggers operate independently of the arm toggle.
 
 Left gripper gains are now `kp=15`, `kd=0.20` to test reduction of the measured
 +0.75 mm residual; right remains `kp=10`, `kd=0.15`. The left closing force increases,
@@ -235,12 +236,26 @@ limits remain unchanged.
 
 ### Real-robot VR orientation
 
-`config/openarm_real.yaml` sets `view_yaw_deg: 90.0`: the headset spawn is
-orbited around the robot/world origin, making the robot appear turned 90 degrees
-to the right relative to the tracking space. Both spawn position and heading
-rotate together; robot joint coordinates, IK, and controller-to-tool calibration
-remain unchanged. Controller poses use the rotated rig, keeping wrist indicators
-and hand movement consistent with the displayed robot. Simulation defaults to
-zero. Set this value to `0.0` to restore the previous view, or `-90.0` for the
-opposite orientation. Restart the real launch and reopen the updated headset app
-after changing it. This requires an APK built with scene `view_yaw_deg` support.
+The real launch uses the robot operator view. Its saved viewing angle is applied
+around the OpenArm base at ROS world zero. Both the headset rig position and
+heading orbit together, so the displayed base stays in place and the robot turns
+about it. Published controller poses use that same rig transform; robot geometry,
+end-effector guides, and controller-to-tool alignment remain in one ROS frame.
+This does not move the physical robot or change motor calibration.
+
+### Adjusting the real robot viewing direction
+
+While the world is unlocked in the real robot operator view, release and press
+the left rear trigger to start turning the displayed robot right about its base
+at 15 degrees per second. Release and press again to stop at any angle. Tap the
+left menu button to stop, lock the world, and save the angle on the headset; it
+is restored on the next app launch. Losing controller tracking also stops the
+adjustment. This changes the VR viewing frame, not the physical robot pose or
+calibration. Head tracking stays active. While locked, the rear trigger retains
+its gripper function.
+
+While unlocked, hold the right rear trigger and move the controller to translate
+the robot view one-to-one in any direction. Release to leave it there; repeat
+to move farther. This stops automatic rotation. Locking saves the position and
+angle. Tracking loss stops placement and requires a release before resuming.
+Only the VR placement changes, never the physical base or motor calibration.

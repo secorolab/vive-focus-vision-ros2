@@ -51,6 +51,8 @@ namespace VrRos
         private string _state = "";
         private bool _ready;
         private string _recoveryReason = "";
+        private string _calibrationMessage = "";
+        private float _calibrationAt = -100f, _calibrationProgress;
         private GameObject _recoveryPanel;
         private TextMeshProUGUI _recoveryTitle, _recoveryText;
         private float _worst;
@@ -105,6 +107,15 @@ namespace VrRos
             _block = new MaterialPropertyBlock();
             BuildGuide();
             if (bridge == null) return;
+            bridge.Subscribe($"{outNs}/teleop/{arm}/calibration_progress", "std_msgs/msg/String", msg =>
+            {
+                try {
+                    var progress = JObject.Parse((string)msg["data"]);
+                    _calibrationMessage = (string)progress["message"] ?? "";
+                    _calibrationProgress = Mathf.Clamp01((float?)progress["progress"] ?? 0f);
+                    _calibrationAt = Time.unscaledTime;
+                } catch (System.Exception) { /* Ignore malformed status messages. */ }
+            });
             bridge.Subscribe($"{outNs}/teleop/{arm}/status", "vive_vr_ros2/msg/TeleopStatus",
                              OnStatus);
             bridge.Subscribe($"{outNs}/{arm}/pose", "geometry_msgs/msg/PoseStamped", msg =>
@@ -201,6 +212,17 @@ namespace VrRos
         private void RefreshRecovery(bool live, bool loaded)
         {
             if (_recoveryPanel == null) return;
+            if (_head != null && bridge != null && bridge.IsConnected
+                && Time.unscaledTime - _calibrationAt < 2f) {
+                _recoveryPanel.SetActive(true);
+                _recoveryPanel.transform.position = _head.transform.TransformPoint(
+                    new Vector3(0f, arm == "left" ? 0.20f : -0.04f, 1.3f));
+                _recoveryPanel.transform.rotation = _head.transform.rotation;
+                _recoveryTitle.color = Color.cyan;
+                _recoveryTitle.text = $"{arm.ToUpperInvariant()} WRIST CALIBRATION — {_calibrationProgress * 100f:0}%";
+                _recoveryText.text = _calibrationMessage;
+                return;
+            }
             bool unreachable = live && _state == "unreachable";
             bool show = _head != null && (_recoveryReason.Length > 0 || (live && _state == "release_grip"));
             _recoveryPanel.SetActive(show);
@@ -217,11 +239,11 @@ namespace VrRos
             _recoveryTitle.color = close;
             _recoveryTitle.text = hand + " — " + cause;
             if (!live || !loaded)
-                _recoveryText.text = "Release the rear trigger.\nWait for the robot connection to return.";
+                _recoveryText.text = "Release the side grip.\nWait for the robot connection to return.";
             else if (_state == "release_grip" && _recoveryReason.Length == 0)
             {
                 _recoveryTitle.text = hand + " — Not engaged";
-                _recoveryText.text = "Lock the world and enable robot control.\nRelease the rear trigger, then press after alignment.";
+                _recoveryText.text = "Lock the world and enable robot control.\nRelease the side grip, then press after alignment.";
             }
             else if (unreachable)
             {
@@ -232,14 +254,14 @@ namespace VrRos
             {
                 _recoveryTitle.text = hand + " — Ready to continue";
                 _recoveryTitle.color = ready;
-                _recoveryText.text = "Your hand is lined up.\nSqueeze the rear trigger to continue moving.";
+                _recoveryText.text = "Your hand is lined up.\nSqueeze the side grip to continue moving.";
             }
             else if (_state == "align_pose")
-                _recoveryText.text = "Keep the rear trigger released. Rotate the white hand\noutline to match cyan, then squeeze when it turns green.";
+                _recoveryText.text = "Keep the side grip released. Rotate the white hand\noutline to match cyan, then squeeze when it turns green.";
             else if (_state == "tracking_lost")
-                _recoveryText.text = "Release the rear trigger and bring the controller into view.\nWhen tracking returns, match the hand guide to continue.";
+                _recoveryText.text = "Release the side grip and bring the controller into view.\nWhen tracking returns, match the hand guide to continue.";
             else
-                _recoveryText.text = "The arm is holding its position. Release the rear trigger,\nmatch the hand guide, then squeeze again when green.";
+                _recoveryText.text = "The arm is holding its position. Release the side grip,\nmatch the hand guide, then squeeze again when green.";
         }
 
         private void BuildRecoveryPanel()
