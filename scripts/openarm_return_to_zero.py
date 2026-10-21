@@ -52,7 +52,7 @@ def main():
     joint_sub = node.create_subscription(JointState, '/joint_states', joints, qos_profile_sensor_data)
     def show_positions(full=False):
         if time.monotonic()-measured[1]>0.15:
-            print('Joint feedback unavailable/stale; zero position is NOT confirmed.', flush=True)
+            print('Cannot read the current arm positions. Zero is NOT confirmed. Check the robot launch for the first STARTUP BLOCKED or LATCHED FAULT message.', flush=True)
             return False
         q=measured[0]
         if full:
@@ -62,12 +62,13 @@ def main():
         if args.close_grippers:
             print('Gripper positions (mm; closed target = 0): ' + ', '.join(
                 f'{side}: {q[n]*1000:+.2f}' for side,n in zip(('right','left'),finger_names)), flush=True)
-        worst=max(abs(q[n]) for n in names)
-        print(f"Farthest joint from zero: {math.degrees(worst):.2f} deg; "
+        worst_name=max(names, key=lambda n: abs(q[n]))
+        worst=abs(q[worst_name])
+        print(f"Farthest joint from zero: {math.degrees(worst):.2f} deg ({worst_name}); "
               f"left elbow: {math.degrees(q['openarm_left_joint4']):+.2f} deg; "
               f"right elbow: {math.degrees(q['openarm_right_joint4']):+.2f} deg", flush=True)
         if full:
-            print('Within zero tolerance (1 degree).' if worst<=math.radians(1) else 'Not at zero yet.', flush=True)
+            print('Within zero tolerance (1.5 degrees).' if worst<=math.radians(1.5) else 'Not at zero yet.', flush=True)
         return True
     accepted = False
     uncertain = False
@@ -86,14 +87,15 @@ def main():
                 rclpy.spin_once(node, timeout_sec=0.02)
             return 0 if show_positions(full=True) else 1
         if not client.wait_for_service(timeout_sec=5):
-            raise RuntimeError('Start the updated openarm_real launch first. No return service found on domain 84.')
+            raise RuntimeError('Robot return service is unavailable. Start openarm_real.launch.py and wait for both arm controllers to activate (ROS domain 84).')
         # Drain an old transient status before starting this request.
         end = time.monotonic()+0.2
         while time.monotonic()<end:
             rclpy.spin_once(node, timeout_sec=0.02)
         baseline = status[1]
         if args.execute:
-            show_positions(full=True)
+            if not show_positions(full=True):
+                raise RuntimeError('Return was not requested: live joint positions are required. Fix the startup/motor fault, then restart the robot launch. Enabling VR will not clear a motor fault.')
             print('Requesting return of BOTH arms to joint zero, max 0.05 rad/s. ' +
                   ('Closing both grippers; keep them empty and clear.' if args.close_grippers else 'Grippers unchanged.'), flush=True)
             print('Direct path: keep it clear. Ctrl+C stops the return; it does not release motor torque.', flush=True)
@@ -120,7 +122,7 @@ def main():
                 if status[0]=='complete':
                     accepted=False
                     show_positions(full=True)
-                    print('Both arms reached zero within 1 degree. ' +
+                    print('Both arms reached zero within 1.5 degrees. ' +
                           ('Grippers reached the closed target within 1 mm. ' if args.close_grippers else '') +
                           'VR remains disarmed.', flush=True)
                     return 0

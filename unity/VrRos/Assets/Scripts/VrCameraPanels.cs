@@ -115,18 +115,7 @@ namespace VrRos
                 root.transform.SetParent(locked ? null : Camera.main.transform, true);
             }
             if (locked) return;
-            // In simulation the stick still belongs to locomotion. Adjust only in body view.
-            if (locomotion != null && locomotion.RobotBodyView)
-            {
-                var device = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
-                if (device.isValid && device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 axes))
-                {
-                    if (needNeutral) { if (axes.magnitude < .2f) needNeutral = false; }
-                    else if (Mathf.Abs(axes.y) > .2f)
-                        distance = Mathf.Clamp(distance + axes.y * .6f * Time.unscaledDeltaTime, .75f, 2.5f);
-                }
-                else needNeutral = true;
-            }
+            // Panel distance stays fixed; sticks are reserved for view navigation.
             root.transform.localPosition = new Vector3(0, .25f, distance);
             root.transform.localRotation = Quaternion.identity;
         }

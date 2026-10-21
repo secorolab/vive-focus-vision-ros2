@@ -221,18 +221,6 @@ frames after each paced motor send, without extra polls or a higher transmit rat
 Fault snapshots include command, reply, rejected-command and malformed-frame counts.
 Do not interpret a successful socket write as proof a motor received the command.
 
-For a receive-only capture, start this in a separate terminal before the real launch:
-
-```zsh
-python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_can_watch.py --seconds 90
-```
-
-It records per-motor command/reply counts and reply gaps to
-`/tmp/openarm_can_watch.jsonl`, and reports commands observed without a recent reply.
-It opens raw CAN sockets to listen; it never transmits, changes bitrate, resets a
-motor, or enables torque. A capture after a latched fault cannot reconstruct the
-missing replies before that fault, so capture across a fresh startup and failure.
-
 ### Small elbow offsets at startup
 
 For the guarded real driver only, the ROS controller description accepts an elbow

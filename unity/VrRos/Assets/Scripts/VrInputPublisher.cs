@@ -83,15 +83,17 @@ namespace VrRos
         {
             InputDevice device = InputDevices.GetDeviceAtXRNode(node);
             if (!device.isValid) return;
-            PublishPose($"{rawNs}/{hand}/pose", device);
+            PublishPose($"{rawNs}/{hand}/pose", device, true);
             PublishJoy($"{rawNs}/{hand}/joy", device);
         }
 
-        private void PublishPose(string topic, InputDevice device)
+        private void PublishPose(string topic, InputDevice device, bool controller = false)
         {
             if (!device.isValid) return;
             if (!device.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 p)) return;
             if (!device.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion q)) return;
+
+            if (controller) VrLocomotion.MapController(rig, ref p, ref q);
 
             /* Devices report in tracking space, which ignores where the rig has walked to. The
              * rig transform is what puts the hand where the user sees it in the scene. */

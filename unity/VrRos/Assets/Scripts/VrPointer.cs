@@ -348,7 +348,7 @@ namespace VrRos
             return aim.stable;
         }
 
-        private static bool ControllerRay(string hand, out Vector3 origin, out Vector3 direction)
+        private bool ControllerRay(string hand, out Vector3 origin, out Vector3 direction)
         {
             origin = default;
             direction = default;
@@ -362,6 +362,7 @@ namespace VrRos
                 return false;
             }
 
+            VrLocomotion.MapController(Space, ref p, ref q);
             origin = p;
             direction = q * Vector3.forward;
             return true;

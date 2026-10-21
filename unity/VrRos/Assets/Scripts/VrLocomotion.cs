@@ -48,21 +48,66 @@ namespace VrRos
         private float _sceneSpawnYaw;
         private float _pitch;
         private const string RobotYawKey = "OpenArm.OperatorViewYaw";
-        private float _robotYaw;
+        private float _robotYaw, _viewPitch;
+        private bool _heightReady;
+        private Vector2 _lookVelocity, _walkVelocity;
+        private bool _operatorButtonReady;
+        public static bool FacingHeadset { get; private set; }
+        private static Vector3 _operatorOrigin, _operatorCenter;
+        private static Quaternion _operatorRotation;
+
+        // Shared by ROS publishing, controller meshes and pointing rays. The operator
+        // frame stays fixed in the robot world when the viewing camera moves.
+        public static void MapController(Transform space, ref Vector3 p, ref Quaternion q)
+        {
+            if (!FacingHeadset || space == null) return;
+            Vector3 world = _operatorOrigin + _operatorRotation * (p - _operatorCenter);
+            p = space.InverseTransformPoint(world);
+            q = Quaternion.Inverse(space.rotation) * _operatorRotation * q;
+        }
+
+        private void PollOperatorFrame()
+        {
+            var left = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+            bool down = left.isValid && left.TryGetFeatureValue(CommonUsages.primaryButton, out bool x) && x;
+            if (WorldLocked || !RobotBodyView) { _operatorButtonReady = false; return; }
+            if (!down) { _operatorButtonReady = true; return; }
+            if (!_operatorButtonReady) return;
+            _operatorButtonReady = false;
+            if (FacingHeadset) { FacingHeadset = false; UpdateLockLabel(); return; }
+            var right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            if (!left.TryGetFeatureValue(CommonUsages.isTracked, out bool lt) || !lt
+                || !right.TryGetFeatureValue(CommonUsages.isTracked, out bool rt) || !rt
+                || !left.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 lp)
+                || !right.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 rp)
+                || !Finite(lp) || !Finite(rp)) return;
+            var publisher = FindFirstObjectByType<VrInputPublisher>();
+            if (publisher == null || publisher.rig == null) return;
+            _operatorCenter = (lp + rp) * 0.5f;
+            _operatorOrigin = publisher.rig.TransformPoint(_operatorCenter);
+            _operatorRotation = Quaternion.Euler(0f, publisher.rig.eulerAngles.y + 180f, 0f);
+            FacingHeadset = true;
+            UpdateLockLabel();
+        }
         private bool _rotationTriggerReady;
         private bool _robotRotating;
         private const float RobotTurnSpeed = 15f;
         private Vector3 _placementOffset, _placementHand;
         private bool _placementReady, _placing;
+        private bool _viewStickReady, _lookStickReady;
         private const string PlacementKey = "OpenArm.OperatorPlacement.";
 
         private void Awake()
         {
             WorldLocked = false;
+            FacingHeadset = false;
             _placementOffset = new Vector3(PlayerPrefs.GetFloat(PlacementKey+"x", 0f),
                 PlayerPrefs.GetFloat(PlacementKey+"y", 0f), PlayerPrefs.GetFloat(PlacementKey+"z", 0f));
             if (!Finite(_placementOffset)) _placementOffset = Vector3.zero;
             _robotYaw = PlayerPrefs.GetFloat(RobotYawKey, 0f);
+            _viewPitch = PlayerPrefs.GetFloat("OpenArm.OperatorViewPitch", 0f);
+            if (float.IsNaN(_viewPitch) || float.IsInfinity(_viewPitch)) _viewPitch = 0f;
+            _viewPitch = Mathf.Clamp(_viewPitch, -70f, 70f);
             if (float.IsNaN(_robotYaw) || float.IsInfinity(_robotYaw)) _robotYaw = 0f;
         }
 
@@ -109,7 +154,7 @@ namespace VrRos
             // Apply the saved orbit to both eye position and heading. The OpenArm
             // base is at ROS world zero; rotating the rig about it is the inverse
             // of rotating the displayed robot, with all ROS poses left consistent.
-            Quaternion orbit = Quaternion.Euler(0f, _robotYaw, 0f);
+            Quaternion orbit = Quaternion.Euler(_viewPitch, _robotYaw, 0f);
             rig.rotation = orbit;
             Vector3 eye = FrameConv.RosToUnity(RobotEyeRos.x, RobotEyeRos.y, RobotEyeRos.z);
             rig.position += orbit * (eye + _placementOffset) - head.transform.position;
@@ -162,8 +207,12 @@ namespace VrRos
         {
             EnsureLockLabel();
             PollWorldLock();
+            PollOperatorFrame();
             PollRobotRotation();
             PollRobotPlacement();
+            PollViewLook();
+            PollViewMovement();
+            PollViewHeight();
             if (head == null || WorldLocked || RobotBodyView) return;
             if (_needNeutralStick) {
                 foreach (var hand in new[] { XRNode.LeftHand, XRNode.RightHand }) {
@@ -202,14 +251,14 @@ namespace VrRos
                 var panel=new GameObject("World lock status",typeof(RectTransform),typeof(Canvas),typeof(Image));
                 panel.transform.SetParent(rig,false);
                 var rect=panel.GetComponent<RectTransform>();
-                rect.sizeDelta=new Vector2(720,190); rect.localScale=Vector3.one*0.001f;
+                rect.sizeDelta=new Vector2(720,230); rect.localScale=Vector3.one*0.001f;
                 panel.GetComponent<Canvas>().renderMode=RenderMode.WorldSpace;
                 var background=panel.GetComponent<Image>();
                 background.color=new Color(0.03f,0.04f,0.05f,0.95f); background.raycastTarget=false;
                 var label=new GameObject("Text",typeof(RectTransform),typeof(TextMeshProUGUI));
                 label.transform.SetParent(panel.transform,false);
                 _lockLabel=label.GetComponent<TextMeshProUGUI>();
-                _lockLabel.rectTransform.sizeDelta=new Vector2(690,175);
+                _lockLabel.rectTransform.sizeDelta=new Vector2(690,215);
                 _lockLabel.fontSize=28; _lockLabel.alignment=TextAlignmentOptions.Center;
                 _lockLabel.raycastTarget=false;
                 UpdateLockLabel();
@@ -230,7 +279,7 @@ namespace VrRos
             if (_lockLabel==null) return;
             string gripperHint = RobotBodyView ? "Rear trigger: hold open | release close" : "Stick up: open | down: close | center: stop";
             _lockLabel.text=WorldLocked ? "WORLD LOCKED\n" + gripperHint + "\nEnable robot to show wrist alignment guides" :
-                "WORLD FREE - robot control disabled\n" + (RobotBodyView ?  $"LEFT trigger: {(_robotRotating ? "STOP turning" : "start turning right")} ({_robotYaw:0}°)\nRIGHT trigger: hold and move to place robot\n" : "") + "Tap LEFT MENU to lock and save";
+                "WORLD FREE - robot control disabled\n" + (RobotBodyView ?  $"LEFT trigger: {(_robotRotating ? "STOP turning" : "start turning right")} ({_robotYaw:0}°)\nRIGHT trigger: hold and move to place robot\nLEFT stick: look | RIGHT stick: walk | A/B: up/down\nX: facing-headset { (FacingHeadset ? "ON" : "OFF") }\n" : "") + "Tap LEFT MENU to lock and save";
             _lockLabel.color=WorldLocked ? Color.green : Color.white;
         }
 
@@ -245,9 +294,10 @@ namespace VrRos
                 _needNeutralStick=true;
                 _rotationTriggerReady=false;
                 _robotRotating=false;
-                _placing=false; _placementReady=false;
+                _placing=false; _placementReady=false; _viewStickReady=false; _lookStickReady=false; _heightReady=false;
                 if (WorldLocked && RobotBodyView) {
                     PlayerPrefs.SetFloat(RobotYawKey, _robotYaw);
+                    PlayerPrefs.SetFloat("OpenArm.OperatorViewPitch", _viewPitch);
                     PlayerPrefs.SetFloat(PlacementKey+"x", _placementOffset.x);
                     PlayerPrefs.SetFloat(PlacementKey+"y", _placementOffset.y);
                     PlayerPrefs.SetFloat(PlacementKey+"z", _placementOffset.z);
@@ -312,6 +362,93 @@ namespace VrRos
             PlaceLockLabel();
         }
 
+        private void PollViewLook()
+        {
+            var device = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+            if (!RobotBodyView || WorldLocked || head == null || rig == null || _placing
+                || !device.isValid
+                || !device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick)
+                || float.IsNaN(stick.x) || float.IsInfinity(stick.x)
+                || float.IsNaN(stick.y) || float.IsInfinity(stick.y)) {
+                _lookVelocity = Vector2.zero;
+                _lookStickReady = false;
+                return;
+            }
+            if (stick.magnitude <= deadzone) { _lookStickReady = true; _lookVelocity = Vector2.zero; return; }
+            if (!_lookStickReady) return;
+            float Axis(float value) => Mathf.Sign(value) * Mathf.Clamp01((Mathf.Abs(value)-deadzone)/(1f-deadzone));
+            float dt = Mathf.Min(Time.unscaledDeltaTime, 0.05f);
+            _lookVelocity = Vector2.Lerp(_lookVelocity, new Vector2(Axis(stick.x), Axis(stick.y)) * 35f,
+                1f - Mathf.Exp(-dt / 0.12f));
+            Vector3 eye = FrameConv.RosToUnity(RobotEyeRos.x, RobotEyeRos.y, RobotEyeRos.z);
+            Vector3 savedEye = rig.rotation * (eye + _placementOffset);
+            Vector3 pivot = head.transform.position;
+            _robotYaw = Mathf.Repeat(_robotYaw + _lookVelocity.x*dt, 360f);
+            _viewPitch = Mathf.Clamp(_viewPitch - _lookVelocity.y*dt, -70f, 70f);
+            Quaternion orientation = Quaternion.Euler(_viewPitch, _robotYaw, 0f);
+            Quaternion turn = orientation * Quaternion.Inverse(rig.rotation);
+            rig.position = pivot + turn * (rig.position-pivot);
+            rig.rotation = orientation;
+            _placementOffset = Quaternion.Inverse(rig.rotation) *
+                (pivot + turn * (savedEye-pivot)) - eye;
+            _robotRotating = false;
+            UpdateLockLabel();
+            PlaceLockLabel();
+        }
+
+        // Desk-mounted headset: translate the viewpoint without needing head motion.
+        private void PollViewMovement()
+        {
+            var device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            if (!RobotBodyView || WorldLocked || head == null || rig == null
+                || !device.isValid
+                || !device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick)
+                || float.IsNaN(stick.x) || float.IsNaN(stick.y)
+                || float.IsInfinity(stick.x) || float.IsInfinity(stick.y)) {
+                _walkVelocity = Vector2.zero;
+                _viewStickReady = false;
+                return;
+            }
+            float magnitude = Mathf.Min(stick.magnitude, 1f);
+            if (magnitude <= deadzone) { _viewStickReady = true; _walkVelocity = Vector2.zero; return; }
+            if (!_viewStickReady) return; // neutral first after unlocking/reconnecting
+            Vector3 forward = Vector3.ProjectOnPlane(head.transform.forward, Vector3.up).normalized;
+            if (forward.sqrMagnitude < 0.5f) forward = Quaternion.Euler(0f, _robotYaw, 0f) * Vector3.forward;
+            Vector3 right = Vector3.Cross(Vector3.up, forward);
+            Vector2 input = stick.normalized * ((magnitude-deadzone)/(1f-deadzone));
+            float dt = Mathf.Min(Time.unscaledDeltaTime, 0.05f);
+            _walkVelocity = Vector2.Lerp(_walkVelocity, input, 1f - Mathf.Exp(-dt / 0.10f));
+            Vector3 delta = (right*_walkVelocity.x + forward*_walkVelocity.y) * 0.5f * dt;
+            rig.position += delta;
+            _placementOffset += Quaternion.Inverse(rig.rotation) * delta;
+            _robotRotating = false;
+            UpdateLockLabel();
+            PlaceLockLabel();
+        }
+
+        private void PollViewHeight()
+        {
+            var device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            if (!RobotBodyView || WorldLocked || rig == null || !device.isValid || _placing) {
+                _heightReady = false;
+                return;
+            }
+            if (!device.TryGetFeatureValue(CommonUsages.primaryButton, out bool up)
+                || !device.TryGetFeatureValue(CommonUsages.secondaryButton, out bool down)) {
+                _heightReady = false;
+                return;
+            }
+            if (!up && !down) { _heightReady = true; return; }
+            if (!_heightReady || up == down) return;
+            Vector3 delta = Vector3.up * (up ? 1f : -1f) * 0.3f
+                * Mathf.Min(Time.unscaledDeltaTime, 0.05f);
+            rig.position += delta;
+            _placementOffset += Quaternion.Inverse(rig.rotation) * delta;
+            _robotRotating = false;
+            UpdateLockLabel();
+            PlaceLockLabel();
+        }
+
         private static bool Finite(Vector3 p) =>
             !float.IsNaN(p.x) && !float.IsInfinity(p.x) &&
             !float.IsNaN(p.y) && !float.IsInfinity(p.y) &&
@@ -324,6 +461,13 @@ namespace VrRos
                 || !device.TryGetFeatureValue(CommonUsages.isTracked, out bool tracked) || !tracked
                 || !device.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 hand)
                 || !Finite(hand)) {
+                _placing = _placementReady = false;
+                return;
+            }
+            // Stick navigation wins over trigger dragging. Require a trigger release
+            // before another drag, so a held/noisy trigger cannot fight walking.
+            if (device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 navigation)
+                && navigation.magnitude > deadzone) {
                 _placing = _placementReady = false;
                 return;
             }

@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <iomanip>
+#include <sstream>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -15,6 +17,7 @@
 #include <pluginlib/class_list_macros.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include "vive_vr_ros2/hardware_guard.hpp"
 
 namespace vive_vr_ros2 {
@@ -30,6 +33,8 @@ public:
     CallbackReturn on_init(const hardware_interface::HardwareInfo &info) override {
         if (SystemInterface::on_init(info) != CallbackReturn::SUCCESS) return CallbackReturn::ERROR;
         try {
+            local_elbow_recovery_ = info.hardware_parameters.count("local_elbow_recovery") &&
+                info.hardware_parameters.at("local_elbow_recovery") == "true";
             const auto prefix = info.hardware_parameters.at("arm_prefix");
             if (prefix != "right_" && prefix != "left_") throw std::runtime_error("Invalid arm prefix");
             if (info.joints.size() != 8) throw std::runtime_error("V1 requires seven arm joints and one gripper");
@@ -53,6 +58,9 @@ public:
             node_ = std::make_shared<rclcpp::Node>("openarm_" + prefix + "guard");
             health_ = node_->create_publisher<std_msgs::msg::Bool>(
                 "/vive_vr/hardware/" + prefix.substr(0, prefix.size()-1) + "/healthy",
+                rclcpp::QoS(1).transient_local());
+            diagnostic_ = node_->create_publisher<std_msgs::msg::String>(
+                "/vive_vr/hardware/" + prefix.substr(0, prefix.size()-1) + "/diagnostic",
                 rclcpp::QoS(1).transient_local());
             arm_ = std::make_unique<openarm::can::socket::OpenArm>(info.hardware_parameters.at("can_interface"), true);
             using M = openarm::damiao_motor::MotorType;
@@ -108,6 +116,11 @@ public:
         return out;
     }
     CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
+        if (fault_) {
+            report("Recovery blocked: a running motor fault is latched. Stop the launch and fix the fault before restarting.");
+            return CallbackReturn::FAILURE;
+        }
+        try {
         // No enable or set-zero commands. Require actual responses from every motor.
         for (int n=0;n<50;++n) {
             arm_->refresh_all(); arm_->recv_all(0);
@@ -115,13 +128,31 @@ public:
         }
         arm_->recv_all(0);
         if (!sample()) {
-            RCLCPP_ERROR(node_->get_logger(), "Initial motor feedback validation failed: %s. Check CAN-FD interface setup, motor power and cabling before restarting.", sample_reason_.c_str());
-            return CallbackReturn::ERROR;
+            RCLCPP_ERROR(node_->get_logger(), "STARTUP BLOCKED: %s", sample_reason_.c_str());
+            report("Startup blocked: " + sample_reason_ + " After resolving this, run scripts/openarm_retry_startup.py --execute; the controller manager remains available.");
+            return CallbackReturn::FAILURE;
         }
+        if (local_elbow_recovery_ && position_[3] < lower_[3])
+            report("Elbow recovery available: measured " + number(position_[3]*180.0/3.141592653589793) +
+                   " degrees. Holding this pose is allowed; return-to-zero may move inward only. VR is unavailable in local homing mode.");
+        else report("Motor feedback checked. Ready for activation at the measured pose.");
         return CallbackReturn::SUCCESS;
+        } catch (const std::exception &e) {
+            report(std::string("Startup communication check failed: ") + e.what() + ". Fix the connection, then retry startup.");
+            return CallbackReturn::FAILURE;
+        }
     }
     CallbackReturn on_activate(const rclcpp_lifecycle::State &) override {
-        if (fault_ || !sample()) return CallbackReturn::ERROR;
+        if (fault_) { report("Motor fault is latched; restart after fixing it."); return CallbackReturn::FAILURE; }
+        try {
+            arm_->refresh_all();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            arm_->recv_all(0);
+        } catch (const std::exception &e) {
+            report(std::string("Activation check failed: ") + e.what());
+            return CallbackReturn::FAILURE;
+        }
+        if (!sample()) { report("Activation blocked: " + sample_reason_); return CallbackReturn::FAILURE; }
         // Capture before enable; never move to zero or silently rewrite calibration.
         sent_ = position_;
         command_ = position_; // Hold exactly at activation; return-to-zero is explicit.
@@ -141,6 +172,7 @@ public:
         }
         if (!sample()) { trip("activation feedback failed"); return CallbackReturn::ERROR; }
         last_write_ = Clock::now();
+        report("Ready: motors enabled at their measured pose. No homing performed; VR still requires explicit enable.");
         RCLCPP_INFO(node_->get_logger(), "Enabled at measured pose; no homing. Joint limit 0.6 rad/s, feedback timeout 100 ms");
         return CallbackReturn::SUCCESS;
     }
@@ -236,20 +268,53 @@ private:
             if (!valid_motor({stats.ever_responded(), stats.malformed_frames != 0,
                               (m.get_error_code()>1 || (active_ && !m.is_enabled())), stats.since_last_response().count()/1e6,
                               m.get_position(), m.get_velocity()})) {
-                sample_reason_=names_[i]+" feedback: age_us="+std::to_string(stats.since_last_response().count())+
-                    " status="+std::to_string(m.get_error_code())+" malformed="+std::to_string(stats.malformed_frames);
+                sample_reason_ = joint_label(i) + ": ";
+                if (!stats.ever_responded())
+                    sample_reason_ += "no motor reply received. Check this motor's power and CAN connection with power off before touching connectors.";
+                else if (stats.malformed_frames != 0)
+                    sample_reason_ += "invalid CAN feedback received. Inspect the connection before restarting.";
+                else if (m.get_error_code()>1)
+                    sample_reason_ += "motor reports error code " + std::to_string(m.get_error_code()) + ". Diagnose the motor fault before restarting.";
+                else if (active_ && !m.is_enabled())
+                    sample_reason_ += "motor output is disabled. Stop the launch and check the motor before restarting.";
+                else
+                    sample_reason_ += "feedback is missing or invalid (last reply " + number(stats.since_last_response().count()/1000.0) + " ms ago; maximum 100 ms). Stop the launch and check this motor before restarting.";
                 return false;
             }
             p[i] = i==7 ? m.get_position()*(-0.044/1.0472) : m.get_position();
             v[i] = i==7 ? m.get_velocity()*(-0.044/1.0472) : m.get_velocity();
             e[i] = i==7 ? 0.0 : m.get_torque();
             const double tolerance = i==7 ? 0.002 : 0.05;
-            if (!std::isfinite(e[i]) || p[i]<lower_[i]-tolerance || p[i]>upper_[i]+tolerance) {
-                sample_reason_=names_[i]+" out of range: "+std::to_string(p[i]); return false;
+            const double lower_margin = startup_lower_margin(i==7, i==3, local_elbow_recovery_);
+            if (!std::isfinite(e[i]) || p[i]<lower_[i]-lower_margin || p[i]>upper_[i]+tolerance) {
+                const double scale = i==7 ? 1000.0 : 180.0/3.141592653589793;
+                const std::string unit = i==7 ? " mm" : " degrees";
+                if (!std::isfinite(e[i])) {
+                    sample_reason_ = joint_label(i) + ": invalid effort feedback. Restart only after valid motor feedback returns.";
+                } else {
+                    sample_reason_ = joint_label(i) + " reads " + number(p[i]*scale) + unit +
+                        "; accepted startup range is " + number((lower_[i]-lower_margin)*scale) + " to " +
+                        number((upper_[i]+tolerance)*scale) + unit +
+                        ". Motor is replying, but its position is outside the allowed range. No automatic return is available from this pose. "
+                        "Support the arm and stop the launch; check physical position and calibration. Do not redefine zero at an arbitrary pose.";
+                }
+                return false;
             }
         }
         position_=p; velocity_=v; effort_=e;
         return true;
+    }
+    void report(const std::string &message) {
+        std_msgs::msg::String msg; msg.data = message; diagnostic_->publish(msg);
+        RCLCPP_INFO(node_->get_logger(), "%s", message.c_str());
+    }
+    std::string joint_label(size_t i) const {
+        const std::string side = names_[i].find("right") != std::string::npos ? "Right" : "Left";
+        if (i == 7) return side + " gripper (motor 8)";
+        return side + (i == 3 ? " elbow" : i >= 4 ? " wrist" : " arm") + " (J" + std::to_string(i+1) + ")";
+    }
+    static std::string number(double value) {
+        std::ostringstream out; out << std::fixed << std::setprecision(2) << value; return out.str();
     }
     void transmit() {
         const bool ok = paced_motor_batch(
@@ -276,6 +341,7 @@ private:
     }
     Return trip(const char *reason) {
         if (!fault_) {
+            report(std::string("Stopped: ") + reason + ". Repair the fault before restarting; automatic resume is disabled.");
             fault_=true;
             publish_health(false);
             // Motors retain their last accepted bounded targets. Do not add more
@@ -304,6 +370,8 @@ private:
         if (ok) healthy_read_at_.store(std::chrono::duration<double>(Clock::now().time_since_epoch()).count());
         health_value_.store(ok);
     }
+    bool local_elbow_recovery_ = false;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr diagnostic_;
     std::string sample_reason_="invalid motor count";
     std::unique_ptr<openarm::can::socket::OpenArm> arm_;
     rclcpp::Node::SharedPtr node_;

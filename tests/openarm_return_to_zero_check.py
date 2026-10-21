@@ -105,9 +105,9 @@ try:
     pump(0.3); assert call(client,True).success
     pump(3); assert status[-1]=='complete', status
     assert commands[0][-1].points[0].positions[0]==0.0
-    positions[names[0]]=0.025
+    positions[names[0]]=0.03
     pump(0.3); assert call(client,True).success
-    pump(3); assert status[-1]=='running', 'reported completion beyond one degree'
+    pump(3); assert status[-1]=='running', 'reported completion beyond 1.5 degrees'
     assert call(client,False).success
     for failure in ('cancel','keepalive','health','feedback','controllers','following'):
         positions[names[0]]=0.15; positions[names[7]]=-0.15
