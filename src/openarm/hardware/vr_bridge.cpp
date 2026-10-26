@@ -13,6 +13,7 @@
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/empty.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <controller_manager_msgs/srv/list_controllers.hpp>
 #include "vive_vr_ros2/hardware_guard.hpp"
 #include "vive_vr_ros2/body_pose_publisher.hpp"
@@ -23,6 +24,7 @@ class HardwarePreview : public rclcpp::Node {
     using Clock = std::chrono::steady_clock;
     struct Axis { std::string name; int joint, qpos, motor; };
     struct Arm {
+        rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr stream;
         std::vector<Axis> axes;
         std::unique_ptr<OpenArmTeleop> teleop;
         rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr preview, command, gripper;
@@ -37,9 +39,13 @@ class HardwarePreview : public rclcpp::Node {
         int gripper_direction=0; // +1 opens, -1 closes; zero requires a fresh engagement.
         double gripper_last=0, gripper_velocity=0;
         std::array<double,8> last{};
+        std::array<double,7> velocity{};
     };
 public:
     HardwarePreview() : Node("openarm_hardware_preview") {
+        const auto mode=declare_parameter<std::string>("hardware.arm_command_mode", "trajectory");
+        if (mode!="trajectory" && mode!="stream") throw std::runtime_error("Invalid arm command mode");
+        stream_mode_=mode=="stream";
         declare_parameter<bool>("hardware.homing_only", false);
         live_output_ = declare_parameter<bool>("hardware.enable_commands", false);
         grippers_ = declare_parameter<bool>("hardware.control_grippers", false);
@@ -52,6 +58,10 @@ public:
         declare_parameter<double>("openarm.max_rotation_rad", 3.141592653589793);
         declare_parameter<bool>("openarm.stop_at_motion_bounds", false);
         declare_parameter<double>("openarm.joint_speed_rad_s", 0.3);
+        declare_parameter<double>("hardware.joint_acceleration_rad_s2", 2.0);
+        const double acceleration=get_parameter("hardware.joint_acceleration_rad_s2").as_double();
+        if (!std::isfinite(acceleration) || acceleration<=0 || acceleration>2.0)
+            throw std::runtime_error("Joint acceleration must be in (0, 2] rad/s^2");
         declare_parameter<double>("openarm.max_linear_speed_m_s", 0.10);
         declare_parameter<double>("openarm.max_angular_speed_rad_s", 0.5);
         declare_parameter<double>("openarm.posture_gain_hz", 0.0);
@@ -90,6 +100,8 @@ public:
             for (size_t side=0; side<2; ++side) {
                 const std::string name = side==0 ? "right" : "left";
                 auto &arm = arms_[side];
+                if (stream_mode_) arm.stream=create_publisher<std_msgs::msg::Float64MultiArray>(
+                    "/"+name+"_forward_position_controller/commands",rclcpp::QoS(1));
                 arm.command = create_publisher<trajectory_msgs::msg::JointTrajectory>(
                     "/" + name + "_joint_trajectory_controller/joint_trajectory", rclcpp::QoS(1));
                 if (grippers_) {
@@ -145,7 +157,7 @@ public:
                     // Re-arming cannot revive a held trigger or retain an old stream.
                     for (auto &arm:arms_) stop_gripper(arm,true);
                     armed_=true;
-                    for (auto &arm : arms_) { arm.teleop->reset(); arm.teleop->inhibit(false); arm.sent=false; }
+                    for (auto &arm : arms_) { arm.teleop->reset(); arm.teleop->inhibit(false); arm.sent=false; arm.velocity.fill(0); }
                     clutch_reset_->publish(std_msgs::msg::Empty{});
                     response->success=true; response->message="Armed with bounded speeds; release controller buttons before engaging";
                 }
@@ -271,7 +283,8 @@ private:
                 bool ok=true;
                 for (const auto *side : {"right", "left"}) {
                     for (const auto *kind : {"joint_trajectory_controller", "gripper_controller"}) {
-                        const std::string name=std::string(side)+"_"+kind;
+                        const std::string name=std::string(side)+"_"+
+                            ((stream_mode_ && std::string(kind)=="joint_trajectory_controller") ? "forward_position_controller" : kind);
                         ok &= std::any_of(response->controller.begin(),response->controller.end(),
                             [&](const auto &c) { return c.name==name && c.state=="active"; });
                     }
@@ -348,6 +361,12 @@ private:
         arm.gripper_last=next; arm.gripper_sent=true; publish_gripper(arm);
     }
     void publish_command(Arm &arm) {
+        if (stream_mode_) {
+            std_msgs::msg::Float64MultiArray msg;
+            msg.data.assign(arm.last.begin(),arm.last.begin()+7);
+            arm.stream->publish(msg);
+            return;
+        }
         trajectory_msgs::msg::JointTrajectory msg;
         // Zero stamp means start now, avoiding queued targets with stale start times.
         trajectory_msgs::msg::JointTrajectoryPoint point;
@@ -367,6 +386,7 @@ private:
             for (auto &arm : arms_) if (arm.sent) publish_command(arm);
             RCLCPP_WARN(get_logger(), "VR disarmed: %s; explicit enable and a new grip cycle required",reason);
         }
+        for (auto &arm : arms_) arm.velocity.fill(0);
         armed_=false;
         if (live_output_) for (auto &arm : arms_) arm.teleop->inhibit(true);
     }
@@ -404,6 +424,7 @@ private:
                 if (joint >= 0) data_->qpos[model_->jnt_qposadr[joint]] = values.at(axis.name);
             }
         }
+        for (auto &arm:arms_) arm.teleop->feedback_stamp(stamp.nanoseconds());
         mj_forward(model_.get(), data_.get()); // Kinematics only: never mj_step.
         if (!live_) for (auto &arm : arms_) {
             arm.teleop->reset();
@@ -480,6 +501,7 @@ private:
             if (!homing_) tick_gripper(arm,dt);
             arm.teleop->tick(std::clamp(dt, 0.0, 0.02));
             if (!live_ || !arm.teleop->commanding()) {
+                arm.velocity.fill(0);
                 // A released or timed-out grip replaces the short trajectory with a
                 // hold at the last bounded target, never a stale measured position.
                 if (live_output_ && armed_ && arm.sent) { publish_command(arm); arm.sent=false; }
@@ -507,13 +529,26 @@ private:
                     const double desired=data_->ctrl[axis.motor];
                     const double lower=std::min(model_->jnt_range[axis.joint*2],measured);
                     const double upper=std::max(model_->jnt_range[axis.joint*2+1],measured);
-                    if (!valid_command(desired, measured, lower, upper, i==7 ? 0.008 : 0.20)) {
-                        RCLCPP_WARN(get_logger(), "%s command rejected: target=%.6f measured=%.6f error=%.6f bounds=[%.6f, %.6f]",
-                            axis.name.c_str(), desired, measured, desired-measured, lower, upper);
+                    if (!valid_joint_target(desired, lower, upper) || !std::isfinite(measured)) {
+                        RCLCPP_WARN(get_logger(), "%s IK target invalid: target=%.6f measured=%.6f bounds=[%.6f, %.6f]",
+                            axis.name.c_str(), desired, measured, lower, upper);
                         valid=false;
+                        break;
                     }
-                    next[i]=limited_step(desired, arm.sent ? arm.last[i] : measured,
-                                         get_parameter("openarm.joint_speed_rad_s").as_double(), std::min(dt,0.02));
+                    if (!arm.sent) arm.velocity[i]=0;
+                    next[i]=smooth_bounded_step(desired, arm.sent ? arm.last[i] : measured,
+                        arm.velocity[i], get_parameter("openarm.joint_speed_rad_s").as_double(),
+                        get_parameter("hardware.joint_acceleration_rad_s2").as_double(),
+                        std::clamp(dt,0.0,0.02));
+                    const double bounded=std::clamp(next[i],lower,upper);
+                    if (bounded!=next[i]) arm.velocity[i]=0;
+                    next[i]=bounded;
+                    if (!valid_command(next[i],measured,lower,upper,0.20)) {
+                        RCLCPP_WARN(get_logger(), "%s motor following error: command=%.6f measured=%.6f error=%.6f",
+                            axis.name.c_str(),next[i],measured,next[i]-measured);
+                        valid=false;
+                        break;
+                    }
                 }
                 if (!valid) { disarm("command limits or following error"); continue; }
                 arm.last=next; arm.sent=true; publish_command(arm);
@@ -530,6 +565,7 @@ private:
     std::unique_ptr<BodyPosePublisher> scene_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr feedback_;
     rclcpp::TimerBase::SharedPtr timer_;
+    bool stream_mode_=false;
     bool homing_=false;
     double home_duration_=0, home_elapsed_=0, home_settled_=0;
     Clock::time_point home_lease_{}, home_began_{};

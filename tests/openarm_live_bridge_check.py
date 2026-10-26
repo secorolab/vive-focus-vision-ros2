@@ -13,9 +13,9 @@ from rclpy.qos import QoSProfile, DurabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from vive_vr_ros2.msg import TeleopStatus
 from geometry_msgs.msg import TransformStamped, PoseStamped
-from std_msgs.msg import Bool, Float32
+from std_msgs.msg import Bool, Float32, Float64MultiArray
 from std_srvs.srv import SetBool
-from trajectory_msgs.msg import JointTrajectory
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from controller_manager_msgs.srv import ListControllers
 from controller_manager_msgs.msg import ControllerState
 
@@ -28,23 +28,34 @@ trigger = node.create_publisher(Float32, '/vive_vr/teleop/right/gripper', 10)
 delta = node.create_publisher(TransformStamped, '/vive_vr/teleop/right/delta', qos_profile_sensor_data)
 poses = [node.create_publisher(PoseStamped, f'/vive_vr/{side}/pose', qos_profile_sensor_data) for side in ('right','left')]
 health = [node.create_publisher(Bool, f'/vive_vr/hardware/{side}/healthy', qos) for side in ('right','left')]
+stream_mode = "--stream" in sys.argv
 commands, left_commands, gripper_commands = [], [], []
-subs = [node.create_subscription(JointTrajectory, '/right_joint_trajectory_controller/joint_trajectory', commands.append, 10),
-        node.create_subscription(JointTrajectory, '/left_joint_trajectory_controller/joint_trajectory', left_commands.append, 10),
+def arm_subscription(side, output):
+    if not stream_mode:
+        return node.create_subscription(JointTrajectory, f'/{side}_joint_trajectory_controller/joint_trajectory', output.append, 10)
+    def receive(msg):
+        trajectory=JointTrajectory()
+        trajectory.joint_names=[f'openarm_{side}_joint{i}' for i in range(1,8)]
+        point=JointTrajectoryPoint(); point.positions=list(msg.data); trajectory.points=[point]
+        output.append(trajectory)
+    return node.create_subscription(Float64MultiArray, f'/{side}_forward_position_controller/commands', receive, 10)
+subs = [arm_subscription('right', commands), arm_subscription('left', left_commands),
         node.create_subscription(JointTrajectory, '/right_gripper_controller/joint_trajectory', gripper_commands.append, 10)]
+
 states=[]
 subs.append(node.create_subscription(TeleopStatus, '/vive_vr/teleop/right/status', lambda msg:states.append(msg.state), 10))
 controller_active = True
 
 def controller_list(request, response):
     response.controller = [ControllerState(name=f'{side}_{kind}', state='active' if controller_active else 'inactive')
-                           for side in ('right','left') for kind in ('joint_trajectory_controller','gripper_controller')]
+                           for side in ('right','left') for kind in (('forward_position_controller' if stream_mode else 'joint_trajectory_controller'),'gripper_controller')]
     return response
 service = node.create_service(ListControllers, '/controller_manager/list_controllers', controller_list)
 client = node.create_client(SetBool, '/openarm_hardware_preview/enable')
 model = str(Path(__file__).with_name('openarm_test_arm.xml'))
 proc = subprocess.Popen([sys.argv[1], '--ros-args', '-p', f'model:={model}',
                          '-p', 'hardware.enable_commands:=true',
+                         '-p', 'hardware.arm_command_mode:='+('stream' if stream_mode else 'trajectory'),
                          '-p', 'openarm.joint_speed_rad_s:=0.6',
                          '-p', 'openarm.max_linear_speed_m_s:=0.20',
                          '-p', 'openarm.max_angular_speed_rad_s:=1.0',
@@ -84,8 +95,8 @@ try:
     assert client.service_is_ready()
     f=client.call_async(SetBool.Request(data=True)); pump(0.1, healthy=False)
     assert f.done() and not f.result().success, 'armed without hardware health'
-    assert 'right driver reports a fault' in f.result().message
-    assert 'left driver reports a fault' in f.result().message
+    assert 'right motor driver is not ready' in f.result().message
+    assert 'left motor driver is not ready' in f.result().message
     pump(0.5); grip()
     assert not commands, 'commanded before explicit enable'
     arm(); pump(0.1)

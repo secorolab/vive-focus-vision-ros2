@@ -24,6 +24,8 @@ def setup(context):
     params.update({
         'hardware.enable_commands': arg('enable_commands') == 'true',
         'hardware.control_grippers': arg('control_grippers') == 'true',
+        'hardware.arm_command_mode': arg('arm_command_mode'),
+        'openarm.position_only': arg('position_only') == 'true',
         'model': arg('model'),
         'manifest': os.path.join(arg('scene_dir'), 'manifest.json'),
         'scene_url': f"http://{arg('host_ip')}:{arg('http_port')}/scene.glb",
@@ -47,6 +49,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('model'), DeclareLaunchArgument('scene_dir'),
         DeclareLaunchArgument('params_file'), DeclareLaunchArgument('host_ip'),
+        DeclareLaunchArgument('arm_command_mode', default_value='trajectory', choices=['trajectory','stream']),
+        DeclareLaunchArgument('position_only', default_value='false', choices=['true','false']),
         DeclareLaunchArgument('http_port', default_value='8000'),
         DeclareLaunchArgument('rosbridge_port', default_value='9090'),
         DeclareLaunchArgument('discovery_port', default_value='9091'),

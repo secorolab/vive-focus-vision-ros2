@@ -131,4 +131,46 @@ int main() {
     check(!valid_command(std::numeric_limits<double>::quiet_NaN(),0,-1,1,0.1));
     check(std::abs(limited_step(1,0,0.1,0.01)-0.001)<1e-12);
     check(std::abs(limited_step(-1,0,0.1,0.01)+0.001)<1e-12);
+    // Arm-scale ramp, target reversal, and restart from rest.
+    double q=0; velocity=0;
+    for (int i=0;i<20;++i) {
+        const double before=velocity;
+        q=smooth_bounded_step(1,q,velocity,0.6,2.0,0.01);
+        check(std::abs(velocity-before)<=0.020000001);
+        check(std::abs(velocity)<=0.600000001);
+    }
+    check(q>0 && q<0.1);
+    for (int i=0;i<500;++i) {
+        const double before=q;
+        q=smooth_bounded_step(-0.2,q,velocity,0.6,2.0,0.01);
+        check(std::abs(q-before)<=0.006000001);
+        check(q>=-0.200000001);
+    }
+    check(std::abs(q+0.2)<1e-9 && velocity==0);
+    velocity=0;
+    check(std::abs(smooth_bounded_step(1,q,velocity,0.6,2.0,0.01)-q-0.0002)<1e-9);
+
+    check(valid_joint_target(0.8,-1,1));
+    check(!valid_joint_target(1.1,-1,1));
+    check(!valid_joint_target(std::numeric_limits<double>::quiet_NaN(),-1,1));
+    check(!valid_joint_target(0,1,-1));
+    q=0; velocity=0;
+    bool stalled_motor_rejected=false;
+    for (int i=0;i<200;++i) {
+        const double next=smooth_bounded_step(0.8,q,velocity,0.6,2.0,0.01);
+        if (!valid_command(next,0,-1,1,0.20)) {
+            stalled_motor_rejected=true;
+            break;
+        }
+        q=next;
+    }
+    check(q>0 && q<=0.20 && stalled_motor_rejected);
+    q=0; velocity=0;
+    for (int i=0;i<300;++i) {
+        const double next=smooth_bounded_step(0.8,q,velocity,0.6,2.0,0.01);
+        check(valid_command(next,q,-1,1,0.20));
+        q=next;
+    }
+    check(std::abs(q-0.8)<1e-9);
+
 }

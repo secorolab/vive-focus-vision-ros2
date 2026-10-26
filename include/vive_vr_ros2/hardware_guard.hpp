@@ -48,6 +48,10 @@ inline bool valid_motor(const MotorObservation &m) {
            std::isfinite(m.age_s) && m.age_s >= 0 && m.age_s <= 0.1 &&
            std::isfinite(m.position) && std::isfinite(m.velocity);
 }
+inline bool valid_joint_target(double desired, double lower, double upper) {
+    return std::isfinite(desired) && std::isfinite(lower) && std::isfinite(upper) &&
+           lower <= upper && desired >= lower && desired <= upper;
+}
 inline bool valid_command(double desired, double measured, double lower, double upper,
                           double following_limit) {
     return std::isfinite(desired) && std::isfinite(measured) &&

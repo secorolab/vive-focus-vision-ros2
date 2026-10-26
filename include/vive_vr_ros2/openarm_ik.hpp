@@ -23,6 +23,9 @@ class OpenArmIk
         double tracking_tau;   // [s] time constant with which the tool closes its pose error
         double damping;        // least-squares damping at a singularity
         double posture_gain;   // [1/s] null-space pull towards mid-range
+        double elbow_gain = 0.0;
+        double elbow_target = 1.5707963267948966;
+        double wrist_limit_gain = 0.0;
     };
 
     /** What the tick achieved, for status rather than for control. */

@@ -16,6 +16,8 @@ def generate_launch_description():
         DeclareLaunchArgument('input_params_file', default_value=PathJoinSubstitution([LC('model_dir'),'teleop.yaml'])),
         DeclareLaunchArgument('hardware_params_file', default_value=os.path.join(share,'config','openarm_real.yaml')),
         DeclareLaunchArgument('control_grippers', default_value='true', choices=['true','false']),
+        DeclareLaunchArgument('arm_command_mode', default_value='trajectory', choices=['trajectory','stream']),
+        DeclareLaunchArgument('position_only', default_value='false', choices=['true','false']),
         DeclareLaunchArgument('http_port', default_value='8000'),
         DeclareLaunchArgument('rosbridge_port', default_value='9090'),
         DeclareLaunchArgument('discovery_port', default_value='9091'),
@@ -25,6 +27,6 @@ def generate_launch_description():
             launch_arguments={
                 'use_fake_hardware': 'false',
                 **{key: LC(key) for key in ('host_ip','model_dir','input_params_file',
-                    'hardware_params_file','control_grippers','http_port','rosbridge_port','discovery_port')},
+                    'hardware_params_file','control_grippers','position_only','arm_command_mode','http_port','rosbridge_port','discovery_port')},
             }.items()),
     ])

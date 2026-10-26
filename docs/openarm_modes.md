@@ -428,3 +428,70 @@ before stopping home/VR because torque may release. CAN setup still refuses an
 active robot; select and stop the robot command first. Jobs launched outside this
 panel must be stopped in their original terminals. Closing the panel leaves jobs
 running, and reopening does not take ownership of old jobs.
+
+### Real-arm motion smoothing
+
+Real teleoperation ramps joint-command velocity at up to 2 rad/s², keeping the
+0.6 rad/s speed cap. The tracking time constant is 0.10 seconds. Velocity state
+resets on disengagement or disarm, so re-engaging starts from rest. Joint limits,
+following-error checks and feedback watchdogs remain active; reaching a limit or
+stopping for safety can override the normal ramp. Homing and simulation tuning
+are unchanged. Restart the real-robot launch after installing this update.
+
+A valid IK target may be ahead of the measured arm without disarming it. The
+0.20 rad following-error check applies to the smoothed command actually sent,
+not the unsmoothed IK target. Invalid or out-of-range IK targets still stop
+control, and a motor that cannot follow the sent command still triggers a stop.
+
+### Position-only pickup and controller comparison
+
+Reopen `scripts/openarm_panel.py`. The position-only checkbox freezes tool
+orientation at each side-grip engagement while hand translation still controls
+the tool position. Controller tracking is still required. Wrist rotation no
+longer needs to match the tool for engagement in this mode; the existing
+controller-to-tool calibration still defines the translation frame. Turn the
+checkbox off before restarting the VR launch to restore full pose control.
+
+The command selector offers `trajectory` (existing 40 ms trajectories) and
+`stream` (experimental forward-position controller). Both retain the output
+velocity ramp, speed bounds, joint limits, feedback watchdogs and following-error
+checks. Stream removes the trajectory interpolation stage, not those checks.
+Grippers keep their existing trajectory controllers. If the bridge stops, the
+forward controller holds its last position target; it does not provide the
+trajectory controller's command timeout. Motor feedback faults remain guarded.
+
+For a comparison, start with position-only + trajectory. Make a small translation,
+stop, then reverse slowly. Disengage, stop the VR launch and its diagnostic job,
+select stream, restart, and repeat from the same pose. Do not switch controllers
+while armed. CLI equivalents append `position_only:=true` and
+`arm_command_mode:=trajectory` or `arm_command_mode:=stream` to the real launch.
+The CLI defaults preserve full-pose trajectory control; the panel starts with
+position-only selected and trajectory commands.
+
+Stream mode is for diagnostics: the episode recorder requires trajectory
+controller reference states, so dataset recording and recorder Y-return are
+unavailable during this comparison. The regular return-to-zero CLI can still
+use the bridge's return service. Standalone homing remains in trajectory mode.
+
+The panel starts a separate 10-minute motion diagnostic job by default. Logs are
+saved as `/tmp/openarm-motion-*.jsonl`. It sends no motion commands. Alternatively:
+
+```bash
+source /opt/ros/jazzy/setup.zsh
+python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_motion_record.py --mode trajectory
+```
+
+Each engaged-arm sample contains controller position, desired tool position and
+measured tool position in the robot world frame, plus desired/measured orientation,
+actual command mode and position-only mode. Positions are metres; quaternions are
+wxyz. These are latest-sample snapshots at one control tick, not interpolated
+simultaneous sensor measurements. Controller and joint-feedback source timestamps,
+receive age and snapshot time are included to reveal stale data and timing gaps.
+The raw controller position has its own engagement offset: compare displacement
+from the start of a gesture, not its absolute distance to the tool. These logs are
+separate from training episodes. Compare desired-versus-measured tool error and
+response delay before deciding which command mode to keep.
+
+### Pickup posture
+
+Real teleoperation gently prefers J4 near 90 degrees and steers J5–J7 away from the last 10 degrees of their model limits. These are null-space preferences, not locked joint angles: tool tracking and available reach determine the achievable posture. The V1 model limits still apply (J4: 0–140 degrees, J6: ±45 degrees, J7: ±90 degrees). They cannot guarantee avoidance of every limit or physical overshoot. Position-only mode holds the tool orientation captured on engagement; the wrist joints can still move to maintain it. Homing is unchanged.

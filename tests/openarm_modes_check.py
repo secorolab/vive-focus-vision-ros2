@@ -53,11 +53,13 @@ class Modes(unittest.TestCase):
         self.assertTrue(include.launch_description_source.location.endswith('openarm_live.launch.py'))
         self.assertEqual(args['use_fake_hardware'], 'false')
         self.assertEqual(args['control_grippers'], 'true')
+        self.assertEqual(args['arm_command_mode'], 'trajectory')
+        self.assertEqual(args['position_only'], 'false')
         self.assertTrue(args['hardware_params_file'].endswith('openarm_real.yaml'))
 
     def test_startup_allowances_keep_original_driver_limits(self):
         module=load('openarm_hardware')
-        for fake in ('false','true'):
+        for fake, mode in ((f,m) for f in ('false','true') for m in ('trajectory','stream')):
             root=ET.Element('robot')
             for side in ('right','left'):
                 control=ET.SubElement(root,'ros2_control')
@@ -70,13 +72,17 @@ class Modes(unittest.TestCase):
                     c=ET.SubElement(control,'joint',name=name)
                     ET.SubElement(c,'command_interface',name='position')
             context=LaunchContext()
-            context.launch_configurations.update(use_fake_hardware=fake,right_can_interface='can0',left_can_interface='can1')
+            context.launch_configurations.update(use_fake_hardware=fake,right_can_interface='can0',left_can_interface='can1',local_elbow_recovery='false',arm_command_mode=mode)
             with patch.object(module.xacro,'process_file') as xacro, \
                     patch.object(module.resource,'getrlimit',return_value=(50,50)), \
                     patch.object(module,'get_package_share_directory',return_value=str(ROOT)), \
                     patch.object(module,'Node') as node:
                 xacro.return_value.toxml.return_value=ET.tostring(root,encoding='unicode')
                 module.setup(context)
+            spawn_args=node.call_args_list[-1].kwargs['arguments']
+            expected='forward_position_controller' if mode=='stream' else 'joint_trajectory_controller'
+            self.assertIn('right_'+expected,spawn_args)
+            self.assertIn('left_'+expected,spawn_args)
             generated=ET.fromstring(node.call_args_list[0].kwargs['parameters'][0]['robot_description'])
             for side in ('right','left'):
                 limit=generated.find(f'joint[@name="openarm_{side}_joint4"]/limit')
@@ -102,6 +108,7 @@ class Modes(unittest.TestCase):
             path.write_text(yaml.safe_dump(config))
             context = LaunchContext()
             context.launch_configurations.update({
+                'arm_command_mode': 'trajectory', 'position_only': 'false',
                 'params_file': str(path), 'enable_commands': 'false', 'control_grippers': 'false',
                 'model': 'model.xml', 'scene_dir': directory, 'host_ip': '127.0.0.1',
                 'http_port': '8001', 'rosbridge_port': '9092', 'discovery_port': '0',

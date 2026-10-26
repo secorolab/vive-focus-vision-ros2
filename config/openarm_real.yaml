@@ -10,9 +10,13 @@ openarm_hardware_preview:
     openarm.max_rotation_rad: 3.141592653589793
     openarm.stop_at_motion_bounds: false
     openarm.joint_speed_rad_s: 0.6
+    hardware.joint_acceleration_rad_s2: 2.0
     openarm.max_linear_speed_m_s: 0.20
     openarm.max_angular_speed_rad_s: 1.0
     openarm.posture_gain_hz: 0.0
-    openarm.tracking_time_constant_s: 0.15
+    openarm.elbow_posture_gain_hz: 0.15
+    openarm.elbow_target_rad: 1.5707963267948966
+    openarm.wrist_limit_gain_hz: 0.3
+    openarm.tracking_time_constant_s: 0.10
     openarm.finger_speed_m_s: 0.015
     openarm.require_alignment: true

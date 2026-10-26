@@ -31,7 +31,14 @@ def robot_running():
 
 def main():
     root = tk.Tk(); root.title('OpenArm controls'); root.geometry('820x960')
-    frame = ttk.Frame(root, padding=20); frame.pack(fill='both', expand=True)
+    canvas=tk.Canvas(root,highlightthickness=0)
+    scrollbar=ttk.Scrollbar(root,orient='vertical',command=canvas.yview)
+    scrollbar.pack(side='right',fill='y'); canvas.pack(side='left',fill='both',expand=True)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    frame=ttk.Frame(canvas,padding=20)
+    content=canvas.create_window((0,0),window=frame,anchor='nw')
+    frame.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
+    canvas.bind('<Configure>',lambda e:canvas.itemconfigure(content,width=e.width))
     ttk.Label(frame, text='OpenArm controls', font=('',20,'bold')).pack(anchor='w')
     ttk.Label(frame, text='Home without a headset. Start VR separately when ready.').pack(anchor='w',pady=(5,12))
     ip = tk.StringVar(value='10.23.1.157')
@@ -49,6 +56,15 @@ def main():
     ttk.Checkbutton(frame,text='Also close both grippers during homing (empty grippers only)',variable=close).pack(anchor='w',pady=10)
     mirror=tk.BooleanVar(value=True)
     ttk.Checkbutton(frame,text='Open Vive one-eye scrcpy view with cameras (60 FPS mirror)',variable=mirror).pack(anchor='w')
+    position_only=tk.BooleanVar(value=True)
+    ttk.Checkbutton(frame,text='Position-only pickup: hold tool orientation at engagement',variable=position_only).pack(anchor='w')
+    mode=tk.StringVar(value='trajectory')
+    options=ttk.Frame(frame); options.pack(fill='x')
+    ttk.Label(options,text='Arm commands (restart VR launch to change): ').pack(side='left')
+    ttk.Combobox(options,textvariable=mode,values=('trajectory','stream'),state='readonly',width=12).pack(side='left')
+    diagnostics=tk.BooleanVar(value=True)
+    ttk.Checkbutton(frame,text='Record motion diagnostics for 10 minutes with VR launch',variable=diagnostics).pack(anchor='w')
+    ttk.Label(frame,text='Stream test: episode recording and recorder Y-return require trajectory mode.',wraplength=750).pack(anchor='w')
     status=tk.StringVar(); ttk.Label(frame,textvariable=status).pack(anchor='w',pady=5)
     terminals={}
     jobs={}
@@ -86,7 +102,11 @@ def main():
         import ipaddress
         try: host=str(ipaddress.IPv4Address(ip.get().strip()))
         except ValueError: messagebox.showerror('Invalid IP','Enter the laptop Wi-Fi IPv4 address.'); return
-        terminal('OpenArm VR','sudo prlimit --pid $$ --rtprio=50:50 && '+SETUP+'ros2 launch vive_vr_ros2 openarm_real.launch.py host_ip:='+host,True)
+        if robot_running():
+            messagebox.showerror('Robot already running','Stop the existing robot/home launch before changing modes.'); return
+        terminal('OpenArm VR','sudo prlimit --pid $$ --rtprio=50:50 && '+SETUP+'ros2 launch vive_vr_ros2 openarm_real.launch.py host_ip:='+host+' position_only:='+str(position_only.get()).lower()+' arm_command_mode:='+mode.get(),True)
+        if diagnostics.get():
+            terminal('Motion diagnostics',SETUP+py('openarm_motion_record.py')+' --mode '+mode.get())
     def open_mirror():
         if 'Vive mirror' not in jobs or job_state('Vive mirror')!='running':
             terminal('Vive mirror',py('openarm_mirror.py'))

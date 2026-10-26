@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Verify short trajectory and producer-loss hold on an ALREADY RUNNING mock driver."""
 import time
+import sys
+from std_msgs.msg import Float64MultiArray
 import rclpy
 from controller_manager_msgs.srv import ListHardwareComponents
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -16,7 +18,13 @@ assert f.done() and len(f.result().component)==2
 assert all(c.plugin_name=='mock_components/GenericSystem' for c in f.result().component), 'Refusing: not mock hardware'
 received=[]
 sub=node.create_subscription(JointState,'/joint_states',received.append,qos_profile_sensor_data)
-pub=node.create_publisher(JointTrajectory,'/right_joint_trajectory_controller/joint_trajectory',1)
+stream_mode='--stream' in sys.argv
+pub=node.create_publisher(Float64MultiArray if stream_mode else JointTrajectory,
+    '/right_forward_position_controller/commands' if stream_mode else '/right_joint_trajectory_controller/joint_trajectory',1)
+def send(msg):
+    if stream_mode:
+        output=Float64MultiArray();output.data=list(msg.points[0].positions);pub.publish(output)
+    else: pub.publish(msg)
 def pump(duration):
     end=time.monotonic()+duration
     while time.monotonic()<end: rclpy.spin_once(node,timeout_sec=0.01)
@@ -27,14 +35,14 @@ initial=dict(zip(received[-1].name,received[-1].position))
 msg=JointTrajectory(); msg.joint_names=names
 point=JointTrajectoryPoint(); point.positions=[initial[n] for n in names]; point.positions[0]+=0.01
 point.time_from_start.nanosec=100000000; msg.points=[point]
-pub.publish(msg); pump(0.8)
+send(msg); pump(0.8)
 q=dict(zip(received[-1].name,received[-1].position))
 assert abs(q[names[0]]-point.positions[0])<1e-4
 stream_start=q[names[0]]
 for i in range(30):
  point.positions[0]=stream_start+0.02*(i+1)/30
  point.time_from_start.nanosec=40000000
- pub.publish(msg); pump(0.02)
+ send(msg); pump(0.02)
 pump(0.15)
 q=dict(zip(received[-1].name,received[-1].position))
 assert abs(q[names[0]]-(stream_start+0.02))<0.002, 'streamed trajectory did not advance'

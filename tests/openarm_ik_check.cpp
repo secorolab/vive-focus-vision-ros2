@@ -96,7 +96,7 @@ vive_vr_ros2::OpenArmIk::Result drive(vive_vr_ros2::OpenArmIk &ik, mjModel *m, c
 int main(int argc, char **argv)
 {
     const std::string path =
-      argc == 2 ? argv[1] : std::string(TEST_SOURCE_DIR) + "/openarm_test_arm.xml";
+      argc >= 2 ? argv[1] : std::string(TEST_SOURCE_DIR) + "/openarm_test_arm.xml";
     char error[2048] = {};
     mjModel *m = mj_loadXML(path.c_str(), nullptr, error, sizeof(error));
     if (!m) {
@@ -111,6 +111,8 @@ int main(int argc, char **argv)
         reset(m, d);
         reset(m, scratch);
 
+        mjtNum target_p[3], target_q[4];
+        if (argc < 3 || std::string(argv[2]) != "--posture-only") {
         // Sync adopts feedback within the servo's 0.01-rad mechanical-stop margin.
         // The V1 home keyframe places joint 4 exactly at its lower stop.
         ik.sync(d);
@@ -128,7 +130,6 @@ int main(int argc, char **argv)
         elsewhere[1] += 0.30;
         elsewhere[3] += 0.25;
         elsewhere[5] += 0.20;
-        mjtNum target_p[3], target_q[4];
         tool_of(m, scratch, ik, elsewhere, target_p, target_q);
 
         auto reached = drive(ik, m, target_p, target_q, 300, "reachable");
@@ -189,8 +190,50 @@ int main(int argc, char **argv)
               "the arm did not extend towards an unreachable target");
         check(last.limited, "an unreachable target should report the arm as limited");
 
-        std::printf("PASS: convergence, velocity and limit bounds, MuJoCo agreement, actuator "
-                    "tracking, null-space posture, singularity, out-of-reach settling\n");
+        }
+        auto pickup = gains();
+        pickup.posture_gain = 0;
+        pickup.elbow_gain = 0.15;
+        pickup.wrist_limit_gain = 0.3;
+        auto pickup_cost = [&](const std::array<double, 7> &q) {
+            const double target = std::clamp(pickup.elbow_target,
+                m->jnt_range[2 * ik.joints[3]] + 0.01,
+                m->jnt_range[2 * ik.joints[3] + 1] - 0.01);
+            double cost = 0.5 * pickup.elbow_gain * std::pow(q[3] - target, 2);
+            for (int i = 4; i < 7; ++i) {
+                const double lo = m->jnt_range[2 * ik.joints[i]] + 0.01;
+                const double hi = m->jnt_range[2 * ik.joints[i] + 1] - 0.01;
+                const double zone = std::min(0.17453292519943295, (hi - lo) / 2);
+                const double gap = std::max({0.0, lo + zone - q[i], q[i] - hi + zone});
+                cost += 0.5 * pickup.wrist_limit_gain * gap * gap / zone;
+            }
+            return cost;
+        };
+        double improvement = 0;
+        for (int sample = 0; sample < 20; ++sample) {
+            for (int i = 0; i < 7; ++i) {
+                const double lo = m->jnt_range[2 * ik.joints[i]] + 0.01;
+                const double hi = m->jnt_range[2 * ik.joints[i] + 1] - 0.01;
+                d->qpos[ik.qpos[i]] = lo + (hi - lo) *
+                    (0.5 + 0.3 * std::sin(sample + i * 1.7));
+            }
+            d->qpos[ik.qpos[6]] = m->jnt_range[2 * ik.joints[6] + 1] - 0.02;
+            ik.sync(d);
+            const auto before = ik.command();
+            tool_of(m, scratch, ik, before, target_p, target_q);
+            const auto result = ik.step(target_p, target_q, 0.001, pickup);
+            const double delta = pickup_cost(before) - pickup_cost(ik.command());
+            check(delta >= -1e-8, "pickup posture increased its objective");
+            improvement += delta;
+            check(result.position_error < 1e-5 && result.rotation_error < 1e-5,
+                  "pickup posture disturbed the held tool pose");
+            for (int i = 0; i < 7; ++i)
+                check(std::abs(ik.command()[i] - before[i]) <= pickup.joint_speed * 0.001 + 1e-9,
+                      "pickup posture exceeded joint speed");
+        }
+        check(improvement > 1e-6, "pickup posture had no effect");
+
+        std::printf("PASS: requested IK checks and pickup posture checks\n");
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
         status = 1;

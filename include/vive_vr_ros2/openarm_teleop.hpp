@@ -9,6 +9,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <vive_vr_ros2/msg/teleop_status.hpp>
 #include "vive_vr_ros2/openarm_ik.hpp"
+#include <std_msgs/msg/string.hpp>
 
 namespace vive_vr_ros2 {
 
@@ -20,6 +21,7 @@ class OpenArmTeleop
   public:
     OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data, const std::string &arm = "right");
     void tick(double dt);
+    void feedback_stamp(int64_t value) { feedback_stamp_ns_=value; }
     void reset();
     // External hardware feedback gate; inhibition also requires a new grip cycle.
     void inhibit(bool value);
@@ -60,6 +62,9 @@ class OpenArmTeleop
     bool active_ = false;
     bool inhibited_ = false;
     bool stop_at_motion_bounds_ = true;
+    bool position_only_ = false;
+    int64_t feedback_stamp_ns_=0, controller_stamp_ns_=0;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr diagnostics_pub_;
     bool have_target_ = false;
     bool have_trigger_ = false;
     double last_trigger_ = 0.0;

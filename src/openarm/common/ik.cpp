@@ -177,6 +177,22 @@ OpenArmIk::Result OpenArmIk::step(const mjtNum *target_p, const mjtNum *target_q
         posture(i) = gains.posture_gain * (state.middle[i] - q(i)) / state.half_range[i];
     }
     qdot += (Eigen::Matrix<double, 7, 7>::Identity() - pseudo * J) * posture;
+    posture.setZero();
+    posture(3) += gains.elbow_gain *
+      (std::clamp(gains.elbow_target, state.lower[3], state.upper[3]) - q(3));
+    for (int i = 4; i < 7; ++i) {
+        const double zone = std::min(0.17453292519943295, state.half_range[i]);
+        const double lower_gap = std::max(0.0, state.lower[i] + zone - q(i));
+        const double upper_gap = std::max(0.0, q(i) - (state.upper[i] - zone));
+        posture(i) += gains.wrist_limit_gain * (lower_gap - upper_gap) / zone;
+    }
+    // Use the true null space so posture does not leak into the task through damping.
+    Eigen::Matrix<double, 7, 7> null_space = Eigen::Matrix<double, 7, 7>::Identity();
+    for (Eigen::Index i = 0; i < sigma.size(); ++i) {
+        if (sigma(i) > 1e-6)
+            null_space -= svd.matrixV().col(i) * svd.matrixV().col(i).transpose();
+    }
+    qdot += null_space * posture;
 
     if (!qdot.allFinite()) return out;
 

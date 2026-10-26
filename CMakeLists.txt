@@ -192,6 +192,9 @@ if(BUILD_TESTING AND (BUILD_OPENARM_SIM OR BUILD_OPENARM_VR_BRIDGE))
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_gripper_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
     add_test(NAME openarm_live_bridge_check
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_live_bridge_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
+    add_test(NAME openarm_stream_bridge_check
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_live_bridge_check.py $<TARGET_FILE:openarm_hardware_preview_node> --stream)
+    set_tests_properties(openarm_live_bridge_check openarm_stream_bridge_check PROPERTIES RESOURCE_LOCK openarm_live_domain)
     add_test(NAME openarm_hardware_preview_check
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_hardware_preview_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
   endif()

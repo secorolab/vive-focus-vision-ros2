@@ -63,8 +63,9 @@ def setup(context):
                  get_package_share_directory('vive_vr_ros2'), 'config',
                  'openarm_hardware_controllers.yaml')], output='screen'),
         Node(package='controller_manager', executable='spawner', arguments=[
-            'joint_state_broadcaster', 'left_joint_trajectory_controller',
-            'right_joint_trajectory_controller', 'left_gripper_controller',
+            'joint_state_broadcaster',
+            'left_forward_position_controller' if arg('arm_command_mode')=='stream' else 'left_joint_trajectory_controller',
+            'right_forward_position_controller' if arg('arm_command_mode')=='stream' else 'right_joint_trajectory_controller', 'left_gripper_controller',
             'right_gripper_controller', '--controller-manager', '/controller_manager'],
              output='screen'),
     ]
@@ -72,6 +73,7 @@ def setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('arm_command_mode', default_value='trajectory', choices=['trajectory','stream']),
         DeclareLaunchArgument('use_fake_hardware', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('local_elbow_recovery', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('right_can_interface', default_value='can0'),

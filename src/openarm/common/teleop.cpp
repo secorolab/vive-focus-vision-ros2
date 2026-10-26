@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <sstream>
+#include <iomanip>
 
 namespace vive_vr_ros2 {
 namespace {
@@ -35,6 +37,7 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data, c
     : arm_(arm), node_(node), model_(model), data_(data), ik_(model, arm)
 {
     const std::string pairing_prefix = arm == "right" ? "openarm." : "openarm.left.";
+    position_only_ = parameter<bool>(node, "openarm.position_only", false);
     scale_ = parameter<double>(node, "openarm.translation_scale", 0.25);
     radius_ = parameter<double>(node, "openarm.max_translation_m", 0.15);
     timeout_ = parameter<double>(node, "openarm.timeout_s", 0.25);
@@ -52,6 +55,14 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data, c
     gains_.tracking_tau = parameter<double>(node, "openarm.tracking_time_constant_s", 0.12);
     gains_.damping = parameter<double>(node, "openarm.damping", 0.05);
     gains_.posture_gain = parameter<double>(node, "openarm.posture_gain_hz", 0.5);
+    gains_.elbow_gain = parameter<double>(node, "openarm.elbow_posture_gain_hz", 0.0);
+    gains_.elbow_target = parameter<double>(node, "openarm.elbow_target_rad", 1.5707963267948966);
+    gains_.wrist_limit_gain = parameter<double>(node, "openarm.wrist_limit_gain_hz", 0.0);
+    if (!std::isfinite(gains_.elbow_target)) throw std::runtime_error("Invalid elbow target");
+    for (double gain : {gains_.elbow_gain, gains_.wrist_limit_gain}) {
+        if (!std::isfinite(gain) || gain < 0 || gain > 1.0)
+            throw std::runtime_error("Posture gains must be between zero and one");
+    }
     const auto pairing = parameter<std::vector<double>>(node,
       pairing_prefix + "controller_to_tool_xyzw", {0.0, 0.0, 0.0, 1.0});
     if (pairing.size() != 4) throw std::runtime_error("Invalid controller/tool pairing");
@@ -97,6 +108,7 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data, c
     controller_sub_ = node.create_subscription<geometry_msgs::msg::PoseStamped>(
       node.get_parameter("out_ns").as_string() + "/" + arm_ + "/pose", rclcpp::SensorDataQoS().keep_last(1),
       [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) { controller(*msg); });
+    diagnostics_pub_ = node.create_publisher<std_msgs::msg::String>(ns + "/motion_diagnostics", rclcpp::SensorDataQoS().keep_last(1));
     reset();
     RCLCPP_INFO(node.get_logger(), "%s-arm target generator: side grip enables motion", arm_.c_str());
 }
@@ -119,6 +131,7 @@ void OpenArmTeleop::controller(const geometry_msgs::msg::PoseStamped &msg)
     mju_normalize4(quat);
     mju_copy4(controller_q_, quat);
     mju_copy3(controller_p_, point);
+    controller_stamp_ns_=rclcpp::Time(msg.header.stamp).nanoseconds();
     controller_received_ = Clock::now();
     have_controller_ = true;
 }
@@ -132,7 +145,7 @@ OpenArmTeleop::Match OpenArmTeleop::match()
     mju_mulQuat(mapped, controller_q_, pairing_q_);
     const double dot = mju_dot(mapped, data_->xquat + 4 * ik_.tcp, 4);
     mju_sub3(gap, controller_p_, data_->xpos + 3 * ik_.tcp);
-    out.rotation = 2 * std::acos(std::clamp(std::abs(dot), 0.0, 1.0));
+    out.rotation = position_only_ ? 0.0 : 2 * std::acos(std::clamp(std::abs(dot), 0.0, 1.0));
     out.position = mju_norm3(gap);
     out.live = true;
     return out;
@@ -236,7 +249,7 @@ void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
     /* The first delta of a press is against a reference captured at it: anything but a
      * near-identity one belongs to the previous press. */
     const bool over_distance = stop_at_motion_bounds_ && mju_norm3(p) > radius_;
-    const bool over_rotation = stop_at_motion_bounds_ && angle > rotation_limit_;
+    const bool over_rotation = !position_only_ && stop_at_motion_bounds_ && angle > rotation_limit_;
     if (over_distance || over_rotation ||
         (!have_target_ && (mju_norm3(p) > 0.025 || angle > 0.15))) {
         const char *reason = over_distance ? "translation_limit" :
@@ -259,7 +272,8 @@ void OpenArmTeleop::delta(const geometry_msgs::msg::TransformStamped &msg)
     }
     mju_rotVecQuat(target_p_, p, anchor_q_);
     mju_addTo3(target_p_, anchor_p_);
-    mju_mulQuat(target_q_, anchor_q_, quat);
+    if (position_only_) mju_copy4(target_q_, anchor_q_);
+    else mju_mulQuat(target_q_, anchor_q_, quat);
     // A moving hand defines a new goal: errors against an older goal cannot
     // establish lack of progress toward this one. Accumulate movement against
     // a reference so slow motion resets the window too, but tiny jitter does not.
@@ -321,6 +335,29 @@ void OpenArmTeleop::tick(double dt)
     pose.pose.orientation.y = q[2];
     pose.pose.orientation.z = q[3];
     ee_pub_->publish(pose);
+    if (active_ && have_target_ && have_controller_ && diagnostics_pub_->get_subscription_count()>0) {
+        std::ostringstream out;
+        out << std::setprecision(15) << "{\"stamp_ns\":" << node_.now().nanoseconds()
+            << ",\"controller_stamp_ns\":" << controller_stamp_ns_
+            << ",\"feedback_stamp_ns\":" << feedback_stamp_ns_
+            << ",\"controller_age_s\":" << age(controller_received_)
+            << ",\"position_only\":" << (position_only_ ? "true" : "false")
+            << ",\"command_mode\":\"" << (node_.has_parameter("hardware.arm_command_mode") ?
+                node_.get_parameter("hardware.arm_command_mode").as_string() : "simulation") << "\"";
+        auto vector = [&](const char *name, const mjtNum *values, int size) {
+            out << ",\"" << name << "\":[";
+            for (int i=0;i<size;++i) { if(i) out << ','; out << values[i]; }
+            out << ']';
+        };
+        vector("controller_position",controller_p_,3);
+        vector("desired_position",target_p_,3);
+        vector("measured_position",p,3);
+        vector("desired_quaternion_wxyz",target_q_,4);
+        vector("measured_quaternion_wxyz",q,4);
+        out << '}';
+        std_msgs::msg::String sample; sample.data=out.str(); diagnostics_pub_->publish(sample);
+    }
+
     const Match m = match();
     if (m.live && alignment_configured_) {
         // controller * pairing = tool, so the desired controller is tool * inverse(pairing).

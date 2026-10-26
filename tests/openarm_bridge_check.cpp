@@ -172,6 +172,42 @@ int main(int argc, char** argv) {
         check(state()=="engaged","90 degree target reported as unreachable while slewing");
         rotation(1.9);check(state()=="release_grip","excessive rotation accepted");
         check(report.stop_reason=="rotation_limit","rotation stop reason missing");
+
+        rclcpp::NodeOptions pickup_options;
+        pickup_options.parameter_overrides({rclcpp::Parameter("openarm.position_only",true),
+            rclcpp::Parameter("openarm.alignment_configured",true),
+            rclcpp::Parameter("openarm.posture_gain_hz",0.0)});
+        auto pickup_node=std::make_shared<rclcpp::Node>("pickup_test",pickup_options);
+        pickup_node->declare_parameter<std::string>("out_ns","/pickup_test");
+        vive_vr_ros2::OpenArmTeleop pickup(*pickup_node,m,d);
+        auto pc=pickup_node->create_publisher<geometry_msgs::msg::PoseStamped>("/pickup_test/right/pose",rclcpp::SensorDataQoS());
+        auto pg=pickup_node->create_publisher<std_msgs::msg::Bool>("/pickup_test/teleop/right/clutch",rclcpp::QoS(1).transient_local());
+        auto pd=pickup_node->create_publisher<geometry_msgs::msg::TransformStamped>("/pickup_test/teleop/right/delta",rclcpp::SensorDataQoS());
+        std::string diagnostic;
+        auto ds=pickup_node->create_subscription<std_msgs::msg::String>("/pickup_test/teleop/right/motion_diagnostics",rclcpp::SensorDataQoS(),
+            [&](std_msgs::msg::String::SharedPtr msg){diagnostic=msg->data;});
+        auto ppump=[&]{for(int i=0;i<10;++i){rclcpp::spin_some(pickup_node);std::this_thread::sleep_for(std::chrono::milliseconds(2));}};
+        for(int i=0;i<100 && (pc->get_subscription_count()==0 || pg->get_subscription_count()==0 || pd->get_subscription_count()==0);++i)ppump();
+        geometry_msgs::msg::PoseStamped hand;
+        hand.header.frame_id="world";hand.header.stamp=pickup_node->now(); hand.pose.orientation.x=1;hand.pose.orientation.w=0;
+        pc->publish(hand);ppump();
+        std_msgs::msg::Bool grip;grip.data=false;pg->publish(grip);ppump();
+        grip.data=true;pg->publish(grip);ppump();
+        geometry_msgs::msg::TransformStamped change;
+        change.header.frame_id="right_tool_ref";change.child_frame_id="right_tool_cmd";
+        change.transform.rotation.w=1;pd->publish(change);ppump();pickup.tick(0.01);
+        check(pickup.commanding(),"pickup did not engage with arbitrary controller orientation");
+        std::vector<double> pickup_start(d->ctrl,d->ctrl+m->nu);
+        change.transform.rotation.w=0;change.transform.rotation.x=1;
+        for(int i=0;i<5;++i){pd->publish(change);ppump();pickup.tick(0.01);}
+        check(pickup.commanding(),"pickup stopped on wrist rotation");
+        for(int i=0;i<7;++i)check(std::abs(d->ctrl[i]-pickup_start[i])<1e-6,"pickup followed wrist rotation");
+        change.transform.translation.x=0.02;
+        for(int i=0;i<10;++i){pd->publish(change);ppump();pickup.tick(0.01);}
+        double travel=0;for(int i=0;i<7;++i)travel+=std::abs(d->ctrl[i]-pickup_start[i]);
+        check(travel>1e-5,"pickup ignored translation");
+        ppump();check(diagnostic.find("controller_stamp_ns")!=std::string::npos,"diagnostic source timestamps absent");
+        grip.data=false;pg->publish(grip);ppump();check(!pickup.commanding(),"pickup did not disengage");
         std::cout<<"PASS: alignment readiness, grip gating, stale tracking, 90-degree rotation and rotation bound\n";
         std::cout<<"PASS: release gating, delta motion, gripper, left hold, release, reclutch, timeout, stale and NaN rejection, reset\n";
     }catch(const std::exception&e){std::cerr<<e.what()<<'\n';result=1;}
