@@ -2,7 +2,8 @@
 """Measure a controller/tool orientation pairing in the shared VR scene.
 
 Run with grip released, robot at home, controller held to represent the tool.
-Writes configuration only. Never commands the robot. Restart teleop afterwards.
+Disarms real teleoperation, saves calibration, and applies it to the running nodes.
+Never commands robot motion. Enable VR explicitly after calibration.
 """
 import argparse
 import json
@@ -43,6 +44,50 @@ def degrees_rpy(q):
     return [math.degrees(math.atan2(2*(w*x+y*z), 1-2*(x*x+y*y))),
             math.degrees(math.asin(max(-1.,min(1.,sin_pitch)))),
             math.degrees(math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z)))]
+
+
+def call_service(node, service_type, name, request, timeout=4.):
+    import rclpy
+    client = node.create_client(service_type, name)
+    try:
+        if not client.wait_for_service(timeout_sec=timeout):
+            raise RuntimeError(f'{name} unavailable; start the updated robot launch first')
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+        if not future.done():
+            raise RuntimeError(f'{name} did not respond; keep VR disabled')
+        return future.result()
+    finally:
+        node.destroy_client(client)
+
+
+def disarm(node):
+    from std_srvs.srv import SetBool
+    response = call_service(node, SetBool, '/openarm_hardware_preview/enable',
+                            SetBool.Request(data=False))
+    if not response.success:
+        raise RuntimeError('Cannot disable VR: ' + response.message)
+
+
+def apply_alignment(node, mode, arm, q, rpy):
+    from rcl_interfaces.srv import SetParametersAtomically
+    from rclpy.parameter import Parameter
+    target = '/openarm_hardware_preview' if mode == 'real' else '/vive_scene'
+    prefix = 'openarm.' if arm == 'right' else 'openarm.left.'
+
+    def update(name, values):
+        request = SetParametersAtomically.Request(parameters=[
+            Parameter(key, value=value).to_parameter_msg() for key, value in values.items()])
+        response = call_service(node, SetParametersAtomically,
+                                name + '/set_parameters_atomically', request)
+        if not response.result.successful:
+            raise RuntimeError(name + ': ' + response.result.reason)
+
+    # Keep engagement blocked if either node rejects or times out during the update.
+    update(target, {prefix + 'alignment_configured': False, 'openarm.require_alignment': True})
+    update('/vive_teleop', {f'teleop.{arm}.tool_from_controller_rpy': list(rpy)})
+    update(target, {prefix + 'controller_to_tool_xyzw': list(q),
+                    prefix + 'alignment_configured': True})
 
 
 def main():
@@ -102,6 +147,8 @@ def main():
     ready = time.monotonic() + args.delay
     deadline = ready + args.timeout
     try:
+        if args.mode == 'real':
+            disarm(node)
         while time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.02)
             if time.monotonic() < ready:
@@ -157,13 +204,25 @@ def main():
                 params['openarm.require_alignment'] = True
                 config_path.write_text(yaml.safe_dump(config))
                 print('Saved tool_from_controller_rpy (degrees):', [round(v,3) for v in rpy])
-                print('Restart the robot launch to apply. Keep the same controller grip for later use.')
+                try:
+                    if args.mode == 'real':
+                        disarm(node)
+                    apply_alignment(node, args.mode, args.arm, q, rpy)
+                except RuntimeError as error:
+                    message = f'Saved, but could not apply live: {error}. Keep VR disabled; retry calibration.'
+                    print(message, flush=True)
+                    report(message)
+                    return 1
+                print('Applied live. No restart needed. Release side grips, then enable VR when ready.')
                 until = time.monotonic()+3
                 while time.monotonic() < until:
-                    report('Saved! Restart robot launch to apply wrist alignment.', 1.)
+                    report('Alignment applied! No restart needed. Release side grips, then enable VR.', 1.)
                     rclpy.spin_once(node, timeout_sec=0.05)
                 return 0
         print('Calibration not saved. Last condition:', last_report[1])
+        return 1
+    except RuntimeError as error:
+        print(f'Calibration stopped: {error}', flush=True)
         return 1
     finally:
         node.destroy_node()

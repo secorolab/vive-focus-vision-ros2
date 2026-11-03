@@ -186,6 +186,8 @@ if(BUILD_TESTING AND (BUILD_OPENARM_SIM OR BUILD_OPENARM_VR_BRIDGE))
   target_include_directories(hardware_guard_check PRIVATE include)
   add_test(NAME hardware_guard_check COMMAND hardware_guard_check)
   if(BUILD_OPENARM_VR_BRIDGE)
+    add_test(NAME openarm_home_rearm_check
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_home_rearm_check.py)
     add_test(NAME openarm_return_to_zero_check
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_return_to_zero_check.py $<TARGET_FILE:openarm_hardware_preview_node>)
     add_test(NAME openarm_gripper_check
@@ -209,8 +211,15 @@ if(BUILD_TESTING AND (BUILD_OPENARM_SIM OR BUILD_OPENARM_VR_BRIDGE))
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/openarm_alignment_capture_check.py left)
   add_test(NAME teleop_toggle_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/teleop_freshness_check.py $<TARGET_FILE:teleop_node> --toggle)
+  add_test(NAME teleop_ready_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/teleop_freshness_check.py $<TARGET_FILE:teleop_node> --toggle --ready)
   add_test(NAME teleop_freshness_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/teleop_freshness_check.py $<TARGET_FILE:teleop_node>)
+  add_test(NAME teleop_alignment_reload_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/teleop_alignment_reload_check.py $<TARGET_FILE:teleop_node>)
+  set_tests_properties(teleop_alignment_reload_check teleop_toggle_check teleop_ready_check teleop_freshness_check PROPERTIES
+    RESOURCE_LOCK teleop_test_domain
+    ENVIRONMENT "ROS_DOMAIN_ID=197;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST")
   # These run against tests/openarm_test_arm.xml; OPENARM_TEST_MODEL adds a run on the real robot.
   set(OPENARM_TEST_MODEL "" CACHE FILEPATH "Generated OpenArm controlled MJCF for integration tests")
   foreach(check openarm_ik_check openarm_bridge_check openarm_dual_check)

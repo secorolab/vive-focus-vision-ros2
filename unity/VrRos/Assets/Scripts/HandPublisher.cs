@@ -45,10 +45,12 @@ namespace VrRos
         private readonly List<XRHandSubsystem> _subsystems = new List<XRHandSubsystem>();
         private XRHandSubsystem _hands;
         private float _nextPublish;
+        private SceneLoader _scene;
         private bool _advertised;
 
         private void Start()
         {
+            _scene = FindFirstObjectByType<SceneLoader>();
             if (config != null && config.Active != null)
             {
                 rawNs = config.Active.rawNs;
@@ -117,6 +119,7 @@ namespace VrRos
                         p = rig.TransformPoint(p);
                         q = rig.rotation * q;
                     }
+                    FrameConv.WorldToScene(_scene != null ? _scene.transform : null, ref p, ref q);
                 }
 
                 Vector3 rp = FrameConv.UnityToRos(p);

@@ -36,12 +36,12 @@ usual enable service when ready to teleoperate. Park the unused left arm.
 
 The VR status appears when `--record-root` is enabled:
 
-1. Wait for **Ready**. Release A/B/X before issuing the first command.
-2. Press **A** (right controller) to start. Perform the task with the existing
-   rear-trigger arm toggle and joystick gripper controls.
-3. Press **A** again to stop recording. This does **not** stop robot motion:
-   disengage arm following using its usual rear-trigger toggle.
-4. Press **B** to save a successful demonstration, or hold **X** for 1.2 seconds
+1. Wait for **Ready**. Release A/B/X/Y before issuing the first command.
+2. Press **X** (left controller) to start. Perform the task with the existing
+   arm-following and gripper controls.
+3. Press **X** again to stop recording. This does **not** stop robot motion:
+   disengage arm following using its usual toggle.
+4. Press **Y** to save a successful demonstration, or hold **A** for 1.2 seconds
    to discard the unsaved attempt. Discard is only available after stopping.
 5. Wait for saving to finish before starting the next attempt. Reset the cube
    and arm between episodes, not while recording.
@@ -90,24 +90,29 @@ The session folder contains:
 - `pending/`: unsaved or interrupted attempts, excluded from training.
 - `episodes/`: accepted raw JPEGs and timestamped JSONL records.
 - `dataset/`: symlink to the latest complete local LeRobot v3 dataset.
-- `exports/`: generated video/Parquet/metadata snapshot.
+- `exports/`: separately named video/Parquet/metadata snapshots; older exports are retained.
 - `export.log`: most recent conversion output.
 
-For this initial 3–5-episode workflow, Save rebuilds the dataset from all accepted
-raw episodes, then switches the dataset symlink atomically. This is deliberately
-simple and recoverable but grows slower as the session grows. Do not train or
-read the dataset concurrently while saving another version.
+**Y saves the raw episode locally and immediately returns to idle.** You can press
+X to start the next episode, or hold B to return to zero. Saving does not run
+video conversion and does not rebuild the training dataset.
 
-If export fails, the raw episode remains accepted, and the previous good dataset
-is retained. **B retries export**. A recording process crash leaves its pending
-attempt on disk; it is not automatically accepted on restart. Relaunch with the
-same arguments to continue the session. Changed task/schema requires a new folder.
-To regenerate the dataset manually:
+After the recording session, use **Export saved episodes to LeRobot** in the
+laptop panel. Export rebuilds all accepted episodes and atomically replaces the
+`dataset` symlink to point to the newest complete version. Older export folders
+are retained, and raw episodes are never replaced by export. Run it after recording to avoid CPU and disk contention.
+Do not train from the dataset while replacing it. If conversion fails or is
+interrupted, the raw saved episodes and previous complete dataset remain safe;
+run Export again. Pending attempts are never included.
+
+A recording process crash leaves its pending attempt on disk; it is not
+automatically accepted on restart. Relaunch with the same arguments to continue.
+Changed task/schema requires a new folder. To export manually:
 
 ```zsh
 ~/robot_ai/lerobot_env/bin/python \
   ~/Desktop/vive-focus-vision-ros2/scripts/openarm_export_lerobot.py \
-  ~/robot_ai/episodes/right_cube_v1
+  ~/robot_ai/episodes/right_cube_30hz
 ```
 
 Record 3–5 trials first, then inspect decoded videos, state/action values and the
@@ -116,20 +121,22 @@ and camera placement still need a real user demonstration check. Nothing here
 trains or deploys a policy.
 
 
-## Y: discard and return to zero
+## B: discard and return to zero
 
-While WORLD LOCKED, hold **Y (left secondary button) for two seconds**. A countdown
+While WORLD LOCKED, hold **B (right secondary button) for two seconds**. A countdown
 warning appears. Release before two seconds to abort. After the hold, the unsaved
 attempt is stopped and discarded, then **both arms** return to existing calibrated
 zero at the existing bounded return speed. Grippers are unchanged. Saved episodes
 are never discarded. This is not encoder recalibration.
 
-Keep the direct return path clear. **A cancels an active return**. Missing VR input
+Keep the direct return path clear. **X cancels an active return**. Missing VR input
 or recorder status polling cancels the return; the existing driver's feedback and
 fault checks also remain active. No new episode can start during the return.
-After completion, VR remains disarmed: use the usual enable command again before
-teleoperating. If return fails, inspect `return_to_zero.log`; hold X to acknowledge
-or retry Y after fixing the cause. A failed return does not restore a discarded
+After successful completion, release all controller buttons: VR arms and grippers
+are enabled automatically with fresh tracking and a locked world. Arm following
+still requires a new side-grip press on green. If automatic enable is blocked,
+the UI explains that manual Enable VR is needed. If return fails, inspect `return_to_zero.log`; hold A to acknowledge
+or retry B after fixing the cause. A failed return does not restore a discarded
 attempt. Y's simulation-reset action is suppressed while the recorder UI is active.
 
 
@@ -172,3 +179,25 @@ and measured camera FPS. Validate a short recorded episode before collecting a
 larger dataset: repeated images, stale feedback and synchronization failures still
 stop recording. A short benchmark does not establish stability during extended
 teleoperation. Future policy target timing must match the dataset rate.
+
+Video export automatically tests NVIDIA H.264 NVENC and uses it when available.
+It falls back to CPU H.264 if the GPU encoder cannot initialize. To require the GPU,
+pass `--encoder gpu` to `scripts/openarm_export_lerobot.py`; `--encoder cpu` forces
+software encoding. Raw episode saving stays separate and does not encode video.
+
+After saving with Y, hold right-controller B for two seconds to return both arms
+to zero, then release B. X cancels return. Unsaved attempts are discarded by this
+shortcut; saved episodes remain. During return, VR arm/gripper controls are locked
+and grippers keep their opening. Return uses a smooth profile capped at 0.10 rad/s
+and keeps holding at zero. After a successful B-button return, VR is enabled once
+both controllers are freshly tracked, the world is locked, and buttons are released.
+Press side grip on green to follow again; grippers require a fresh trigger press.
+Failed/cancelled returns remain disarmed. If automatic enable is blocked for ten
+seconds, use Enable VR manually after resolving the reported condition.
+Standalone homing remains disarmed by default.
+
+The laptop panel scrolls with the mouse wheel or its right-hand scrollbar.
+Its export counters separate waiting episodes from exported episodes and total
+saved recordings. Exporting retains the raw recordings. **Export only newest
+saved episode** writes a separate `dataset-latest` link; the full `dataset` link
+is unchanged. Successful exports record their source episode IDs for these counts.

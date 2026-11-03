@@ -172,6 +172,27 @@ int main(int argc, char** argv) {
         check(state()=="engaged","90 degree target reported as unreachable while slewing");
         rotation(1.9);check(state()=="release_grip","excessive rotation accepted");
         check(report.stop_reason=="rotation_limit","rotation stop reason missing");
+        aligned_node->declare_parameter<bool>("hardware.enable_commands",true);
+        auto pairing_parameter = rclcpp::Parameter("openarm.controller_to_tool_xyzw",
+                                                   std::vector<double>{1.,0.,0.,0.});
+        check(!aligned_node->set_parameters_atomically({pairing_parameter}).successful,
+              "live armed calibration was accepted");
+        gated.inhibit(true);
+        check(!aligned_node->set_parameters_atomically({rclcpp::Parameter(
+            "openarm.controller_to_tool_xyzw", std::vector<double>{0.,0.,0.,0.})}).successful,
+            "invalid pairing was accepted");
+        check(aligned_node->set_parameters_atomically({pairing_parameter}).successful,
+              "disarmed live calibration rejected");
+        gated.inhibit(false);button(false);pose(true,false);
+        check(state()=="ready", "cached alignment did not update live");
+        const auto &new_q=alignment_pose.pose.orientation;
+        const mjtNum new_guide[4]={new_q.w,new_q.x,new_q.y,new_q.z};
+        check(std::abs(mju_dot(new_guide,d->xquat+4*tcp,4))<0.01,
+              "alignment guide did not update live");
+        button(true);
+        check(!aligned_node->set_parameters_atomically({pairing_parameter}).successful,
+              "engaged calibration was accepted");
+        std::cout<<"PASS: live alignment cache/guide update and armed/invalid rejection\n";
         std::cout<<"PASS: alignment readiness, grip gating, stale tracking, 90-degree rotation and rotation bound\n";
         std::cout<<"PASS: release gating, delta motion, gripper, left hold, release, reclutch, timeout, stale and NaN rejection, reset\n";
     }catch(const std::exception&e){std::cerr<<e.what()<<'\n';result=1;}

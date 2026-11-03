@@ -100,11 +100,47 @@ class Checks(unittest.TestCase):
                 self.assertEqual(r.state, 'returning')
                 command = launch.call_args.args[0]
                 self.assertTrue(command[1].endswith('openarm_return_to_zero.py'))
-                self.assertEqual(command[2:], ['--execute'])
+                self.assertEqual(command[2:], ['--execute', '--enable-vr-after'])
                 r.cancel_home(); r.cancel_home()
                 self.assertEqual(process.send_signal.call_count, 1)
                 process.poll.return_value = 0
             finally: r.close()
+
+    def test_consecutive_saves_and_return_without_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cams = {'main': Camera(), 'right': Camera()}
+            r = Recorder(tmp, cams, 'test', sys.executable, fps=30)
+            r.stop.set(); r.thread.join()
+            try:
+                with patch('openarm_episode.subprocess.Popen') as launch:
+                    for expected in (1, 2):
+                        feed(r.signals, cams, time.monotonic()-.10)
+                        r.handle('start', 'idle')
+                        self.assertEqual(r.state, 'recording')
+                        r.capture()
+                        r.handle('stop', 'recording')
+                        r.handle('save', 'review')
+                        self.assertEqual(r.state, 'idle')
+                        self.assertEqual(r.saved, expected)
+                        self.assertIsNone(r.path)
+                        r.handle('save', 'review')  # stale double press
+                        self.assertEqual(r.saved, expected)
+                    launch.assert_not_called()
+                episodes = list((Path(tmp)/'episodes').glob('*/episode.json'))
+                self.assertEqual(len(episodes), 2)
+                self.assertEqual(list((Path(tmp)/'pending').iterdir()), [])
+                for meta in episodes:
+                    self.assertEqual(json.loads(meta.read_text())['frames'], 1)
+                    self.assertTrue((meta.parent/'frames.jsonl').read_text())
+                process = MagicMock()
+                process.poll.return_value = 0
+                feed(r.signals, cams, time.monotonic()-.10)
+                with patch('openarm_episode.subprocess.Popen', return_value=process):
+                    r.handle('discard_home', 'idle')
+                self.assertEqual(r.state, 'returning')
+                self.assertEqual(len(list((Path(tmp)/'episodes').glob('*/episode.json'))), 2)
+            finally:
+                r.close()
 
     def test_camera_skew_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

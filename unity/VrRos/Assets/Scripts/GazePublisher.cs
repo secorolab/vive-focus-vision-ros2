@@ -48,10 +48,12 @@ namespace VrRos
 
         private readonly StringBuilder _sb = new StringBuilder(1024);
         private float _nextPublish;
+        private SceneLoader _scene;
         private bool _warned;
 
         private void Start()
         {
+            _scene = FindFirstObjectByType<SceneLoader>();
             if (config != null && config.Active != null)
             {
                 rawNs = config.Active.rawNs;
@@ -139,6 +141,7 @@ namespace VrRos
                 uq = rig.rotation * uq;
             }
 
+            FrameConv.WorldToScene(_scene != null ? _scene.transform : null, ref up, ref uq);
             Vector3 p = FrameConv.UnityToRos(up);
             Quaternion q = FrameConv.UnityToRos(uq);
             _sb.Append('"').Append(field).Append("\":{\"position\":{\"x\":").Append(F(p.x))

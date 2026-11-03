@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local desktop launcher. Motor operations stay visible in dedicated terminals."""
 import json
+import os
 import shlex
 import subprocess
 import tempfile
@@ -8,7 +9,8 @@ import threading
 import queue
 import time
 import urllib.request
-from openarm_panel_job import stop_job
+from openarm_panel_job import stop_job, start_token
+from openarm_export_lerobot import export_counts
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -30,8 +32,24 @@ def robot_running():
 
 
 def main():
-    root = tk.Tk(); root.title('OpenArm controls'); root.geometry('820x960')
-    frame = ttk.Frame(root, padding=20); frame.pack(fill='both', expand=True)
+    root = tk.Tk(); root.title('OpenArm controls'); root.geometry('820x800')
+    canvas = tk.Canvas(root, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(root, orient='vertical', command=canvas.yview)
+    scrollbar.pack(side='right', fill='y')
+    canvas.pack(side='left', fill='both', expand=True)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    frame = ttk.Frame(canvas, padding=20)
+    content = canvas.create_window((0, 0), window=frame, anchor='nw')
+    frame.bind('<Configure>', lambda event: canvas.configure(scrollregion=canvas.bbox('all')))
+    canvas.bind('<Configure>', lambda event: canvas.itemconfigure(content, width=event.width))
+    def scroll(event):
+        if canvas.bbox('all')[3] > canvas.winfo_height():
+            direction = -1 if getattr(event, 'num', None) == 4 or event.delta > 0 else 1
+            canvas.yview_scroll(direction*3, 'units')
+        return 'break'
+    root.bind_all('<Button-4>', scroll)
+    root.bind_all('<Button-5>', scroll)
+    root.bind_all('<MouseWheel>', scroll)
     ttk.Label(frame, text='OpenArm controls', font=('',20,'bold')).pack(anchor='w')
     ttk.Label(frame, text='Home without a headset. Start VR separately when ready.').pack(anchor='w',pady=(5,12))
     ip = tk.StringVar(value='10.23.1.157')
@@ -60,7 +78,7 @@ def main():
         if exclusive and robot_running():
             messagebox.showerror('Robot already running','Support the arms, then Ctrl+C in the existing robot/home terminal first.'); return
         directory=Path(tempfile.mkdtemp(prefix='openarm-panel-'))
-        (directory/'command.json').write_text(json.dumps({'command':command}))
+        (directory/'command.json').write_text(json.dumps({'command':command, 'title':title}))
         jobs[title]=directory
         if running.exists(title): running.delete(title)
         running.insert('', 'end', iid=title, text=title, values=('Starting',))
@@ -112,13 +130,13 @@ def main():
         ('Disable VR (keep holding)',lambda:terminal('Disable VR',SETUP+DOMAIN+"ros2 service call /openarm_hardware_preview/enable std_srvs/srv/SetBool '{data: false}'")),
     ]
     def calibrate(side):
-        command = SETUP+DOMAIN+"ros2 service call /openarm_hardware_preview/enable std_srvs/srv/SetBool '{data: false}' && "+DOMAIN+py('openarm_align.py')+' --domain-id 84 --mode real --arm '+side+' --output "$HOME/vive_vr_ws/models/openarm_v1" --delay 10'
+        command = SETUP+DOMAIN+py('openarm_align.py')+' --domain-id 84 --mode real --arm '+side+' --output "$HOME/vive_vr_ws/models/openarm_v1" --delay 10'
         terminal(side.capitalize()+' wrist calibration',command)
     buttons += [('Align RIGHT end-effector pose (10-second countdown)',lambda:calibrate('right')),
                 ('Align LEFT end-effector pose (10-second countdown)',lambda:calibrate('left'))]
     for text, action in buttons:
         ttk.Button(frame,text=text,command=action).pack(fill='x',pady=3)
-    ttk.Label(frame,wraplength=770,text='Pose alignment: lock world, click the arm button, then release side grips. You have 10 seconds to hold the controller in the desired tool orientation. Keep it still during capture. Restart VR launch after saving.\nStop selected sends Ctrl+C. SUPPORT ARMS FIRST: stopping home/VR can release torque.\nCAN setup refuses an active robot; stop its robot terminal first. Closing this panel leaves jobs running.').pack(anchor='w',pady=8)
+    ttk.Label(frame,wraplength=770,text='Pose alignment: lock world, click the arm button, then release side grips. You have 10 seconds to hold the controller in the desired tool orientation. Keep it still during capture. Alignment applies immediately; release side grips, then click Enable VR. No launch restart needed.\nStop selected sends Ctrl+C. SUPPORT ARMS FIRST: stopping home/VR can release torque.\nCAN setup refuses an active robot; stop its robot terminal first. Closing this panel leaves jobs running.').pack(anchor='w',pady=8)
     running.pack(fill='x')
     ttk.Button(frame,text='Stop selected running command (Ctrl+C)',command=stop_selected).pack(fill='x',pady=4)
     record_label=tk.StringVar(value='Recorder: checking…')
@@ -145,13 +163,27 @@ def main():
         nonlocal pending
         if pending or time.monotonic()-last_update>2: return
         pending=True
-        commands.put('retry_export' if action=='save' and latest.get('state')=='export_error' else action)
+        commands.put(action)
         for button in record_buttons.values(): button.configure(state='disabled')
     for action,label in [('start','Start recording'),('stop','Stop recording'),('save','Save episode'),('discard','Discard unsaved')]:
         button=ttk.Button(controls,text=label,command=lambda a=action:record(a),state='disabled')
         button.pack(side='left',expand=True,fill='x'); record_buttons[action]=button
     threading.Thread(target=worker,daemon=True).start()
+    ttk.Button(frame, text='Export saved episodes to LeRobot (after recording session)',
+        command=lambda: terminal('Export LeRobot dataset',
+            '"$HOME/robot_ai/lerobot_env/bin/python" ' +
+            shlex.quote(str(REPO/'scripts/openarm_export_lerobot.py')) +
+            ' "$HOME/robot_ai/episodes/right_cube_30hz"')).pack(fill='x', pady=4)
+    ttk.Button(frame, text='Export only newest saved episode (GPU)',
+        command=lambda: terminal('Export LeRobot dataset',
+            '"$HOME/robot_ai/lerobot_env/bin/python" ' +
+            shlex.quote(str(REPO/'scripts/openarm_export_lerobot.py')) +
+            ' "$HOME/robot_ai/episodes/right_cube_30hz" --latest')).pack(fill='x', pady=4)
+    export_label = tk.StringVar()
+    ttk.Label(frame, textvariable=export_label, wraplength=770).pack(anchor='w', pady=4)
     def refresh():
+        counts = export_counts(Path.home()/'robot_ai/episodes/right_cube_30hz')
+        export_label.set(f"Waiting to export: {counts['waiting']} | Exported: {counts['exported']} | Total saved: {counts['total']}")
         status.set('Robot controller running — use its terminal to stop.' if robot_running() else 'No robot controller detected.')
         nonlocal last_update, latest, pending
         for title in jobs:
@@ -161,14 +193,31 @@ def main():
             if error: record_label.set('Recorder disconnected — recording state unknown. Start/check cameras terminal.')
             else:
                 state=latest.get('state','unknown')
-                record_label.set(f"Recorder: {state.upper()} | {latest.get('seconds',0)} s | {latest.get('frames',0)} frames | Saved: {latest.get('saved',0)}\n{latest.get('message','')}")
+                record_label.set(f"Recorder: {state.upper()} | {latest.get('seconds',0)} s | {latest.get('frames',0)} frames | Total saved: {latest.get('saved',0)}\n{latest.get('message','')}")
         state=latest.get('state')
         allowed={'start':state in ('idle','home_done') and latest.get('ready',False),
-                 'stop':state=='recording', 'save':state in ('review','export_error'),
+                 'stop':state=='recording', 'save':state=='review',
                  'discard':state in ('review','fault')}
         for action,button in record_buttons.items():
             button.configure(state='normal' if allowed[action] and not pending and time.monotonic()-last_update<=2 else 'disabled')
         root.after(300,refresh)
+    for directory in Path(tempfile.gettempdir()).glob('openarm-panel-*'):
+        try:
+            if directory.stat().st_uid != os.getuid(): continue
+            state = json.loads((directory/'state.json').read_text())
+            if state.get('state') != 'running' or start_token(state['pid']) != state['token']: continue
+            job = json.loads((directory/'command.json').read_text())
+            title = job.get('title')
+            if not title:
+                for pattern, name in [('openarm_real.launch.py','OpenArm VR'),
+                                      ('openarm_cameras.py','Cameras and recorder'),
+                                      ('openarm_mirror.py','Vive mirror')]:
+                    if pattern in job['command']: title = name; break
+            if title and title not in jobs:
+                jobs[title] = directory
+                running.insert('', 'end', iid=title, text=title, values=('running',))
+        except (OSError, ValueError, KeyError):
+            continue
     refresh(); root.mainloop()
 
 

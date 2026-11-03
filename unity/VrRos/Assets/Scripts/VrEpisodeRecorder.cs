@@ -8,7 +8,7 @@ using UnityEngine.XR;
 
 namespace VrRos
 {
-    /// <summary>Episode UI only. Y explicitly requests the existing guarded return-to-zero routine.</summary>
+    /// <summary>Episode UI only. B explicitly requests the existing guarded return-to-zero routine.</summary>
     public class VrEpisodeRecorder : MonoBehaviour
     {
         public RosBridge bridge;
@@ -19,7 +19,7 @@ namespace VrRos
         private GameObject panel;
         private string state = "disabled";
         private float lastStatus = -100;
-        private bool aWasDown, bWasDown, neutralRequired = true, busy;
+        private bool xWasDown, yWasDown, neutralRequired = true, busy;
         private float discardSince = -1;
         private bool discardSent;
 
@@ -47,7 +47,7 @@ namespace VrRos
                                 if (panel == null) Build();
                                 panel.SetActive(true);
                                 label.text = $"<b>{state.ToUpperInvariant()} • RIGHT ARM</b>  {(float?)status["seconds"] ?? 0:0.0}s | saved {(int?)status["saved"] ?? 0}\n"
-                                    + (string)status["message"] + "\nA: Start / Stop    B: Save    Hold X: Discard | Hold Y 2s: Discard + BOTH arms zero | A cancels return";
+                                    + (string)status["message"] + "\nX: Start / Stop    Y: Save    Hold A: Discard | Hold B 2s: Discard + BOTH arms zero | X cancels return";
                                 label.color = state == "recording" ? new Color(1f,.4f,.35f) : Color.white;
                             }
                             else if (panel != null) panel.SetActive(false);
@@ -91,41 +91,41 @@ namespace VrRos
                 neutralRequired = true;
                 discardSince = -1;
                 homeSince = -1; homeSent = false;
-                aWasDown = a; bWasDown = b;
+                xWasDown = x; yWasDown = y;
                 return;
             }
             if (neutralRequired)
             {
-                if (!a && !b && !x && !y) neutralRequired = false;
-                aWasDown = a; bWasDown = b;
+                if (!x && !y && !a && !b) neutralRequired = false;
+                xWasDown = x; yWasDown = y;
                 return;
             }
             if (!busy)
             {
-                if (a && !aWasDown && state == "returning")
+                if (x && !xWasDown && state == "returning")
                     StartCoroutine(Command("cancel_home"));
-                else if (a && !aWasDown && !b && !x && !y && (state == "idle" || state == "home_done" || state == "recording"))
+                else if (x && !xWasDown && !y && !a && !b && (state == "idle" || state == "home_done" || state == "recording"))
                     StartCoroutine(Command(state == "recording" ? "stop" : "start"));
-                else if (b && !bWasDown && !a && !x && !y && (state == "review" || state == "export_error"))
-                    StartCoroutine(Command(state == "review" ? "save" : "retry_export"));
-                if (x && !a && !b && !y && (state == "review" || state == "fault" || state == "home_error"))
+                else if (y && !yWasDown && !x && !a && !b && state == "review")
+                    StartCoroutine(Command("save"));
+                if (a && !x && !y && !b && (state == "review" || state == "fault" || state == "home_error"))
                 {
                     if (discardSince < 0) discardSince = Time.unscaledTime;
                     if (!discardSent && Time.unscaledTime-discardSince >= 1.2f)
                     { discardSent = true; StartCoroutine(Command("discard")); }
                 }
                 else { discardSince = -1; discardSent = false; }
-                if (y && !a && !b && !x && (state == "idle" || state == "recording" || state == "review" || state == "fault" || state == "home_done" || state == "home_error"))
+                if (b && !x && !y && !a && (state == "idle" || state == "recording" || state == "review" || state == "fault" || state == "home_done" || state == "home_error"))
                 {
                     if (homeSince < 0) homeSince = Time.unscaledTime;
                     if (!homeSent && label != null)
-                        label.text = "Hold Y: discard unsaved attempt and return BOTH arms to zero\nKeep the path clear; release Y to abort this countdown";
+                        label.text = "Hold B: discard unsaved attempt and return BOTH arms to zero\nKeep the path clear; release B to abort this countdown";
                     if (!homeSent && Time.unscaledTime-homeSince >= 2f)
                     { homeSent = true; StartCoroutine(Command("discard_home")); }
                 }
-                else { homeSince = -1; if (!y) homeSent = false; }
+                else { homeSince = -1; if (!b) homeSent = false; }
             }
-            aWasDown = a; bWasDown = b;
+            xWasDown = x; yWasDown = y;
         }
 
         private IEnumerator Command(string action)

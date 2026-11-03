@@ -194,8 +194,8 @@ public:
                     arm.sent=false;
                 }
                 // Quintic smoothstep has maximum derivative 1.875. Peak joint
-                // speed is <=0.05 rad/s, independent of VR speed settings.
-                home_duration_=std::max(2.0,1.875*largest/0.05);
+                // speed is <=0.10 rad/s, independent of VR speed settings.
+                home_duration_=std::max(2.0,1.875*largest/0.10);
                 if (close_grippers) home_duration_=std::max(home_duration_,1.875*finger_largest/0.01);
                 home_elapsed_=0; home_settled_=0;
                 home_lease_=home_began_=Clock::now(); homing_=true;

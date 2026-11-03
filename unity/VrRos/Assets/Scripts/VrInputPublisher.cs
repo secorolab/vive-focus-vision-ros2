@@ -46,9 +46,11 @@ namespace VrRos
 
         private readonly StringBuilder _sb = new StringBuilder(512);
         private float _nextPublish;
+        private SceneLoader _scene;
 
         private void Start()
         {
+            _scene = FindFirstObjectByType<SceneLoader>();
             if (config != null && config.Active != null)
             {
                 rawNs = config.Active.rawNs;
@@ -103,6 +105,7 @@ namespace VrRos
                 q = rig.rotation * q;
             }
 
+            FrameConv.WorldToScene(_scene != null ? _scene.transform : null, ref p, ref q);
             Vector3 rp = FrameConv.UnityToRos(p);
             Quaternion rq = FrameConv.UnityToRos(q);
 

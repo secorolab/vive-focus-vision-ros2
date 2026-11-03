@@ -59,6 +59,6 @@ def launch_setup(context):
         Node(package='vive_vr_ros2', executable='openarm_sim_node', name='vive_scene',
              output='screen', parameters=[scene_params]),
         Node(package='vive_vr_ros2', executable='teleop_node', name='vive_teleop',
-             parameters=[arg('params_file')], output='screen',
+             parameters=[arg('params_file'), {'teleop.require_ready': True}], output='screen',
              condition=IfCondition(LaunchConfiguration('enable_teleop'))),
     ]

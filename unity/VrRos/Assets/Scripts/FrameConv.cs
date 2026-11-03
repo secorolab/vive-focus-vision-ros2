@@ -15,6 +15,13 @@ namespace VrRos
     /// </summary>
     public static class FrameConv
     {
+        public static void WorldToScene(Transform scene, ref Vector3 p, ref Quaternion q)
+        {
+            if (scene == null) return;
+            p = scene.InverseTransformPoint(p);
+            q = Quaternion.Inverse(scene.rotation) * q;
+        }
+
         public static Vector3 RosToUnity(float x, float y, float z) => new Vector3(-y, z, x);
 
         public static Quaternion RosToUnity(float x, float y, float z, float w) =>

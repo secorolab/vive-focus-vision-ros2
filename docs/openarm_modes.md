@@ -125,7 +125,7 @@ hold or move inward; it does not redefine calibration or extend normal VR target
 Clear the direct joint-space path for both arms before executing. This routine
 has no collision planning: it cannot check obstacles, the table, or arm-to-arm
 clearance. It moves both arms together with a smooth start/stop, peak joint speed
-0.05 rad/s, and verifies measured positions settle within 1.5 degrees of zero.
+0.10 rad/s, and verifies measured positions settle within 1.5 degrees of zero.
 
 ```zsh
 source /opt/ros/jazzy/setup.zsh
@@ -190,7 +190,7 @@ python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_return_to_zero.py --exe
 ```
 
 This uses the existing encoder calibration. Both arms follow a smooth joint-space
-path to zero at up to 0.05 rad/s; grippers target zero at up to 10 mm/s. Completion
+path to zero at up to 0.10 rad/s; grippers target zero at up to 10 mm/s. Completion
 requires measured arm error within 1.5 degrees and finger error within 1 mm for 0.5 s.
 Measured gripper positions are printed; completion does not certify mechanical contact.
 Ctrl+C cancels, retaining motor torque. VR stays disarmed afterward. Omit
@@ -255,7 +255,10 @@ calibration. Head tracking stays active. While locked, the rear trigger retains
 its gripper function.
 
 While unlocked, hold the right rear trigger and move the controller to translate
-the robot view one-to-one in any direction. Release to leave it there; repeat
+the displayed robot scene one-to-one in any direction while your viewpoint stays
+fixed, including the floor grid. Walking is disabled during the trigger drag;
+the right stick moves your viewpoint after you release. Release the trigger to leave
+the robot there; repeat
 to move farther. This stops automatic rotation. Locking saves the position and
 angle. Tracking loss stops placement and requires a release before resuming.
 Only the VR placement changes, never the physical base or motor calibration.
@@ -371,7 +374,7 @@ Local homing now accepts an elbow lower-bound feedback offset of at most 0.06 ra
 retains the 0.05 rad allowance. This extra margin applies only to J4's lower bound;
 other joints, upper limits and feedback freshness checks are unchanged. The driver
 holds the measured pose first. The explicit return command uses the existing
-0.05 rad/s trajectory and inward-only command corridor. Once commanded inside
+0.10 rad/s trajectory and inward-only command corridor. Once commanded inside
 the nominal range, commands cannot move back into the negative recovery corridor.
 It does not change encoder calibration or provide collision avoidance. Do not use
 recovery to force a joint against a mechanical stop. Positions below -3.44 degrees
@@ -428,3 +431,19 @@ before stopping home/VR because torque may release. CAN setup still refuses an
 active robot; select and stop the robot command first. Jobs launched outside this
 panel must be stopped in their original terminals. Closing the panel leaves jobs
 running, and reopening does not take ownership of old jobs.
+
+Side-grip engagement requires fresh green readiness. Pressing before green is
+ignored: the guide remains available, and holding that rejected press never
+automatically engages when alignment improves. Release and press again once
+green. Pressing while engaged still toggles following off immediately.
+
+### Apply wrist alignment without restarting
+
+In the laptop panel, lock the world and click **Align RIGHT** or **Align LEFT**.
+The calibration disables VR following, gives a 10-second countdown, and captures
+one second of steady controller/tool poses with the side grip released. It saves
+the alignment and applies it to both running ROS nodes, including the green guide.
+Release the controller buttons, click **Enable VR**, then engage on green.
+No robot launch or headset restart is needed. This changes controller alignment,
+not the motors' stored zero. If live application fails, keep VR disabled and retry
+calibration; the script reports which service failed.

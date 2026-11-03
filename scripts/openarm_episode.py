@@ -58,7 +58,7 @@ class Signals:
 
 
 class Recorder:
-    """One owner thread serializes capture, review, discard and export transitions."""
+    """One owner thread serializes capture, review, discard and save transitions."""
     def __init__(self, root, cameras, task, python, fps=15, max_seconds=120):
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -74,8 +74,6 @@ class Recorder:
         self.state, self.message = 'idle', 'Waiting for live cameras and ROS feedback'
         self.frames, self.path, self.file = 0, None, None
         self.ready = False
-        self.export_process = None
-        self.export_log = None
         self.home_process = None
         self.home_log = None
         self.home_cancelled = False
@@ -98,7 +96,7 @@ class Recorder:
                     saved=self.saved, task=self.task, arm='right', cameras=['main', 'right'])
 
     def command(self, action):
-        if action not in ('start', 'stop', 'save', 'discard', 'retry_export', 'discard_home', 'cancel_home'):
+        if action not in ('start', 'stop', 'save', 'discard', 'discard_home', 'cancel_home'):
             raise ValueError('Unknown recording action')
         # Carry expected state to reject stale/double button presses.
         self.commands.put_nowait((action, self.state))
@@ -167,14 +165,6 @@ class Recorder:
             self.file = None
         self.state, self.message = state, message
 
-    def export(self):
-        self.export_log = (self.root / 'export.log').open('w')
-        self.export_process = subprocess.Popen(
-            [self.python, str(Path(__file__).with_name('openarm_export_lerobot.py')),
-             str(self.root)], stdout=self.export_log, stderr=subprocess.STDOUT,
-            env={**os.environ, 'HF_HUB_OFFLINE':'1', 'OMP_NUM_THREADS':'1'})
-        self.state, self.message = 'saving', 'Building local LeRobot dataset; raw episode is safe'
-
     def discard_pending(self):
         if self.path: shutil.rmtree(self.path)
         self.path, self.frames = None, 0
@@ -188,11 +178,11 @@ class Recorder:
         self.last_ui_seen = time.monotonic()
         self.home_log = (self.root / 'return_to_zero.log').open('w')
         self.home_process = subprocess.Popen(
-            ['/usr/bin/python3', str(Path(__file__).with_name('openarm_return_to_zero.py')), '--execute'],
+            ['/usr/bin/python3', str(Path(__file__).with_name('openarm_return_to_zero.py')), '--execute', '--enable-vr-after'],
             stdout=self.home_log, stderr=subprocess.STDOUT,
             env={**os.environ, 'ROS_DOMAIN_ID':'84', 'ROS_AUTOMATIC_DISCOVERY_RANGE':'LOCALHOST'})
         self.ready = False
-        self.state, self.message = 'returning', 'Returning BOTH arms to zero; grippers unchanged. A cancels.'
+        self.state, self.message = 'returning', 'Returning BOTH arms to zero; arm/gripper controls locked, grippers held. Release buttons for automatic VR enable at zero. X cancels.'
 
     def cancel_home(self):
         if self.home_process and self.home_process.poll() is None and not self.home_cancelled:
@@ -204,7 +194,7 @@ class Recorder:
         if expected != self.state: return
         if action == 'start' and self.state == 'idle': self.begin()
         elif action == 'stop' and self.state == 'recording':
-            self.finish('review' if self.frames else 'fault', 'Review: B saves; hold X discards')
+            self.finish('review' if self.frames else 'fault', 'Review: Y saves; hold A discards')
         elif action == 'discard' and self.state in ('review', 'fault'):
             self.discard_pending()
             self.state, self.message = 'idle', 'Discarded; ready for another attempt'
@@ -212,17 +202,19 @@ class Recorder:
             (self.path / 'episode.json').write_text(json.dumps(dict(frames=self.frames, **self.session), indent=2))
             destination = self.root / 'episodes' / self.path.name
             destination.parent.mkdir(exist_ok=True)
+            if destination.exists() or destination.is_symlink():
+                raise ValueError("Episode already exists; refusing to overwrite it. Unsaved attempt retained.")
             self.path.rename(destination)
             self.path = None
             self.saved += 1
-            self.export()
+            self.state = 'idle'
+            self.message = 'Saved locally. X starts next episode; hold B to return to zero.'
         elif action == 'discard_home' and self.state in ('idle', 'review', 'fault', 'recording', 'home_done', 'home_error'):
             self.return_home()
         elif action == 'cancel_home' and self.state == 'returning': self.cancel_home()
         elif action == 'start' and self.state == 'home_done': self.begin()
         elif action == 'discard' and self.state == 'home_error':
             self.state, self.message = 'idle', 'Return error acknowledged; check robot before recording'
-        elif action == 'retry_export' and self.state == 'export_error': self.export()
 
     def run(self):
         try:
@@ -240,25 +232,20 @@ class Recorder:
                         code = self.home_process.poll()
                         if code is not None:
                             self.home_log.close()
-                            self.state = 'home_done' if code == 0 else 'home_error'
-                            self.message = ('At zero within tolerance. VR disarmed; enable again before recording.'
-                                if code == 0 else 'Return stopped or failed; see return_to_zero.log. VR remains disarmed.')
-                    elif self.state == 'idle':
+                            self.state = 'home_done' if code in (0, 3) else 'home_error'
+                            self.message = ('At zero. VR arms/grippers enabled; press side grip on green to follow.'
+                                if code == 0 else 'At zero; automatic VR enable was blocked. Release buttons, check tracking and Enable VR. See return_to_zero.log.'
+                                if code == 3 else 'Return stopped or failed; see return_to_zero.log. VR remains disarmed.')
+                    elif self.state in ('idle', 'home_done'):
                         try:
                             self.snapshot(time.monotonic()-.10)
-                            self.ready, self.message = True, 'Ready: A starts recording'
+                            self.ready = True
+                            if self.state == 'idle': self.message = 'Ready: X starts recording'
                         except ValueError as exc:
                             self.ready, self.message = False, str(exc)
-                    elif self.state == 'saving' and self.export_process.poll() is not None:
-                        code = self.export_process.returncode
-                        self.export_log.close()
-                        self.state = 'idle' if code == 0 else 'export_error'
-                        self.message = 'Saved locally' if code == 0 else 'Raw episode saved; export failed. See export.log; B retries.'
                 except Exception as exc:
                     self.ready = False
-                    if self.state == 'saving':
-                        self.state, self.message = 'export_error', str(exc)
-                    elif self.state == 'recording': self.finish('fault', str(exc)+'; discard this incomplete episode')
+                    if self.state == 'recording': self.finish('fault', str(exc)+'; discard this incomplete episode')
                     else: self.message = str(exc)
         finally:
             self.finish(self.state, self.message)
@@ -268,8 +255,6 @@ class Recorder:
         self.stop.set()
         self.thread.join(timeout=5)
         # Pending files are retained for diagnosis, never silently accepted on restart.
-        if self.export_process and self.export_process.poll() is None:
-            self.export_process.wait()
         if self.home_process and self.home_process.poll() is None:
             try: self.home_process.wait(timeout=5)
             except subprocess.TimeoutExpired:

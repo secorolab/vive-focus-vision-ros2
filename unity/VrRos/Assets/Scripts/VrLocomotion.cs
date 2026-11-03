@@ -94,12 +94,21 @@ namespace VrRos
         private const float RobotTurnSpeed = 15f;
         private Vector3 _placementOffset, _placementHand;
         private bool _placementReady, _placing;
+        private SceneLoader _robotScene;
+        private Vector3 _robotOffset;
+        private Vector3 _dragRigStart, _dragSceneStart;
+        private float _dragLogAt;
+        private string _placementStatus = "";
+        private const string RobotPlacementKey = "OpenArm.RobotPlacement.";
         private bool _viewStickReady, _lookStickReady;
         private const string PlacementKey = "OpenArm.OperatorPlacement.";
 
         private void Awake()
         {
             WorldLocked = false;
+            _robotOffset = new Vector3(PlayerPrefs.GetFloat(RobotPlacementKey+"x", 0f),
+                PlayerPrefs.GetFloat(RobotPlacementKey+"y", 0f), PlayerPrefs.GetFloat(RobotPlacementKey+"z", 0f));
+            if (!Finite(_robotOffset)) _robotOffset = Vector3.zero;
             FacingHeadset = false;
             _placementOffset = new Vector3(PlayerPrefs.GetFloat(PlacementKey+"x", 0f),
                 PlayerPrefs.GetFloat(PlacementKey+"y", 0f), PlayerPrefs.GetFloat(PlacementKey+"z", 0f));
@@ -113,6 +122,7 @@ namespace VrRos
 
         private void Start()
         {
+            _robotScene = FindFirstObjectByType<SceneLoader>();
             if (rig == null) rig = transform;
             if (head == null) head = Camera.main;
             if (config != null && config.Active != null)
@@ -144,6 +154,8 @@ namespace VrRos
         {
             RobotBodyView = enabled;
             _robotRotating = false;
+            if (_robotScene != null)
+                SetRobotDisplayPosition(enabled ? _robotOffset : Vector3.zero);
             if (enabled) MoveToRobotEye();
             UpdateLockLabel();
         }
@@ -279,7 +291,7 @@ namespace VrRos
             if (_lockLabel==null) return;
             string gripperHint = RobotBodyView ? "Rear trigger: hold open | release close" : "Stick up: open | down: close | center: stop";
             _lockLabel.text=WorldLocked ? "WORLD LOCKED\n" + gripperHint + "\nEnable robot to show wrist alignment guides" :
-                "WORLD FREE - robot control disabled\n" + (RobotBodyView ?  $"LEFT trigger: {(_robotRotating ? "STOP turning" : "start turning right")} ({_robotYaw:0}°)\nRIGHT trigger: hold and move to place robot\nLEFT stick: look | RIGHT stick: walk | A/B: up/down\nX: facing-headset { (FacingHeadset ? "ON" : "OFF") }\n" : "") + "Tap LEFT MENU to lock and save";
+                "WORLD FREE - robot control disabled\n" + (RobotBodyView ?  $"LEFT trigger: {(_robotRotating ? "STOP turning" : "start turning right")} ({_robotYaw:0}°)\nRIGHT trigger: hold and move to place robot\n{_placementStatus}\nLEFT stick: look | RIGHT stick: walk | A/B: up/down\nX: facing-headset { (FacingHeadset ? "ON" : "OFF") }\n" : "") + "Tap LEFT MENU to lock and save";
             _lockLabel.color=WorldLocked ? Color.green : Color.white;
         }
 
@@ -298,6 +310,9 @@ namespace VrRos
                 if (WorldLocked && RobotBodyView) {
                     PlayerPrefs.SetFloat(RobotYawKey, _robotYaw);
                     PlayerPrefs.SetFloat("OpenArm.OperatorViewPitch", _viewPitch);
+                    PlayerPrefs.SetFloat(RobotPlacementKey+"x", _robotOffset.x);
+                    PlayerPrefs.SetFloat(RobotPlacementKey+"y", _robotOffset.y);
+                    PlayerPrefs.SetFloat(RobotPlacementKey+"z", _robotOffset.z);
                     PlayerPrefs.SetFloat(PlacementKey+"x", _placementOffset.x);
                     PlayerPrefs.SetFloat(PlacementKey+"y", _placementOffset.y);
                     PlayerPrefs.SetFloat(PlacementKey+"z", _placementOffset.z);
@@ -314,7 +329,7 @@ namespace VrRos
         // sharing the same ROS frame. Never rotate just the robot mesh.
         private void PollRobotRotation()
         {
-            if (!RobotBodyView || WorldLocked || rig == null || head == null) {
+            if (!RobotBodyView || WorldLocked || rig == null || head == null || _robotScene == null) {
                 _rotationTriggerReady = false;
                 _robotRotating = false;
                 UpdateLockLabel();
@@ -353,11 +368,9 @@ namespace VrRos
                 UpdateLockLabel();
             }
             if (!_robotRotating) return;
-            // Negative rig yaw turns the displayed robot right about its fixed base.
-            // Cap a delayed frame so resuming rendering cannot cause a large jump.
             float step = -RobotTurnSpeed * Mathf.Min(Time.unscaledDeltaTime, 0.05f);
             _robotYaw = Mathf.Repeat(_robotYaw + step, 360f);
-            rig.RotateAround(Vector3.zero, Vector3.up, step);
+            rig.RotateAround(_robotScene != null ? _robotScene.transform.position : Vector3.zero, Vector3.up, step);
             UpdateLockLabel();
             PlaceLockLabel();
         }
@@ -400,7 +413,7 @@ namespace VrRos
         private void PollViewMovement()
         {
             var device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
-            if (!RobotBodyView || WorldLocked || head == null || rig == null
+            if (!RobotBodyView || WorldLocked || head == null || rig == null || _placing
                 || !device.isValid
                 || !device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick)
                 || float.IsNaN(stick.x) || float.IsNaN(stick.y)
@@ -454,20 +467,17 @@ namespace VrRos
             !float.IsNaN(p.y) && !float.IsInfinity(p.y) &&
             !float.IsNaN(p.z) && !float.IsInfinity(p.z);
 
+        private void PlacementStatus(string message)
+        {
+            if (_placementStatus != message) Debug.Log("robot-drag-status: " + message);
+            _placementStatus = message;
+            UpdateLockLabel();
+        }
+
         private void PollRobotPlacement()
         {
             var device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
-            if (!RobotBodyView || WorldLocked || rig == null || !device.isValid
-                || !device.TryGetFeatureValue(CommonUsages.isTracked, out bool tracked) || !tracked
-                || !device.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 hand)
-                || !Finite(hand)) {
-                _placing = _placementReady = false;
-                return;
-            }
-            // Stick navigation wins over trigger dragging. Require a trigger release
-            // before another drag, so a held/noisy trigger cannot fight walking.
-            if (device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 navigation)
-                && navigation.magnitude > deadzone) {
+            if (!RobotBodyView || WorldLocked || rig == null || _robotScene == null || !device.isValid) {
                 _placing = _placementReady = false;
                 return;
             }
@@ -475,34 +485,69 @@ namespace VrRos
             bool hasAnalog = device.TryGetFeatureValue(CommonUsages.trigger, out float trigger);
             if (!hasButton && !hasAnalog) {
                 _placing = _placementReady = false;
+                PlacementStatus("Right trigger input unavailable");
                 return;
             }
             if (!button && (!hasAnalog || trigger < 0.2f)) {
                 _placing = false;
                 _placementReady = true;
+                PlacementStatus("Right drag ready");
                 return;
             }
+            // Stop any latched orbit even if right-hand tracking cannot start a drag.
+            _robotRotating = false;
+            if ((device.TryGetFeatureValue(CommonUsages.isTracked, out bool tracked) && !tracked)
+                || !device.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 hand)
+                || !Finite(hand)) {
+                _placing = _placementReady = false;
+                PlacementStatus("Right tracking unavailable — release trigger and retry");
+                return;
+            }
+            Quaternion unusedRotation = Quaternion.identity;
+            MapController(rig, ref hand, ref unusedRotation);
             if (!_placing) {
-                if (!_placementReady || (!button && (!hasAnalog || trigger < 0.75f))) return;
+                if (!_placementReady) {
+                    PlacementStatus("Release RIGHT trigger, then hold to drag robot");
+                    return;
+                }
+                if (!button && (!hasAnalog || trigger < 0.75f)) return;
                 _placementReady = false;
                 _placing = true;
                 _placementHand = hand;
-                _robotRotating = false;
+                _dragRigStart = rig.position;
+                _dragSceneStart = _robotScene.transform.position;
+                _dragLogAt = 0f;
+                PlacementStatus("PLACING ROBOT — move right hand up/down/left/right");
                 return;
             }
             Vector3 delta = hand - _placementHand;
             _placementHand = hand;
-            // A tracking discontinuity must not teleport the world; release to resume.
             if (delta.magnitude > 0.25f) {
                 _placing = _placementReady = false;
+                PlacementStatus("Tracking jumped — release trigger and retry");
                 return;
             }
-            // Inverse rig translation moves the displayed world with the hand while
-            // preserving the common frame for robot geometry, guides and ROS input.
-            _placementOffset -= delta;
-            rig.position -= rig.rotation * delta;
-            _robotRotating = false;
+            MoveRobotDisplay(delta);
+            if (Time.unscaledTime >= _dragLogAt) {
+                _dragLogAt = Time.unscaledTime + 0.5f;
+                Debug.Log($"robot-drag: facing={FacingHeadset} rigDelta={rig.position - _dragRigStart:F3} sceneDelta={_robotScene.transform.position - _dragSceneStart:F3}");
+            }
+            PlacementStatus("PLACING ROBOT — move right hand up/down/left/right");
             PlaceLockLabel();
+        }
+
+        private void MoveRobotDisplay(Vector3 trackingDelta)
+        {
+            SetRobotDisplayPosition(_robotScene.transform.position + rig.TransformVector(trackingDelta));
+            _robotOffset = _robotScene.transform.position;
+        }
+
+        private void SetRobotDisplayPosition(Vector3 position)
+        {
+            Transform ground = _robotScene.transform.Find("Ground");
+            Vector3 groundPosition = ground != null ? ground.position : Vector3.zero;
+            _robotScene.transform.position = position;
+            if (ground != null) ground.position = groundPosition;
         }
 
         /// <summary>WASD walks, Q and E change height, the right mouse button held looks around.</summary>
