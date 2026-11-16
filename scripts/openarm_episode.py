@@ -139,8 +139,8 @@ class Recorder:
         at = self.next_frame-.10  # bounded alignment delay; never delays the controller
         signals, pictures = self.snapshot(at)
         for key, (stamp, jpeg) in pictures.items():
-            if stamp <= self.last_images.get(key, -1):
-                raise ValueError(f'{key} repeated camera frame')
+            if stamp < self.last_images.get(key, -1):
+                raise ValueError(f'{key} camera timestamp moved backwards')
             (self.path / key / f'{self.frames:06d}.jpg').write_bytes(jpeg)
             self.last_images[key] = stamp
         row = dict(index=self.frames, timestamp=self.frames/self.fps, sample_monotonic=at,

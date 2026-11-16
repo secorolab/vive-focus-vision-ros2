@@ -101,6 +101,7 @@ def make_handler(cameras, recorder=None):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             route = urlsplit(self.path).path
+            frame_stamp = None
             if route == '/': data, mime = PAGE, 'text/html; charset=utf-8'
             elif route == '/recording/status':
                 data = json.dumps(recorder.status() if recorder else dict(state='disabled')).encode()
@@ -114,11 +115,14 @@ def make_handler(cameras, recorder=None):
                 if not frame or time.monotonic()-frame[0] >= .5 or camera.error:
                     self.send_error(503, 'Camera unavailable'); return
                 data, mime = frame[1], 'image/jpeg'
+                frame_stamp = frame[0]
             else: self.send_error(404); return
             self.send_response(200)
             self.send_header('Content-Type', mime)
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Cache-Control', 'no-store')
+            if frame_stamp is not None:
+                self.send_header('X-Frame-Monotonic', str(frame_stamp))
             self.end_headers()
             try: self.wfile.write(data)
             except (BrokenPipeError, ConnectionResetError): pass

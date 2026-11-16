@@ -13,6 +13,7 @@ def generate_launch_description():
     model_dir = LaunchConfiguration('model_dir')
     return LaunchDescription([
         DeclareLaunchArgument('host_ip'),
+        DeclareLaunchArgument('external_control_library', default_value=''),
         DeclareLaunchArgument('model_dir', default_value=os.path.expanduser('~/vive_vr_ws/models/openarm_v1')),
         DeclareLaunchArgument('use_fake_hardware', default_value='true', choices=['true','false']),
         DeclareLaunchArgument('control_grippers', default_value='false', choices=['true','false']),
@@ -33,6 +34,7 @@ def generate_launch_description():
                 'rosbridge_port': LaunchConfiguration('rosbridge_port'),
                 'discovery_port': LaunchConfiguration('discovery_port'),
                 'host_ip': LaunchConfiguration('host_ip'),
+                'external_control_library': LaunchConfiguration('external_control_library'),
                 'enable_commands': 'true',
                 'control_grippers': LaunchConfiguration('control_grippers'),
             }.items()),

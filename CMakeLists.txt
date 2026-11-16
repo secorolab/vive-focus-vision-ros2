@@ -173,7 +173,7 @@ if(BUILD_OPENARM_VR_BRIDGE)
   find_package(controller_manager_msgs REQUIRED)
   # Retain executable/service names for existing launch files and headset workflows.
   add_executable(openarm_hardware_preview_node src/openarm/hardware/vr_bridge.cpp)
-  target_link_libraries(openarm_hardware_preview_node PRIVATE openarm_teleop_support ${trajectory_msgs_TARGETS} ${std_srvs_TARGETS} ${controller_manager_msgs_TARGETS})
+  target_link_libraries(openarm_hardware_preview_node PRIVATE ${CMAKE_DL_LIBS} openarm_teleop_support ${trajectory_msgs_TARGETS} ${std_srvs_TARGETS} ${controller_manager_msgs_TARGETS})
   set_target_properties(openarm_hardware_preview_node PROPERTIES
     BUILD_RPATH "${MUJOCO_LIB_DIR}" INSTALL_RPATH "${MUJOCO_LIB_DIR}")
   install(TARGETS openarm_hardware_preview_node DESTINATION lib/${PROJECT_NAME})

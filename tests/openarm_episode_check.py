@@ -27,7 +27,7 @@ def feed(signals, cameras, at=None):
 
 
 class Checks(unittest.TestCase):
-    def test_30hz_timestamps_and_duplicate_rejection(self):
+    def test_30hz_timestamps_allow_repeats_but_reject_stale_camera(self):
         with tempfile.TemporaryDirectory() as tmp, patch('threading.Thread.start'), patch('openarm_episode.time.monotonic', return_value=100.0) as clock:
             cams = {'main':Camera(), 'right':Camera()}
             r = Recorder(tmp, cams, 'test', sys.executable, fps=30)
@@ -42,8 +42,19 @@ class Checks(unittest.TestCase):
                 rows = [json.loads(line) for line in (r.path/'frames.jsonl').read_text().splitlines()]
                 self.assertEqual(len(rows), 60)
                 self.assertEqual([x['timestamp'] for x in rows], [i/30 for i in range(60)])
-                with self.assertRaisesRegex(ValueError, 'repeated camera frame'):
-                    r.capture()
+                clock.return_value = r.next_frame
+                feed(r.signals, {}, r.next_frame-.1)
+                r.capture()
+                rows = [json.loads(line) for line in (r.path/'frames.jsonl').read_text().splitlines()]
+                self.assertEqual(len(rows), 61)
+                self.assertAlmostEqual(rows[-1]['timestamp'], 2.0)
+                for camera in cams:
+                    self.assertEqual(rows[-1]['source_monotonic'][camera], rows[-2]['source_monotonic'][camera])
+                    self.assertEqual((r.path/camera/'000060.jpg').read_bytes(), (r.path/camera/'000059.jpg').read_bytes())
+                clock.return_value += .2
+                feed(r.signals, {}, clock.return_value-.1)
+                with self.assertRaisesRegex(ValueError, 'camera unavailable or stale'):
+                    r.snapshot(clock.return_value-.1)
             finally:
                 r.file.close()
                 r.lock_file.close()

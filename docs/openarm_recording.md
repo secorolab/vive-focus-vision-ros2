@@ -176,7 +176,7 @@ This increases camera/recording load, not motor update rate or movement speed.
 The headset preview still requests up to 15 FPS. Existing 10 Hz episodes stay in
 their original dataset; do not relabel them as 30 Hz. `/status` reports requested
 and measured camera FPS. Validate a short recorded episode before collecting a
-larger dataset: repeated images, stale feedback and synchronization failures still
+larger dataset: stale camera frames, stale feedback and synchronization failures still
 stop recording. A short benchmark does not establish stability during extended
 teleoperation. Future policy target timing must match the dataset rate.
 
@@ -201,3 +201,8 @@ Its export counters separate waiting episodes from exported episodes and total
 saved recordings. Exporting retains the raw recordings. **Export only newest
 saved episode** writes a separate `dataset-latest` link; the full `dataset` link
 is unchanged. Successful exports record their source episode IDs for these counts.
+
+Repeated camera frames are allowed when they remain within the camera freshness
+and synchronization bounds. Each 30 Hz sample retains its own joint state/action
+and original camera timestamp, even when its image repeats the previous sample.
+A stopped/stale camera still blocks recording.

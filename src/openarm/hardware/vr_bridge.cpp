@@ -15,6 +15,8 @@
 #include <std_msgs/msg/empty.hpp>
 #include <controller_manager_msgs/srv/list_controllers.hpp>
 #include "vive_vr_ros2/hardware_guard.hpp"
+#include "vive_vr_ros2/external_control.hpp"
+#include <dlfcn.h>
 #include "vive_vr_ros2/body_pose_publisher.hpp"
 #include "vive_vr_ros2/openarm_teleop.hpp"
 
@@ -128,6 +130,8 @@ public:
                    std_srvs::srv::SetBool::Response::SharedPtr response) {
                 if (!request->data) {
                     disarm("operator disabled"); response->success=true; response->message="VR commands disabled; last targets held";
+                } else if ((external_control_ && external_control_->active())) {
+                    response->message="External controller owns the robot; stop it before enabling VR";
                 } else if (get_parameter("hardware.homing_only").as_bool()) {
                     response->success=false; response->message="Local homing mode: VR control is disabled. Use return-to-zero only.";
                 } else if (homing_) {
@@ -160,6 +164,7 @@ public:
                     response->success=true; response->message="Stopped; VR remains disarmed";
                     return;
                 }
+                if ((external_control_ && external_control_->active())) { response->message="Stop external control before returning to zero"; return; }
                 if (homing_) { response->message="Return to zero already active"; return; }
                 if (const auto why=arming_blockers(); !why.empty()) {
                     response->message="Cannot return to zero: " + why; return;
@@ -206,6 +211,40 @@ public:
             }; };
         home_service_ = create_service<std_srvs::srv::SetBool>("~/return_to_zero",home_callback(false));
         home_close_service_ = create_service<std_srvs::srv::SetBool>("~/return_to_zero_and_close",home_callback(true));
+        const auto library=declare_parameter<std::string>("external_control_library", "");
+        if (!library.empty()) {
+            // Keep the module loaded until process exit: ROS callbacks can outlive its object.
+            void *module=dlopen(library.c_str(),RTLD_NOW | RTLD_LOCAL);
+            if (!module) throw std::runtime_error(dlerror());
+            auto create=reinterpret_cast<CreateExternalControl>(dlsym(module,"openarm_create_external_control_v1"));
+            if (!create) throw std::runtime_error("External controller does not implement interface v1");
+            ExternalControlHooks hooks;
+            hooks.blockers=[this] {
+                if (armed_ || homing_) return std::string("Disable VR and stop homing before external control");
+                if (!grippers_ || get_parameter("hardware.homing_only").as_bool())
+                    return std::string("External control requires normal real mode with grippers");
+                return arming_blockers();
+            };
+            hooks.snapshot=[this] {
+                ExternalControlSnapshot snapshot;
+                for (size_t i=0;i<8;++i) {
+                    const auto &axis=arms_[0].axes[i];
+                    snapshot.names[i]=axis.name; snapshot.measured[i]=data_->qpos[axis.qpos];
+                    snapshot.lower[i]=model_->jnt_range[axis.joint*2]; snapshot.upper[i]=model_->jnt_range[axis.joint*2+1];
+                }
+                return snapshot;
+            };
+            hooks.healthy=[this] { return live_ && healthy(); };
+            hooks.send=[this](const std::array<double,8> &target) {
+                auto &arm=arms_[0]; arm.last=target; arm.sent=true;
+                arm.gripper_last=target[7]; arm.gripper_sent=true;
+                publish_command(arm); publish_gripper(arm);
+            };
+            hooks.hold=[this] { if (arms_[0].sent) publish_command(arms_[0]); arms_[0].sent=false; };
+            hooks.stop=[this](const char *reason) { disarm(reason); };
+            external_control_.reset(create(this,std::move(hooks)));
+            if (!external_control_) throw std::runtime_error("External controller creation failed");
+        }
         set_home_status("idle");
         SceneConf conf;
         conf.manifest_path = declare_parameter<std::string>("manifest", "");
@@ -356,6 +395,7 @@ private:
         msg.points.push_back(point); arm.command->publish(msg);
     }
     void disarm(const char *reason) {
+        if (external_control_) external_control_->stop(reason);
         if ((armed_ || homing_) && clutch_reset_) clutch_reset_->publish(std_msgs::msg::Empty{});
         for (auto &arm:arms_) stop_gripper(arm,true);
         if (homing_) {
@@ -476,6 +516,11 @@ private:
         if (dt > 0.1) invalidate();
         if (live_output_ && armed_ && !healthy()) disarm("hardware health/controller heartbeat missing");
         if (homing_) tick_home(dt);
+        if ((external_control_ && external_control_->active())) {
+            external_control_->tick(dt);
+            data_->time+=std::max(0.0,dt); scene_->publish(data_.get());
+            return;
+        }
         for (auto &arm : arms_) {
             if (!homing_) tick_gripper(arm,dt);
             arm.teleop->tick(std::clamp(dt, 0.0, 0.02));
@@ -531,6 +576,7 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr feedback_;
     rclcpp::TimerBase::SharedPtr timer_;
     bool homing_=false;
+    std::unique_ptr<ExternalControl> external_control_;
     double home_duration_=0, home_elapsed_=0, home_settled_=0;
     Clock::time_point home_lease_{}, home_began_{};
     std::array<std::array<double,7>,2> home_start_{};
