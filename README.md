@@ -19,13 +19,39 @@ PC (Ubuntu 24.04, ROS 2 Jazzy)                     Focus Vision (Android APK)
 └──────────────────────────────┘                   └──────────────────────────┘
 ```
 
+## Companion model repository
+
+[openarm-smolvla](https://github.com/secorolab/openarm-smolvla) contains the
+fine-tuned model's inference code, policy plugin, training provenance and evaluation.
+This repository keeps the VR/ROS app, UI, hardware, cameras and recording/export.
+The companion README documents the tested versions and optional ROS connection;
+ordinary teleoperation and recording do not require the model plugin.
+
+Source repositories:
+
+- [VR/ROS app, UI and recording](https://github.com/secorolab/vive-focus-vision-ros2)
+- [SmolVLA setup, dependencies and policy execution](https://github.com/secorolab/openarm-smolvla#setup)
+
+Follow the workflow in order:
+
+1. Complete this app's [installation](docs/install.md), [OpenArm setup](docs/openarm_modes.md)
+   and [camera setup](docs/openarm_cameras.md).
+2. Teleoperate, [record successful demonstrations](docs/openarm_recording.md), then
+   export saved episodes to LeRobot from the app panel.
+3. Follow [OpenArm SmolVLA's training and deployment workflow](https://github.com/secorolab/openarm-smolvla#workflow)
+   to fine-tune a model and run it on the robot.
+
+All steps can use the same computer. Cloning the repositories does not download
+model weights or datasets. The companion README will provide an example dataset
+link when it is published, so users can also try training without recording first.
+
 ## Quick start
 
 This repository is one ROS 2 package, cloned into a workspace rather than built in place:
 
 ```bash
 mkdir -p ~/work/p/vrws && cd ~/work/p/vrws
-git clone git@github.com:secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
+git clone https://github.com/secorolab/vive-focus-vision-ros2.git src/vive-vr-ros2
 vcs import src < src/vive-vr-ros2/dependencies.repos
 
 python3 -m venv --system-site-packages venv && source venv/bin/activate
