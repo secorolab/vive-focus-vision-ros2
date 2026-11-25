@@ -5,6 +5,49 @@
 using namespace vive_vr_ros2;
 void check(bool condition) { if (!condition) throw std::runtime_error("hardware guard check failed"); }
 int main() {
+    check(within_home_tolerance(1.32*3.141592653589793/180));
+    check(within_home_tolerance(-1.49*3.141592653589793/180));
+    check(!within_home_tolerance(1.51*3.141592653589793/180));
+    check(!within_home_tolerance(std::numeric_limits<double>::quiet_NaN()));
+
+    check(valid_zero_return_start(-0.052453,0,2.44,true,true));
+    check(!valid_zero_return_start(-0.052453,0,2.44,true,false));
+    check(valid_zero_return_start(-0.06,0,2.44,true,true));
+    check(!valid_zero_return_start(-0.06001,0,2.44,true,true));
+    check(!valid_zero_return_start(-0.052453,0,2.44,false,true));
+    check(!valid_zero_return_start(2.45,0,2.44,true,true));
+    check(!valid_zero_return_start(0.1,0.01,2.44,true,true));
+    check(!valid_zero_return_start(std::numeric_limits<double>::quiet_NaN(),0,2.44,true,true));
+
+    check(startup_lower_margin(false,true,true)==0.06);
+    check(startup_lower_margin(false,true,false)==0.05);
+    check(startup_lower_margin(false,false,true)==0.05);
+    check(startup_lower_margin(true,false,true)==0.002);
+    const double elbow=-0.052453;
+    check(elbow >= -startup_lower_margin(false,true,true));
+    check(elbow < -startup_lower_margin(false,true,false));
+    check(valid_recovery_command(elbow,elbow,elbow,0,2.44,0.1));
+    check(valid_recovery_command(-0.05,elbow,elbow,0,2.44,0.1));
+    check(!valid_recovery_command(-0.055,elbow,elbow,0,2.44,0.1));
+    check(!valid_recovery_command(-0.001,0,0,0,2.44,0.1));
+
+    bool ready=false;
+    int direction=0;
+    auto trigger=[&](bool pressed) {
+        direction=trigger_gripper_direction(pressed,ready,direction);
+        return direction;
+    };
+    check(trigger(true)==0); // Held during enable must not start motion.
+    check(trigger(false)==0); // Initial release holds, never auto-closes.
+    check(trigger(false)==0);
+    check(trigger(true)==1);
+    check(trigger(true)==1);
+    check(trigger(false)==-1);
+    check(trigger(false)==-1);
+    check(trigger(true)==1); // Reopen during closing.
+    ready=false; direction=0; // Tracking loss/disarm resets the cycle.
+    check(trigger(false)==0);
+    check(trigger(true)==1);
     double pos=0.01, velocity=0;
     for (int i=0;i<400;++i) {
         const double old_velocity=velocity, old_pos=pos;

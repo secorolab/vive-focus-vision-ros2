@@ -6,12 +6,19 @@
 #include <string>
 
 namespace vive_vr_ros2 {
+// After a reset, observe release then a press before release may command closing.
+inline int trigger_gripper_direction(bool pressed, bool &ready, int previous) {
+    if (!pressed) {
+        ready=true;
+        return previous==0 ? 0 : -1;
+    }
+    return ready ? 1 : 0;
+}
 // Space actual sends, including after scheduler delays: never catch up in bursts.
 // An incomplete batch faults; no retry or stale command queue is retained.
 template<class Now, class Wait, class Send>
 bool paced_motor_batch(Now now, Wait wait, Send send) {
-    // Allow an occasional ~24 ms host scheduling delay while staying below
-    // the independent 100 ms feedback/control-stall watchdogs. Never catch up.
+    // Allow scheduling jitter below the independent 100 ms watchdogs.
     const auto deadline = now() + std::chrono::milliseconds(30);
     for (int i = 0; i < 8; ++i) {
         if (i) wait(now() + std::chrono::microseconds(250));
@@ -19,7 +26,19 @@ bool paced_motor_batch(Now now, Wait wait, Send send) {
     }
     return now() < deadline;
 }
-// Shared, deterministic checks used by the CAN driver and unit tests.
+// Local homing accepts elbow undershoot for inward recovery only.
+inline bool within_home_tolerance(double angle) {
+    return std::isfinite(angle) && std::abs(angle) <= 1.5 * 3.141592653589793 / 180.0;
+}
+inline double startup_lower_margin(bool finger, bool elbow, bool local_recovery) {
+    return finger ? 0.002 : (elbow && local_recovery ? 0.06 : 0.05);
+}
+inline bool valid_zero_return_start(double measured, double lower, double upper,
+                                    bool elbow, bool local_recovery) {
+    const double margin = elbow ? startup_lower_margin(false, true, local_recovery) : 0.0;
+    return std::isfinite(measured) && std::isfinite(lower) && std::isfinite(upper) &&
+           lower <= 0 && upper >= 0 && measured >= lower-margin && measured <= upper;
+}
 struct MotorObservation {
     bool responded, malformed, error;
     double age_s, position, velocity;

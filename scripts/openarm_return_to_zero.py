@@ -7,6 +7,71 @@ import sys
 import time
 
 
+def enable_vr_after_return(node, timeout=10.):
+    """Re-enable once after confirmed arrival; never resumes a previous grip."""
+    import rclpy
+    from rclpy.qos import qos_profile_sensor_data
+    from sensor_msgs.msg import Joy
+    from geometry_msgs.msg import PoseStamped
+    from std_srvs.srv import SetBool
+
+    buttons, poses = {}, {}
+    subscriptions = []
+    client = node.create_client(SetBool, '/openarm_hardware_preview/enable')
+    def fresh(stamp):
+        age = (node.get_clock().now().nanoseconds-(stamp.sec*10**9+stamp.nanosec))/1e9
+        return -0.1 <= age <= .25
+    def joy(side, msg):
+        valid = fresh(msg.header.stamp) and len(msg.buttons) >= 7
+        buttons[side] = (time.monotonic(), valid and msg.buttons[6] == 1 and
+                         all(value == 0 for value in msg.buttons[:6]))
+    def pose(side, msg):
+        p, q = msg.pose.position, msg.pose.orientation
+        values = (p.x,p.y,p.z,q.x,q.y,q.z,q.w)
+        valid = fresh(msg.header.stamp) and all(math.isfinite(v) for v in values)
+        valid = valid and .81 <= q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w <= 1.21
+        poses[side] = (time.monotonic(), valid)
+    for side in ('right','left'):
+        subscriptions.append(node.create_subscription(Joy, f'/vive_vr/{side}/joy',
+            lambda msg, side=side: joy(side,msg), qos_profile_sensor_data))
+        subscriptions.append(node.create_subscription(PoseStamped, f'/vive_vr/{side}/pose',
+            lambda msg, side=side: pose(side,msg), qos_profile_sensor_data))
+    attempted = False
+    confirmed = False
+    try:
+        print('At zero. Release controller buttons; waiting to enable VR automatically.', flush=True)
+        end, released_since = time.monotonic()+timeout, None
+        while time.monotonic() < end:
+            rclpy.spin_once(node, timeout_sec=.02)
+            now = time.monotonic()
+            ready = all(side in stream and stream[side][1] and now-stream[side][0] <= .25
+                        for stream in (buttons,poses) for side in ('left','right'))
+            if not ready:
+                released_since = None
+                continue
+            if released_since is None: released_since = now
+            if now-released_since < .3 or not client.service_is_ready(): continue
+            attempted = True
+            future = client.call_async(SetBool.Request(data=True))
+            rclpy.spin_until_future_complete(node, future, timeout_sec=2.)
+            if not future.done():
+                return False, 'VR enable did not reply; disabling again. Check the robot panel.'
+            response = future.result()
+            confirmed = response.success
+            return confirmed, ('VR arms and grippers enabled. Press side grip on green to follow.'
+                               if confirmed else 'At zero, but VR could not enable: '+response.message)
+        return False, 'At zero; VR stays disabled. Lock world, track both controllers and release buttons, then Enable VR.'
+    except BaseException:
+        confirmed = False
+        raise
+    finally:
+        if attempted and not confirmed:
+            future = client.call_async(SetBool.Request(data=False))
+            rclpy.spin_until_future_complete(node, future, timeout_sec=2.)
+        for subscription in subscriptions: node.destroy_subscription(subscription)
+        node.destroy_client(client)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -15,7 +80,10 @@ def main():
     mode.add_argument('--cancel', action='store_true', help='stop a return and leave VR disarmed')
     mode.add_argument('--status', action='store_true', help='show measured arm angles without moving')
     parser.add_argument('--close-grippers', action='store_true', help='also close both empty grippers to their existing zero target')
+    parser.add_argument('--enable-vr-after', action='store_true',
+                        help='after successful return only, enable VR once with released, tracked controllers')
     args = parser.parse_args()
+    if args.enable_vr_after and not args.execute: parser.error('--enable-vr-after requires --execute')
     # Match openarm_real.launch.py even when the calling shell uses the sim domain.
     os.environ['ROS_DOMAIN_ID'] = '84'
     os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = 'LOCALHOST'
@@ -52,7 +120,7 @@ def main():
     joint_sub = node.create_subscription(JointState, '/joint_states', joints, qos_profile_sensor_data)
     def show_positions(full=False):
         if time.monotonic()-measured[1]>0.15:
-            print('Joint feedback unavailable/stale; zero position is NOT confirmed.', flush=True)
+            print('Cannot read the current arm positions. Zero is NOT confirmed. Check the robot launch for the first STARTUP BLOCKED or LATCHED FAULT message.', flush=True)
             return False
         q=measured[0]
         if full:
@@ -62,12 +130,13 @@ def main():
         if args.close_grippers:
             print('Gripper positions (mm; closed target = 0): ' + ', '.join(
                 f'{side}: {q[n]*1000:+.2f}' for side,n in zip(('right','left'),finger_names)), flush=True)
-        worst=max(abs(q[n]) for n in names)
-        print(f"Farthest joint from zero: {math.degrees(worst):.2f} deg; "
+        worst_name=max(names, key=lambda n: abs(q[n]))
+        worst=abs(q[worst_name])
+        print(f"Farthest joint from zero: {math.degrees(worst):.2f} deg ({worst_name}); "
               f"left elbow: {math.degrees(q['openarm_left_joint4']):+.2f} deg; "
               f"right elbow: {math.degrees(q['openarm_right_joint4']):+.2f} deg", flush=True)
         if full:
-            print('Within zero tolerance (1 degree).' if worst<=math.radians(1) else 'Not at zero yet.', flush=True)
+            print('Within zero tolerance (1.5 degrees).' if worst<=math.radians(1.5) else 'Not at zero yet.', flush=True)
         return True
     accepted = False
     uncertain = False
@@ -86,15 +155,16 @@ def main():
                 rclpy.spin_once(node, timeout_sec=0.02)
             return 0 if show_positions(full=True) else 1
         if not client.wait_for_service(timeout_sec=5):
-            raise RuntimeError('Start the updated openarm_real launch first. No return service found on domain 84.')
+            raise RuntimeError('Robot return service is unavailable. Start openarm_real.launch.py and wait for both arm controllers to activate (ROS domain 84).')
         # Drain an old transient status before starting this request.
         end = time.monotonic()+0.2
         while time.monotonic()<end:
             rclpy.spin_once(node, timeout_sec=0.02)
         baseline = status[1]
         if args.execute:
-            show_positions(full=True)
-            print('Requesting return of BOTH arms to joint zero, max 0.05 rad/s. ' +
+            if not show_positions(full=True):
+                raise RuntimeError('Return was not requested: live joint positions are required. Fix the startup/motor fault, then restart the robot launch. Enabling VR will not clear a motor fault.')
+            print('Requesting return of BOTH arms to joint zero, max 0.10 rad/s. ' +
                   ('Closing both grippers; keep them empty and clear.' if args.close_grippers else 'Grippers unchanged.'), flush=True)
             print('Direct path: keep it clear. Ctrl+C stops the return; it does not release motor torque.', flush=True)
         uncertain = args.execute
@@ -120,9 +190,13 @@ def main():
                 if status[0]=='complete':
                     accepted=False
                     show_positions(full=True)
-                    print('Both arms reached zero within 1 degree. ' +
+                    print('Both arms reached zero within 1.5 degrees. ' +
                           ('Grippers reached the closed target within 1 mm. ' if args.close_grippers else '') +
                           'VR remains disarmed.', flush=True)
+                    if args.enable_vr_after:
+                        enabled, message = enable_vr_after_return(node)
+                        print(message, flush=True)
+                        return 0 if enabled else 3
                     return 0
                 if status[0].startswith('stopped:'):
                     raise RuntimeError(status[0])

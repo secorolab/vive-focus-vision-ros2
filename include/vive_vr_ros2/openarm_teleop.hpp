@@ -59,6 +59,8 @@ class OpenArmTeleop
     bool released_ = false;
     bool active_ = false;
     bool inhibited_ = false;
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr alignment_validate_;
+    rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr alignment_apply_;
     bool stop_at_motion_bounds_ = true;
     bool have_target_ = false;
     bool have_trigger_ = false;

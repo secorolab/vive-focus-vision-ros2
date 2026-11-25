@@ -15,6 +15,8 @@
 #include <std_msgs/msg/empty.hpp>
 #include <controller_manager_msgs/srv/list_controllers.hpp>
 #include "vive_vr_ros2/hardware_guard.hpp"
+#include "vive_vr_ros2/external_control.hpp"
+#include <dlfcn.h>
 #include "vive_vr_ros2/body_pose_publisher.hpp"
 #include "vive_vr_ros2/openarm_teleop.hpp"
 
@@ -40,6 +42,7 @@ class HardwarePreview : public rclcpp::Node {
     };
 public:
     HardwarePreview() : Node("openarm_hardware_preview") {
+        declare_parameter<bool>("hardware.homing_only", false);
         live_output_ = declare_parameter<bool>("hardware.enable_commands", false);
         grippers_ = declare_parameter<bool>("hardware.control_grippers", false);
         const auto filename = declare_parameter<std::string>("model", "");
@@ -127,6 +130,10 @@ public:
                    std_srvs::srv::SetBool::Response::SharedPtr response) {
                 if (!request->data) {
                     disarm("operator disabled"); response->success=true; response->message="VR commands disabled; last targets held";
+                } else if ((external_control_ && external_control_->active())) {
+                    response->message="External controller owns the robot; stop it before enabling VR";
+                } else if (get_parameter("hardware.homing_only").as_bool()) {
+                    response->success=false; response->message="Local homing mode: VR control is disabled. Use return-to-zero only.";
                 } else if (homing_) {
                     response->success=false; response->message="Return to zero is active; cancel it before enabling VR";
                 } else if (grippers_ && std::any_of(arms_.begin(),arms_.end(),[](const Arm &arm) {
@@ -157,6 +164,7 @@ public:
                     response->success=true; response->message="Stopped; VR remains disarmed";
                     return;
                 }
+                if ((external_control_ && external_control_->active())) { response->message="Stop external control before returning to zero"; return; }
                 if (homing_) { response->message="Return to zero already active"; return; }
                 if (const auto why=arming_blockers(); !why.empty()) {
                     response->message="Cannot return to zero: " + why; return;
@@ -167,8 +175,8 @@ public:
                     const auto &axis=arms_[side].axes[i];
                     const double q=data_->qpos[axis.qpos];
                     const double lo=model_->jnt_range[axis.joint*2], hi=model_->jnt_range[axis.joint*2+1];
-                    const double margin=i==3 ? 0.05 : 0.0;
-                    if (lo>0 || hi<0 || q<lo-margin || q>hi) {
+                    if (!valid_zero_return_start(q, lo, hi, i==3,
+                                                 get_parameter("hardware.homing_only").as_bool())) {
                         response->message="Zero or measured position outside joint limits: " + axis.name;
                         return;
                     }
@@ -191,8 +199,8 @@ public:
                     arm.sent=false;
                 }
                 // Quintic smoothstep has maximum derivative 1.875. Peak joint
-                // speed is <=0.05 rad/s, independent of VR speed settings.
-                home_duration_=std::max(2.0,1.875*largest/0.05);
+                // speed is <=0.10 rad/s, independent of VR speed settings.
+                home_duration_=std::max(2.0,1.875*largest/0.10);
                 if (close_grippers) home_duration_=std::max(home_duration_,1.875*finger_largest/0.01);
                 home_elapsed_=0; home_settled_=0;
                 home_lease_=home_began_=Clock::now(); homing_=true;
@@ -203,6 +211,40 @@ public:
             }; };
         home_service_ = create_service<std_srvs::srv::SetBool>("~/return_to_zero",home_callback(false));
         home_close_service_ = create_service<std_srvs::srv::SetBool>("~/return_to_zero_and_close",home_callback(true));
+        const auto library=declare_parameter<std::string>("external_control_library", "");
+        if (!library.empty()) {
+            // Keep the module loaded until process exit: ROS callbacks can outlive its object.
+            void *module=dlopen(library.c_str(),RTLD_NOW | RTLD_LOCAL);
+            if (!module) throw std::runtime_error(dlerror());
+            auto create=reinterpret_cast<CreateExternalControl>(dlsym(module,"openarm_create_external_control_v1"));
+            if (!create) throw std::runtime_error("External controller does not implement interface v1");
+            ExternalControlHooks hooks;
+            hooks.blockers=[this] {
+                if (armed_ || homing_) return std::string("Disable VR and stop homing before external control");
+                if (!grippers_ || get_parameter("hardware.homing_only").as_bool())
+                    return std::string("External control requires normal real mode with grippers");
+                return arming_blockers();
+            };
+            hooks.snapshot=[this] {
+                ExternalControlSnapshot snapshot;
+                for (size_t i=0;i<8;++i) {
+                    const auto &axis=arms_[0].axes[i];
+                    snapshot.names[i]=axis.name; snapshot.measured[i]=data_->qpos[axis.qpos];
+                    snapshot.lower[i]=model_->jnt_range[axis.joint*2]; snapshot.upper[i]=model_->jnt_range[axis.joint*2+1];
+                }
+                return snapshot;
+            };
+            hooks.healthy=[this] { return live_ && healthy(); };
+            hooks.send=[this](const std::array<double,8> &target) {
+                auto &arm=arms_[0]; arm.last=target; arm.sent=true;
+                arm.gripper_last=target[7]; arm.gripper_sent=true;
+                publish_command(arm); publish_gripper(arm);
+            };
+            hooks.hold=[this] { if (arms_[0].sent) publish_command(arms_[0]); arms_[0].sent=false; };
+            hooks.stop=[this](const char *reason) { disarm(reason); };
+            external_control_.reset(create(this,std::move(hooks)));
+            if (!external_control_) throw std::runtime_error("External controller creation failed");
+        }
         set_home_status("idle");
         SceneConf conf;
         conf.manifest_path = declare_parameter<std::string>("manifest", "");
@@ -210,6 +252,7 @@ public:
         conf.topic_ns = get_parameter("out_ns").as_string();
         conf.frame_id = "world";
         conf.rate_hz = 50.0;
+        conf.operator_view = declare_parameter<bool>("operator_view", false);
         conf.view_yaw_deg = declare_parameter<double>("view_yaw_deg", 0.0);
         scene_ = std::make_unique<BodyPosePublisher>(*this, model_.get(), conf);
         feedback_ = create_subscription<sensor_msgs::msg::JointState>(
@@ -231,18 +274,18 @@ private:
         };
         if (!live_output_) add("preview-only mode");
         if (!live_ || std::chrono::duration<double>(time-received_).count()>0.15)
-            add("joint feedback missing, invalid or older than 150 ms");
+            add("current arm positions are unavailable (feedback must be newer than 150 ms)");
         for (size_t i=0;i<arms_.size();++i) {
             const auto &arm=arms_[i];
             const std::string side=i==0 ? "right" : "left";
-            if (arm.healthy_at == Clock::time_point{}) add(side+" driver health not received");
-            else if (!arm.healthy) add(side+" driver reports a fault; inspect driver log and restart after fixing it");
+            if (arm.healthy_at == Clock::time_point{}) add(side+" motor driver has not reported ready");
+            else if (!arm.healthy) add(side+" motor driver is not ready; check the robot launch for STARTUP BLOCKED or LATCHED FAULT");
             else if (std::chrono::duration<double>(time-arm.healthy_at).count()>0.15)
-                add(side+" driver health older than 150 ms");
+                add(side+" motor driver status stopped updating");
         }
-        if (!controllers_ok_) add("trajectory controllers inactive or not yet confirmed");
+        if (!controllers_ok_) add("arm controllers are not ready; the robot launch may have failed");
         else if (std::chrono::duration<double>(time-controllers_at_).count()>0.75)
-            add("controller-state reply older than 750 ms");
+            add("arm controller status stopped updating");
         return reasons;
     }
     bool healthy() const {
@@ -288,26 +331,18 @@ private:
     }
     void gripper_buttons(Arm &arm, const sensor_msgs::msg::Joy &msg) {
         if (!fresh_input(msg.header.stamp,arm.joy_stamp) || msg.buttons.size()<7 ||
-            msg.axes.size()<2 || !std::isfinite(msg.axes[1]) || std::abs(msg.axes[1])>1.0 ||
+            (msg.buttons[0]!=0 && msg.buttons[0]!=1) ||
             msg.buttons[6]!=1) {
             arm.joy_at={}; arm.gripper_ready=false; arm.gripper_direction=0;
-            if (armed_) disarm("world unlocked or invalid stick input; lock world before enabling");
+            if (armed_) disarm("world unlocked or invalid trigger input; lock world before enabling");
             return;
         }
         arm.joy_at=Clock::now();
         if (!armed_ || homing_ || !live_ || !hand_fresh(arm)) {
             arm.gripper_ready=false; arm.gripper_direction=0; return;
         }
-        const double stick=msg.axes[1];
-        if (std::abs(stick)<=0.2) {
-            arm.gripper_direction=0;
-            arm.gripper_ready=true;
-            return;
-        }
-        if (arm.gripper_ready) {
-            if (stick>=0.5) arm.gripper_direction=1;
-            else if (stick<=-0.5) arm.gripper_direction=-1;
-        }
+        arm.gripper_direction=trigger_gripper_direction(
+            msg.buttons[0]==1,arm.gripper_ready,arm.gripper_direction);
     }
 
     void publish_gripper(Arm &arm) {
@@ -344,6 +379,9 @@ private:
             arm.gripper_velocity=0;
         }
         if (!valid_recovery_command(next,measured,previous,lower,upper,0.008)) {
+            RCLCPP_ERROR(get_logger(),
+                "Gripper guard %s: measured=%.6f previous=%.6f next=%.6f limits=[%.6f, %.6f] m",
+                axis.name.c_str(), measured, previous, next, lower, upper);
             disarm("gripper following error or joint limit"); return;
         }
         arm.gripper_last=next; arm.gripper_sent=true; publish_gripper(arm);
@@ -357,6 +395,7 @@ private:
         msg.points.push_back(point); arm.command->publish(msg);
     }
     void disarm(const char *reason) {
+        if (external_control_) external_control_->stop(reason);
         if ((armed_ || homing_) && clutch_reset_) clutch_reset_->publish(std_msgs::msg::Empty{});
         for (auto &arm:arms_) stop_gripper(arm,true);
         if (homing_) {
@@ -391,7 +430,9 @@ private:
         for (const auto &arm : arms_) for (const auto &axis : arm.axes) {
             const auto it = values.find(axis.name);
             const double margin = axis.name.find("finger") == std::string::npos ? 0.05 : 0.002;
-            if (it == values.end() || it->second < model_->jnt_range[axis.joint*2] - margin ||
+            const double lower_margin = startup_lower_margin(axis.name.find("finger") != std::string::npos,
+                axis.name.find("joint4") != std::string::npos, get_parameter("hardware.homing_only").as_bool());
+            if (it == values.end() || it->second < model_->jnt_range[axis.joint*2] - lower_margin ||
                 it->second > model_->jnt_range[axis.joint*2+1] + margin) { invalidate(); return; }
         }
         for (auto &arm : arms_) for (const auto &axis : arm.axes) {
@@ -440,7 +481,7 @@ private:
                 disarm("return to zero following error or joint limit"); return;
             }
             next[side][i]=desired;
-            settled &= std::abs(q)<=0.017453292519943295; // one degree
+            settled &= within_home_tolerance(q); // 1.5 degrees; zero target unchanged
         }
         if (home_close_grippers_) for (size_t side=0;side<2;++side) {
             auto &arm=arms_[side]; const auto &axis=arm.axes[7];
@@ -464,7 +505,7 @@ private:
             homing_=false;
             for (auto &arm:arms_) { arm.sent=false; arm.gripper_sent=false; }
             set_home_status("complete");
-            RCLCPP_INFO(get_logger(),"Return to zero complete within 1 degree; VR remains disarmed");
+            RCLCPP_INFO(get_logger(),"Return to zero complete within 1.5 degrees; VR remains disarmed");
         }
     }
     void tick() {
@@ -475,6 +516,11 @@ private:
         if (dt > 0.1) invalidate();
         if (live_output_ && armed_ && !healthy()) disarm("hardware health/controller heartbeat missing");
         if (homing_) tick_home(dt);
+        if ((external_control_ && external_control_->active())) {
+            external_control_->tick(dt);
+            data_->time+=std::max(0.0,dt); scene_->publish(data_.get());
+            return;
+        }
         for (auto &arm : arms_) {
             if (!homing_) tick_gripper(arm,dt);
             arm.teleop->tick(std::clamp(dt, 0.0, 0.02));
@@ -530,6 +576,7 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr feedback_;
     rclcpp::TimerBase::SharedPtr timer_;
     bool homing_=false;
+    std::unique_ptr<ExternalControl> external_control_;
     double home_duration_=0, home_elapsed_=0, home_settled_=0;
     Clock::time_point home_lease_{}, home_began_{};
     std::array<std::array<double,7>,2> home_start_{};

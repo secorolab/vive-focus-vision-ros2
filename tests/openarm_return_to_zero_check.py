@@ -30,7 +30,7 @@ enable=node.create_client(SetBool,'/openarm_hardware_preview/enable')
 names=[f'openarm_{s}_joint{i}' for s in ('right','left') for i in range(1,8)]
 names += [f'openarm_{s}_finger_joint1' for s in ('right','left')]
 positions=dict.fromkeys(names,0.0)
-positions[names[0]]=0.02; positions[names[7]]=-0.03
+positions[names[0]]=0.10; positions[names[7]]=-0.03
 positions[names[14]]=positions[names[15]]=0.01
 commands=[[],[]]; grippers=[]; status=[]
 follow=True; healthy=True; feedback_on=True; keepalive=True; active=True
@@ -97,7 +97,9 @@ try:
         for a,b in zip(side,side[1:]):
             for before,after in zip(a.points[0].positions,b.points[0].positions):
                 assert abs(after)<=abs(before)+1e-9, 'target reversed or overshot zero'
-                assert abs(after-before)<=0.001001, 'exceeded 0.05 rad/s per 20ms'
+                assert abs(after-before)<=0.002001, 'exceeded 0.10 rad/s per 20ms'
+    assert any(abs(b.points[0].positions[0]-a.points[0].positions[0]) > 0.0011
+               for a,b in zip(commands[0],commands[0][1:])), 'return still capped at the old speed'
     # Reproduce a static 0.64-degree residual: target reaches zero, measured
     # posture cannot reach the old 0.57-degree threshold with these gains.
     follow=False
@@ -105,9 +107,9 @@ try:
     pump(0.3); assert call(client,True).success
     pump(3); assert status[-1]=='complete', status
     assert commands[0][-1].points[0].positions[0]==0.0
-    positions[names[0]]=0.025
+    positions[names[0]]=0.03
     pump(0.3); assert call(client,True).success
-    pump(3); assert status[-1]=='running', 'reported completion beyond one degree'
+    pump(3); assert status[-1]=='running', 'reported completion beyond 1.5 degrees'
     assert call(client,False).success
     for failure in ('cancel','keepalive','health','feedback','controllers','following'):
         positions[names[0]]=0.15; positions[names[7]]=-0.15

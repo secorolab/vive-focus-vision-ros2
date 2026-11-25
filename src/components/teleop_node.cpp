@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <set>
@@ -22,6 +23,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/joy.hpp>
+#include <vive_vr_ros2/msg/teleop_status.hpp>
 #include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float32.hpp>
@@ -65,6 +67,7 @@ class TeleopNode : public rclcpp::Node
     {
         out_ns_ = declare_parameter<std::string>("out_ns", "/vive_vr");
         toggle_clutch_=declare_parameter<bool>("teleop.toggle_clutch",false);
+        require_ready_=declare_parameter<bool>("teleop.require_ready",false);
         reset_sub_=create_subscription<std_msgs::msg::Empty>(out_ns_+"/teleop/reset",10,
             [this](std_msgs::msg::Empty::SharedPtr) {
                 if (!toggle_clutch_) return;
@@ -89,6 +92,42 @@ class TeleopNode : public rclcpp::Node
             return;
         }
 
+        alignment_validate_ = add_on_set_parameters_callback(
+          [this](const std::vector<rclcpp::Parameter> &params) {
+            rcl_interfaces::msg::SetParametersResult result;
+            result.successful = true;
+            for (const auto &p : params) for (const auto &arm : arms_) {
+                if (p.get_name() != "teleop." + arm->name + ".tool_from_controller_rpy") continue;
+                if (arm->clutched) {
+                    result.successful = false;
+                    result.reason = "Release arm following before wrist calibration";
+                    return result;
+                }
+                result.successful = p.get_type() == rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY;
+                if (result.successful) {
+                    const auto &rpy = p.as_double_array();
+                    result.successful = rpy.size() == 3 && std::all_of(rpy.begin(), rpy.end(),
+                        [](double v) { return std::isfinite(v); });
+                }
+                if (!result.successful) {
+                    result.reason = "Wrist alignment needs three finite angles in degrees";
+                    return result;
+                }
+            }
+            return result;
+          });
+        alignment_apply_ = add_post_set_parameters_callback(
+          [this](const std::vector<rclcpp::Parameter> &params) {
+            for (const auto &p : params) for (auto &arm : arms_) {
+                if (p.get_name() != "teleop." + arm->name + ".tool_from_controller_rpy") continue;
+                const auto &rpy = p.as_double_array();
+                tf2::Quaternion q;
+                q.setRPY(rpy[0]*M_PI/180., rpy[1]*M_PI/180., rpy[2]*M_PI/180.);
+                arm->tool_R.setRotation(q);
+                arm->ready = false;
+                arm->pressed = true;
+            }
+          });
         watchdog_ = create_wall_timer(std::chrono::milliseconds(50), [this] { check_stale(); });
     }
 
@@ -118,6 +157,9 @@ class TeleopNode : public rclcpp::Node
         rclcpp::Time   pose_stamp;
         std::chrono::steady_clock::time_point pose_received;
 
+        rclcpp::Subscription<vive_vr_ros2::msg::TeleopStatus>::SharedPtr status_sub;
+        bool ready = false;
+        std::chrono::steady_clock::time_point status_received{};
         bool           clutched = false;
         bool           pressed  = false;
         std::chrono::steady_clock::time_point joy_received{};
@@ -168,6 +210,18 @@ class TeleopNode : public rclcpp::Node
         arm->joy_sub = create_subscription<sensor_msgs::msg::Joy>(
           out_ns_ + "/" + arm->hand + "/joy", rclcpp::SensorDataQoS(),
           [this, a](sensor_msgs::msg::Joy::SharedPtr msg) { on_joy(*a, *msg); });
+
+        if (require_ready_) {
+            arm->status_sub = create_subscription<vive_vr_ros2::msg::TeleopStatus>(
+              out_ns_ + "/teleop/" + name + "/status", rclcpp::SensorDataQoS().keep_last(1),
+              [this, a](vive_vr_ros2::msg::TeleopStatus::SharedPtr msg) {
+                  a->status_received = std::chrono::steady_clock::now();
+                  a->ready = msg->ready && msg->state == "ready";
+                  if (a->clutched && !a->ready && msg->state != "engaged" &&
+                      msg->state != "waiting_delta" && msg->state != "unreachable")
+                      close_clutch(*a, "engagement rejected or stopped");
+              });
+        }
 
         // Subscribed and unused, so the topic contract does not change when it is needed.
         if (!ee_topic.empty()) {
@@ -232,6 +286,12 @@ class TeleopNode : public rclcpp::Node
                 std::chrono::steady_clock::now() - arm.pose_received).count() >= pose_timeout_s_) {
             RCLCPP_WARN(get_logger(), "%s: clutch pressed without a fresh pose; ignored",
                         arm.name.c_str());
+            return;
+        }
+
+        if (require_ready_ && (!arm.ready || std::chrono::duration<double>(
+              std::chrono::steady_clock::now() - arm.status_received).count() > 0.25)) {
+            publish_clutch(arm, false);
             return;
         }
 
@@ -312,7 +372,10 @@ class TeleopNode : public rclcpp::Node
         }
     }
 
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr alignment_validate_;
+    rclcpp::node_interfaces::PostSetParametersCallbackHandle::SharedPtr alignment_apply_;
     bool toggle_clutch_=false;
+    bool require_ready_=false;
     rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr reset_sub_;
     std::string                       out_ns_;
     double                            pose_timeout_s_ = 0.25;

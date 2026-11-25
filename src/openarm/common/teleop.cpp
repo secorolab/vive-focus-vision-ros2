@@ -60,6 +60,55 @@ OpenArmTeleop::OpenArmTeleop(rclcpp::Node &node, mjModel *model, mjData *data, c
     for (double v : pairing_q_) if (!std::isfinite(v)) throw std::runtime_error("Invalid pairing");
     if (std::abs(mju_norm(pairing_q_, 4) - 1.0) > 0.01) throw std::runtime_error("Invalid pairing norm");
     mju_normalize4(pairing_q_);
+    alignment_validate_ = node.add_on_set_parameters_callback(
+      [this, pairing_prefix](const std::vector<rclcpp::Parameter> &params) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+        for (const auto &p : params) {
+            if (p.get_name() != pairing_prefix + "controller_to_tool_xyzw" &&
+                p.get_name() != pairing_prefix + "alignment_configured" &&
+                p.get_name() != "openarm.require_alignment") continue;
+            bool live = false;
+            node_.get_parameter_or("hardware.enable_commands", live, false);
+            if (active_ || (live && !inhibited_)) {
+                result.successful = false;
+                result.reason = "Disable VR and release side grips before wrist calibration";
+                return result;
+            }
+            if (p.get_name() == pairing_prefix + "controller_to_tool_xyzw") {
+                if (p.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY) {
+                    result.successful = false;
+                } else {
+                    const auto &q = p.as_double_array();
+                    double norm = 0;
+                    for (double v : q) norm += v*v;
+                    result.successful = q.size() == 4 && std::isfinite(norm) &&
+                        std::abs(std::sqrt(norm)-1.0) <= 0.01;
+                }
+            } else result.successful = p.get_type() == rclcpp::ParameterType::PARAMETER_BOOL;
+            if (!result.successful) {
+                result.reason = "Invalid wrist alignment parameter";
+                return result;
+            }
+        }
+        return result;
+      });
+    alignment_apply_ = node.add_post_set_parameters_callback(
+      [this, pairing_prefix](const std::vector<rclcpp::Parameter> &params) {
+        for (const auto &p : params) {
+            if (p.get_name() == pairing_prefix + "controller_to_tool_xyzw") {
+                const auto &q = p.as_double_array();
+                pairing_q_[0] = q[3];
+                for (int i=0; i<3; ++i) pairing_q_[i+1] = q[i];
+                mju_normalize4(pairing_q_);
+                reset();
+            } else if (p.get_name() == pairing_prefix + "alignment_configured") {
+                alignment_configured_ = p.as_bool();
+            } else if (p.get_name() == "openarm.require_alignment") {
+                require_alignment_ = p.as_bool();
+            }
+        }
+      });
     for (double value : { scale_, radius_, timeout_, finger_speed_, rotation_limit_,
                           alignment_tolerance_, position_tolerance_,
                           gains_.joint_speed, gains_.max_linear,

@@ -106,6 +106,7 @@ namespace VrRos
             }
 
             if (!model.activeSelf) model.SetActive(true);
+            VrLocomotion.MapController(model.transform.parent, ref p, ref q);
             model.transform.localPosition = p;
             model.transform.localRotation = q;
         }

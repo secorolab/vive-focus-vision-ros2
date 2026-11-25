@@ -11,19 +11,36 @@ import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Bool
+from rcl_interfaces.srv import SetParametersAtomically
+from std_srvs.srv import SetBool
 import yaml
 
 
 def main():
     arm = sys.argv[1] if len(sys.argv) > 1 else 'right'
+    mode = sys.argv[2] if len(sys.argv) > 2 else 'sim'
+    prefix = 'hardware' if mode == 'real' else 'sim'
     filename = 'controller_alignment.json' if arm == 'right' else 'controller_alignment_left.json'
     rclpy.init()
     node=rclpy.create_node('alignment_capture_test')
     sensor=QoSProfile(depth=1,reliability=ReliabilityPolicy.BEST_EFFORT)
     latched=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
     c=node.create_publisher(PoseStamped,f'/vive_vr/{arm}/pose',sensor)
-    t=node.create_publisher(PoseStamped,f'/vive_vr/sim/{arm}/ee_pose',sensor)
+    t=node.create_publisher(PoseStamped,f'/vive_vr/{prefix}/{arm}/ee_pose',sensor)
     grip=node.create_publisher(Bool,f'/vive_vr/teleop/{arm}/clutch',latched)
+    updates = []
+    def update(request, response):
+        updates.append({p.name: p.value for p in request.parameters})
+        response.result.successful = True
+        return response
+    target = '/openarm_hardware_preview' if mode == 'real' else '/vive_scene'
+    node.create_service(SetParametersAtomically, target+'/set_parameters_atomically', update)
+    node.create_service(SetParametersAtomically, '/vive_teleop/set_parameters_atomically', update)
+    def disable(request, response):
+        assert not request.data, 'Calibration attempted to arm the robot'
+        response.success = True
+        return response
+    node.create_service(SetBool, '/openarm_hardware_preview/enable', disable)
     process=None
     try:
         with tempfile.TemporaryDirectory(prefix='alignment-test-') as directory:
@@ -32,7 +49,7 @@ def main():
                 {'vive_teleop':{'ros__parameters':{'teleop':{arm:{}}}}}))
             script=Path(__file__).resolve().parents[1]/'scripts/openarm_align.py'
             process=subprocess.Popen([sys.executable,str(script),'--output',str(folder),
-                                      '--delay','0','--timeout','6','--arm',arm],stdout=subprocess.PIPE,
+                                      '--delay','0','--timeout','6','--arm',arm,'--mode',mode],stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT,text=True)
             start=time.monotonic()
             while process.poll() is None and time.monotonic()-start<8:
@@ -56,7 +73,14 @@ def main():
             assert abs(record['tool_from_controller_rpy'][2])<1e-6,record
             stored=yaml.safe_load((folder/'teleop.yaml').read_text())
             assert stored['vive_teleop']['ros__parameters']['teleop'][arm]['tool_from_controller_rpy']==record['tool_from_controller_rpy']
-            print('PASS: released-grip capture, averaging, saved alignment and updated configuration')
+            key = 'openarm.' if arm == 'right' else 'openarm.left.'
+            assert len(updates) == 3, updates
+            assert not updates[0][key+'alignment_configured'].bool_value
+            assert list(updates[1][f'teleop.{arm}.tool_from_controller_rpy'].double_array_value) == record['tool_from_controller_rpy']
+            assert list(updates[2][key+'controller_to_tool_xyzw'].double_array_value) == record['quaternion_xyzw']
+            assert updates[2][key+'alignment_configured'].bool_value
+            assert 'No restart needed' in output
+            print('PASS: released capture, saved alignment, gated live update of both nodes')
     finally:
         if process is not None and process.poll() is None:
             process.terminate();process.wait(timeout=3)

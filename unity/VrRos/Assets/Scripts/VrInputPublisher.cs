@@ -46,9 +46,11 @@ namespace VrRos
 
         private readonly StringBuilder _sb = new StringBuilder(512);
         private float _nextPublish;
+        private SceneLoader _scene;
 
         private void Start()
         {
+            _scene = FindFirstObjectByType<SceneLoader>();
             if (config != null && config.Active != null)
             {
                 rawNs = config.Active.rawNs;
@@ -83,15 +85,17 @@ namespace VrRos
         {
             InputDevice device = InputDevices.GetDeviceAtXRNode(node);
             if (!device.isValid) return;
-            PublishPose($"{rawNs}/{hand}/pose", device);
+            PublishPose($"{rawNs}/{hand}/pose", device, true);
             PublishJoy($"{rawNs}/{hand}/joy", device);
         }
 
-        private void PublishPose(string topic, InputDevice device)
+        private void PublishPose(string topic, InputDevice device, bool controller = false)
         {
             if (!device.isValid) return;
             if (!device.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 p)) return;
             if (!device.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion q)) return;
+
+            if (controller) VrLocomotion.MapController(rig, ref p, ref q);
 
             /* Devices report in tracking space, which ignores where the rig has walked to. The
              * rig transform is what puts the hand where the user sees it in the scene. */
@@ -101,6 +105,7 @@ namespace VrRos
                 q = rig.rotation * q;
             }
 
+            FrameConv.WorldToScene(_scene != null ? _scene.transform : null, ref p, ref q);
             Vector3 rp = FrameConv.UnityToRos(p);
             Quaternion rq = FrameConv.UnityToRos(q);
 

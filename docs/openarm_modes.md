@@ -125,7 +125,7 @@ hold or move inward; it does not redefine calibration or extend normal VR target
 Clear the direct joint-space path for both arms before executing. This routine
 has no collision planning: it cannot check obstacles, the table, or arm-to-arm
 clearance. It moves both arms together with a smooth start/stop, peak joint speed
-0.05 rad/s, and verifies measured positions settle within 1 degree of zero.
+0.10 rad/s, and verifies measured positions settle within 1.5 degrees of zero.
 
 ```zsh
 source /opt/ros/jazzy/setup.zsh
@@ -154,7 +154,7 @@ python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_return_to_zero.py --sta
 
 The script prints J1–J7 in degrees for each arm. During `--execute` it reports
 both elbow angles and the largest remaining zero error once per second. Zero
-completion means measured angles within 1 degree, not an
+completion means measured angles within 1.5 degrees, not an
 encoder recalibration or a claim of mechanically exact zero.
 
 ## Physical gripper controls
@@ -166,11 +166,12 @@ Lock freezes joystick translation, turning, height buttons and recentering, whil
 normal head tracking continues. Its label stays at the location where lock was toggled.
 Lock before enabling real VR. Unlocking disarms real control; center both sticks,
 lock again and explicitly enable to resume. Old APKs cannot supply the lock flag.
-Each hand's stick up opens its gripper, down closes it, and center stops/holds.
-A 0.2 neutral deadzone and 0.5 engagement threshold reject small accidental deflections.
-Rear triggers toggle arm following; A/X do not control physical grippers. After enabling or input
-loss, center the stick before issuing another command.
-For the real robot, press the rear trigger once to engage arm following and again to
+Each hand's rear index trigger opens its gripper while held and closes it when released.
+Side grips toggle arm following; A/X and sticks do not control physical grippers. After enabling or input
+loss, release the trigger, then press it to open. The initial release holds position;
+closing on release starts only after that fresh press. Tracking loss or unlocking
+holds the gripper rather than treating missing input as a release.
+For the real robot, press the side grip once to engage arm following and again to
 stop; releasing it does not stop an engaged arm. Align before engaging. Simulation
 retains hold-to-move.
 
@@ -189,8 +190,8 @@ python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_return_to_zero.py --exe
 ```
 
 This uses the existing encoder calibration. Both arms follow a smooth joint-space
-path to zero at up to 0.05 rad/s; grippers target zero at up to 10 mm/s. Completion
-requires measured arm error within 1 degree and finger error within 1 mm for 0.5 s.
+path to zero at up to 0.10 rad/s; grippers target zero at up to 10 mm/s. Completion
+requires measured arm error within 1.5 degrees and finger error within 1 mm for 0.5 s.
 Measured gripper positions are printed; completion does not certify mechanical contact.
 Ctrl+C cancels, retaining motor torque. VR stays disarmed afterward. Omit
 `--close-grippers` to preserve gripper positions. `--status --close-grippers` only
@@ -220,7 +221,7 @@ repeatedly widening limits or resetting zero at an arbitrary pose.
 
 The real input node uses `teleop.toggle_clutch=true`. Pose or button-stream loss
 drops the toggle. Arming/disarming and homing reset it; release the button and press
-again to engage. A new engagement captures a fresh hand reference. Gripper sticks operate independently of the arm toggle.
+again to engage. A new engagement captures a fresh hand reference. Gripper triggers operate independently of the arm toggle.
 
 Left gripper gains are now `kp=15`, `kd=0.20` to test reduction of the measured
 +0.75 mm residual; right remains `kp=10`, `kd=0.15`. The left closing force increases,
@@ -235,12 +236,214 @@ limits remain unchanged.
 
 ### Real-robot VR orientation
 
-`config/openarm_real.yaml` sets `view_yaw_deg: 90.0`: the headset spawn is
-orbited around the robot/world origin, making the robot appear turned 90 degrees
-to the right relative to the tracking space. Both spawn position and heading
-rotate together; robot joint coordinates, IK, and controller-to-tool calibration
-remain unchanged. Controller poses use the rotated rig, keeping wrist indicators
-and hand movement consistent with the displayed robot. Simulation defaults to
-zero. Set this value to `0.0` to restore the previous view, or `-90.0` for the
-opposite orientation. Restart the real launch and reopen the updated headset app
-after changing it. This requires an APK built with scene `view_yaw_deg` support.
+The real launch uses the robot operator view. Its saved viewing angle is applied
+around the OpenArm base at ROS world zero. Both the headset rig position and
+heading orbit together, so the displayed base stays in place and the robot turns
+about it. Published controller poses use that same rig transform; robot geometry,
+end-effector guides, and controller-to-tool alignment remain in one ROS frame.
+This does not move the physical robot or change motor calibration.
+
+### Adjusting the real robot viewing direction
+
+While the world is unlocked in the real robot operator view, release and press
+the left rear trigger to start turning the displayed robot right about its base
+at 15 degrees per second. Release and press again to stop at any angle. Tap the
+left menu button to stop, lock the world, and save the angle on the headset; it
+is restored on the next app launch. Losing controller tracking also stops the
+adjustment. This changes the VR viewing frame, not the physical robot pose or
+calibration. Head tracking stays active. While locked, the rear trigger retains
+its gripper function.
+
+While unlocked, hold the right rear trigger and move the controller to translate
+the displayed robot scene one-to-one in any direction while your viewpoint stays
+fixed, including the floor grid. Walking is disabled during the trigger drag;
+the right stick moves your viewpoint after you release. Release the trigger to leave
+the robot there; repeat
+to move farther. This stops automatic rotation. Locking saves the position and
+angle. Tracking loss stops placement and requires a release before resuming.
+Only the VR placement changes, never the physical base or motor calibration.
+
+For a desk-mounted headset in the real operator view, the right stick moves the
+viewpoint while unlocked: up/down moves forward/backward in the horizontal view
+direction, left/right strafes. Maximum speed is 0.5 m/s. Center the stick after
+unlocking before moving. Lock saves the viewpoint and disables stick locomotion.
+Complete view placement before wrist calibration; keep teleoperation disarmed
+during calibration and restart the robot launch after saving the new pairing.
+
+Camera panel distance is fixed; the left stick no longer zooms the panels. In
+the unlocked real operator view, left-stick horizontal input turns the viewpoint
+left/right around the eyes at up to 45 degrees per second. The right stick walks
+forward/back and strafes. Center sticks after unlocking. Lock stops navigation
+and saves the view; normal head tracking remains active.
+
+Left-stick up/down also tilts the view up/down (limited to 70 degrees each way).
+While unlocked, hold right-controller A to raise the viewpoint or B to lower it
+at 0.3 m/s. Release both after unlocking before use. Lock saves pitch and height
+as well as position/yaw. A/B retain their recording functions while locked.
+
+### Facing a desk-mounted headset
+
+In the real operator view, unlock the world and orient the view behind the robot
+first. With both controllers tracked, release then press **left X** to enable
+**facing-headset** control. The unlocked status panel shows ON/OFF. This rotates
+both controller poses 180 degrees about their captured midpoint, preserving
+right/left controller identities. The operator frame is level and stays fixed
+in robot/world coordinates while you subsequently move the camera to a side view.
+Controller meshes, pointing rays and ROS controller poses share this transform;
+head tracking is unchanged. Press X again while unlocked to restore normal mapping.
+The mode starts OFF each app session; it cannot change while the world is locked.
+
+After choosing the operator frame, position the viewing camera, lock the world,
+and recalibrate wrist alignment for this mapping before engaging. Check small
+right/forward/up movements in simulation or with control disarmed first. Switching
+mode can visibly reposition controllers, so do it only during setup. X retains its
+recording/discard behavior while locked. This mode applies to tracked controllers,
+not bare-hand tracking.
+
+View navigation eases into stick movement (look: 35 degrees/s maximum with a
+120 ms response; walk: 0.5 m/s with a 100 ms response). Centering a stick stops
+that navigation immediately. Right-stick walking overrides right-trigger dragging;
+release the trigger before starting another drag. Looking vertically does not
+block walking: it falls back to the saved view yaw.
+
+Startup failures now explain whether a motor did not reply, reported a fault, or
+returned a position outside the accepted startup range. Joint angles are shown
+in degrees and gripper positions in millimetres. A position-range failure does
+not imply a CAN wiring fault. `openarm_return_to_zero.py --execute` does not send
+a return request when live joint positions are unavailable. Check the first
+`STARTUP BLOCKED` or `LATCHED FAULT` message in the launch terminal; subsequent
+controller errors can be consequences of that failure. These diagnostics do not
+expand recovery limits, reset calibration, or automatically enable a faulted arm.
+
+### Retry a blocked startup without restarting the whole launch
+
+The controller manager stays available when initial hardware activation fails.
+A rejected configuration remains unconfigured and reports a readable diagnostic
+on `/vive_vr/hardware/right/diagnostic` (and `/left/diagnostic`).
+
+Read the current state without enabling anything:
+
+```bash
+source /opt/ros/jazzy/setup.zsh
+python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_retry_startup.py
+```
+
+After resolving the reported cause, support the arms and keep the workspace clear:
+
+```bash
+python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_retry_startup.py --execute
+```
+
+Retry first disarms VR, configures both unconfigured arms, then activates them at
+freshly measured positions and starts their controllers. Enabling motors applies
+holding torque. It does not home, change calibration, or widen joint limits.
+If a check fails, it prints the latest driver explanation and stops. A timeout
+means the resulting state is uncertain; inspect the launch before another retry.
+Running-motion faults remain latched and require a restart after repair. An arm
+already activated before a later failure can remain holding; the script does not
+release torque automatically. VR must be explicitly enabled after success.
+
+### Local return-to-zero without the headset or an IP address
+
+Stop the existing robot launch first. With CAN configured and the realtime
+allowance set, source the ROS and workspace environments, then run:
+
+```bash
+ros2 launch vive_vr_ros2 openarm_home.launch.py
+```
+
+This enables healthy hardware at its measured pose and provides the return
+services without rosbridge, discovery, HTTP cameras or headset tracking. VR
+arming is explicitly blocked in this mode. In another sourced terminal:
+
+```bash
+python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_return_to_zero.py --execute
+```
+
+The path must be clear: this is still a direct, non-collision-planned return.
+Startup position/feedback checks still apply; this mode does not bypass a joint
+outside its accepted range. Support the arms before stopping the local launch;
+ordinary shutdown can release torque. Stop it before starting the real VR launch.
+
+Startup retry refuses mixed active/unconfigured arms: configuration can block
+the controller manager long enough to starve the already-active arm's feedback.
+In that case support the arms and restart after addressing the cause instead.
+
+Local homing now accepts an elbow lower-bound feedback offset of at most 0.06 rad
+(3.44 degrees), covering the observed -3.01 degree starting pose. Normal VR launch
+retains the 0.05 rad allowance. This extra margin applies only to J4's lower bound;
+other joints, upper limits and feedback freshness checks are unchanged. The driver
+holds the measured pose first. The explicit return command uses the existing
+0.10 rad/s trajectory and inward-only command corridor. Once commanded inside
+the nominal range, commands cannot move back into the negative recovery corridor.
+It does not change encoder calibration or provide collision avoidance. Do not use
+recovery to force a joint against a mechanical stop. Positions below -3.44 degrees
+still block startup and require diagnosis rather than successively larger margins.
+
+### One-command local homing and hold
+
+With CAN already up, stop other robot launches, source ROS and both workspace
+setups, and grant realtime allowance in the same terminal. Run:
+
+```bash
+python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_home.py --execute
+```
+
+Add `--close-grippers` only with empty, clear grippers. The supervisor starts the
+local homing launch, waits for fresh feedback and all controllers, invokes the
+existing return client, and leaves the hardware running after confirmed success.
+It monitors feedback while holding and reports if holding is no longer confirmed.
+No headset or IP is required. Full startup output is saved in the printed `/tmp`
+log directory. Failed startup does not trigger a return or automatic retry; services
+stay available until you support the arms and press Ctrl+C. Ctrl+C cancels any
+ongoing return and stops the owned launch; ordinary shutdown may release torque.
+The existing recovery envelope, motor fault guards and direct-path limitations apply.
+
+
+### Desktop controls
+
+Run `/usr/bin/python3 ~/Desktop/vive-focus-vision-ros2/scripts/openarm_panel.py`.
+The panel offers CAN setup, local homing/hold, joint and startup status, VR launch,
+cameras/recording, and VR enable/disable. Each action opens a named terminal;
+sudo passwords are entered there. The Wi-Fi IP is detected when the panel opens
+and can be edited. CAN setup/homing/VR launch refuse an already-running controller.
+Close the panel without affecting the terminals. Support the arms before using
+Ctrl+C in a robot/home terminal, because stopping it can release holding torque.
+
+Return completion now means all seven joints of both arms are within **1.5 degrees**
+of stored zero. The target remains exactly zero; this accepts residual position
+error rather than changing calibration or motor gains. The gripper tolerance is
+unchanged. Progress identifies the joint with the largest error.
+
+The desktop panel also provides first-time right/left wrist calibration (VR
+is disarmed first), an explicit arms-and-grippers VR enable button, and live
+recorder status. Start/stop/save/discard controls use the existing recorder API
+and are enabled only for valid, recently received states. Saved count, frame count,
+duration, review and export status also update when recording is controlled in VR.
+A disconnected recorder shows an unknown state, never a false stopped/saved claim.
+Calibration saves the controller-to-tool pairing; restart the VR robot launch to
+load it. This is not motor encoder calibration.
+
+Select a panel-owned command in the running list and press **Stop selected** to
+send Ctrl+C to its process group. PID identity is checked before signalling;
+unrelated/external commands are not killed. No force-kill is offered. Support arms
+before stopping home/VR because torque may release. CAN setup still refuses an
+active robot; select and stop the robot command first. Jobs launched outside this
+panel must be stopped in their original terminals. Closing the panel leaves jobs
+running, and reopening does not take ownership of old jobs.
+
+Side-grip engagement requires fresh green readiness. Pressing before green is
+ignored: the guide remains available, and holding that rejected press never
+automatically engages when alignment improves. Release and press again once
+green. Pressing while engaged still toggles following off immediately.
+
+### Apply wrist alignment without restarting
+
+In the laptop panel, lock the world and click **Align RIGHT** or **Align LEFT**.
+The calibration disables VR following, gives a 10-second countdown, and captures
+one second of steady controller/tool poses with the side grip released. It saves
+the alignment and applies it to both running ROS nodes, including the green guide.
+Release the controller buttons, click **Enable VR**, then engage on green.
+No robot launch or headset restart is needed. This changes controller alignment,
+not the motors' stored zero. If live application fails, keep VR disabled and retry
+calibration; the script reports which service failed.

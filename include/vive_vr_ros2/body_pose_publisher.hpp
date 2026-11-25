@@ -23,6 +23,7 @@ struct SceneConf
     std::string frame_id  = "world";    // frame the poses are expressed in
     std::string topic_ns  = "/vive_vr"; // -> <topic_ns>/body_poses, <topic_ns>/scene
     double      rate_hz   = 60.0;
+    bool        operator_view = false;
     double      view_yaw_deg = 0.0; // Orbit the VR spawn; robot/control frames stay unchanged.
 
     /* Scenery the client draws and nothing simulates. Invisible to MuJoCo: anything the user

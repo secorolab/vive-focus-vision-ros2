@@ -98,6 +98,7 @@ BodyPosePublisher::BodyPosePublisher(rclcpp::Node &node, const mjModel *model, S
     }
 
     msg.data += ",\"view_yaw_deg\":" + std::to_string(conf_.view_yaw_deg);
+    msg.data += std::string(",\"operator_view\":") + (conf_.operator_view ? "true" : "false");
     msg.data += static_poses_json(model);
 
     /* Whether the client should draw its stand-in floor. It replaces an unbounded MuJoCo plane,

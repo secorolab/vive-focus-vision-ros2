@@ -70,7 +70,7 @@ class Modes(unittest.TestCase):
                     c=ET.SubElement(control,'joint',name=name)
                     ET.SubElement(c,'command_interface',name='position')
             context=LaunchContext()
-            context.launch_configurations.update(use_fake_hardware=fake,right_can_interface='can0',left_can_interface='can1')
+            context.launch_configurations.update(use_fake_hardware=fake,right_can_interface='can0',left_can_interface='can1',local_elbow_recovery='false')
             with patch.object(module.xacro,'process_file') as xacro, \
                     patch.object(module.resource,'getrlimit',return_value=(50,50)), \
                     patch.object(module,'get_package_share_directory',return_value=str(ROOT)), \

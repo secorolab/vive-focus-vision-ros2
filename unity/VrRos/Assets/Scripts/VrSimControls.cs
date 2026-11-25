@@ -35,6 +35,7 @@ namespace VrRos
 
         private void Update()
         {
+            if (VrEpisodeRecorder.Active) return;
             if (bridge == null || !bridge.IsConnected) return;
 
             InputDevice device = InputDevices.GetDeviceAtXRNode(

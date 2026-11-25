@@ -31,6 +31,7 @@ def setup(context):
     limits = {j.attrib['name']: j.find('limit') for j in root.findall('joint')}
     for control in root.findall('ros2_control'):
         hardware = control.find('hardware')
+        ET.SubElement(hardware, 'param', name='local_elbow_recovery').text = arg('local_elbow_recovery')
         if arg('use_fake_hardware') == 'false':
             hardware.find('plugin').text = 'vive_vr_ros2/GuardedOpenArm'
         for i, joint in enumerate(control.findall('joint')):
@@ -46,7 +47,7 @@ def setup(context):
     # motor boundary, allowing an out-of-range starting target only to hold/return.
     if arg('use_fake_hardware') == 'false':
         for name in ('openarm_right_joint4', 'openarm_left_joint4'):
-            limits[name].set('lower', str(float(limits[name].get('lower')) - 0.05))
+            limits[name].set('lower', str(float(limits[name].get('lower')) - (0.06 if arg('local_elbow_recovery') == 'true' else 0.05)))
         # The closed gripper can report slightly below zero (-0.280 mm observed).
         # Accept that measured hold without repeated clamping/logging. The driver
         # still owns the original 0..0.044 m range and its inward-only corridor.
@@ -57,7 +58,8 @@ def setup(context):
         Node(package='robot_state_publisher', executable='robot_state_publisher',
              parameters=[{'robot_description': description}], output='screen'),
         Node(package='controller_manager', executable='ros2_control_node',
-             parameters=[{'robot_description': description}, os.path.join(
+             parameters=[{'robot_description': description,
+                          'hardware_components_initial_state.shutdown_on_initial_state_failure': False}, os.path.join(
                  get_package_share_directory('vive_vr_ros2'), 'config',
                  'openarm_hardware_controllers.yaml')], output='screen'),
         Node(package='controller_manager', executable='spawner', arguments=[
@@ -71,6 +73,7 @@ def setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_fake_hardware', default_value='true', choices=['true', 'false']),
+        DeclareLaunchArgument('local_elbow_recovery', default_value='false', choices=['true', 'false']),
         DeclareLaunchArgument('right_can_interface', default_value='can0'),
         DeclareLaunchArgument('left_can_interface', default_value='can1'),
         OpaqueFunction(function=setup),

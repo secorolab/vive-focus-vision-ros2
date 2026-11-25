@@ -12,6 +12,7 @@ def generate_launch_description():
     share = get_package_share_directory('vive_vr_ros2')
     return LaunchDescription([
         DeclareLaunchArgument('host_ip'),
+        DeclareLaunchArgument('external_control_library', default_value=''),
         DeclareLaunchArgument('model_dir', default_value=os.path.expanduser('~/vive_vr_ws/models/openarm_v1')),
         DeclareLaunchArgument('input_params_file', default_value=PathJoinSubstitution([LC('model_dir'),'teleop.yaml'])),
         DeclareLaunchArgument('hardware_params_file', default_value=os.path.join(share,'config','openarm_real.yaml')),
@@ -24,7 +25,7 @@ def generate_launch_description():
         IncludeLaunchDescription(PythonLaunchDescriptionSource(os.path.join(share,'launch','openarm_live.launch.py')),
             launch_arguments={
                 'use_fake_hardware': 'false',
-                **{key: LC(key) for key in ('host_ip','model_dir','input_params_file',
+                **{key: LC(key) for key in ('external_control_library','host_ip','model_dir','input_params_file',
                     'hardware_params_file','control_grippers','http_port','rosbridge_port','discovery_port')},
             }.items()),
     ])

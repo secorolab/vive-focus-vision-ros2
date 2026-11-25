@@ -25,6 +25,7 @@ def setup(context):
         'hardware.enable_commands': arg('enable_commands') == 'true',
         'hardware.control_grippers': arg('control_grippers') == 'true',
         'model': arg('model'),
+        'external_control_library': arg('external_control_library'),
         'manifest': os.path.join(arg('scene_dir'), 'manifest.json'),
         'scene_url': f"http://{arg('host_ip')}:{arg('http_port')}/scene.glb",
     })
@@ -37,7 +38,7 @@ def setup(context):
         ExecuteProcess(cmd=['python3', '-m', 'http.server', arg('http_port'),
                             '--directory', arg('scene_dir')], output='screen'),
         Node(package='vive_vr_ros2', executable='teleop_node', name='vive_teleop',
-             parameters=[arg('params_file'), {'teleop.toggle_clutch': True, 'teleop.left.clutch_button': 0, 'teleop.right.clutch_button': 0}], output='screen'),
+             parameters=[arg('params_file'), {'teleop.toggle_clutch': True, 'teleop.require_ready': True, 'teleop.left.clutch_button': 1, 'teleop.right.clutch_button': 1}], output='screen'),
         Node(package='vive_vr_ros2', executable='openarm_hardware_preview_node',
              parameters=[arg('hardware_params_file'), params], output='screen'),
     ]
@@ -47,6 +48,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('model'), DeclareLaunchArgument('scene_dir'),
         DeclareLaunchArgument('params_file'), DeclareLaunchArgument('host_ip'),
+        DeclareLaunchArgument('external_control_library', default_value=''),
         DeclareLaunchArgument('http_port', default_value='8000'),
         DeclareLaunchArgument('rosbridge_port', default_value='9090'),
         DeclareLaunchArgument('discovery_port', default_value='9091'),
